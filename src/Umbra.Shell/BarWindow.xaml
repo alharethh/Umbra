@@ -87,8 +87,22 @@
 
             <Canvas Width="24" Height="24"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Margin="{Binding StartGlyphMargin}"
-                    RenderTransform="{Binding ContentOffset}">
+                    Margin="{Binding StartGlyphMargin}">
+
+                <!--
+                    Press feedback, plus the drift offset. The scale and rotation are animated from
+                    code on click; the translate carries the same drift every other element gets,
+                    bound through rather than shared, because a TransformGroup child cannot be the
+                    shared transform instance itself.
+                -->
+                <Canvas.RenderTransform>
+                    <TransformGroup>
+                        <ScaleTransform x:Name="StartScale" CenterX="12" CenterY="12" />
+                        <RotateTransform x:Name="StartRotate" CenterX="12" CenterY="12" />
+                        <TranslateTransform X="{Binding ContentOffset.X}" Y="{Binding ContentOffset.Y}" />
+                    </TransformGroup>
+                </Canvas.RenderTransform>
+
                 <!--
                     Square corners and a thin cross: four 10.7 px squares separated by 0.8 px,
                     filling 22.2 of the 24 px box.

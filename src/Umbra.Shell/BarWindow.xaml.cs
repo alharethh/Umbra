@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ManagedShell.AppBar;
 using ManagedShell.Interop;
@@ -462,8 +463,55 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     private void OnStartClick(object sender, MouseButtonEventArgs e)
     {
+        PlayStartPress();
         ManagedShell.Common.Helpers.ShellHelper.ShowStartMenu();
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// A quick press-and-spring on the Start glyph: it dips and twists, then overshoots back.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// §10 lists "animation for its own sake" as a non-goal, and the reason given is that any
+    /// animation keeping otherwise-dark pixels lit is a regression. This one does not: it lasts
+    /// 320 ms, it only ever runs in response to a deliberate click, and the pointer is necessarily
+    /// on the bar at the time — so the glyph is already at Tier 2, and nothing stays lit afterwards.
+    /// </para>
+    /// <para>
+    /// Skipped entirely when the system's animation setting is off, the same signal §6.6 uses to
+    /// stop the drift.
+    /// </para>
+    /// </remarks>
+    private void PlayStartPress()
+    {
+        if (!SystemParameters.ClientAreaAnimation) return;
+
+        // Ease out on the way down so it responds instantly, and a slight overshoot on the way back
+        // so it springs rather than merely returning.
+        QuadraticEase down = new() { EasingMode = EasingMode.EaseOut };
+        BackEase back = new() { EasingMode = EasingMode.EaseOut, Amplitude = 0.7 };
+
+        DoubleAnimationUsingKeyFrames Squash() => new()
+        {
+            KeyFrames =
+            {
+                new EasingDoubleKeyFrame(0.78, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(90)), down),
+                new EasingDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)), back),
+            },
+        };
+
+        StartScale.BeginAnimation(ScaleTransform.ScaleXProperty, Squash());
+        StartScale.BeginAnimation(ScaleTransform.ScaleYProperty, Squash());
+
+        StartRotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimationUsingKeyFrames
+        {
+            KeyFrames =
+            {
+                new EasingDoubleKeyFrame(-14.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(90)), down),
+                new EasingDoubleKeyFrame(0.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)), back),
+            },
+        });
     }
 
     /// <summary>Win+X, the same way.</summary>
