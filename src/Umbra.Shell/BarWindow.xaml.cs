@@ -1,0 +1,103 @@
+using System.ComponentModel;
+using System.Windows;
+using ManagedShell.AppBar;
+using Umbra.Core.Layout;
+using Umbra.Shell.Shell;
+using CoreBarEdge = Umbra.Core.Layout.BarEdge;
+
+namespace Umbra.Shell;
+
+/// <summary>
+/// The bar. Build order step 1: renders, reserves space, lists live windows.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Every number here comes from <see cref="BarMetrics"/> rather than from a literal, which is what
+/// makes the core library's geometry answerable at runtime rather than only in its own tests.
+/// </para>
+/// <para>
+/// <b>The metrics are built at scale 1.0 deliberately.</b> WPF lays out in device-independent
+/// pixels, so the spec's 100%-scaling column <i>is</i> the DIP column at every DPI — 44 DIP pitch
+/// renders as 55 physical pixels at 125% without anything here knowing about it. The scale
+/// parameter on <see cref="BarMetrics"/> is for the places that genuinely count physical pixels,
+/// which so far is only the wear accumulator.
+/// </para>
+/// </remarks>
+internal partial class BarWindow : AppBarWindow
+{
+    public BarWindow(ShellHost host, BarMetrics metrics)
+        : base(
+            host.ShellManager.AppBarManager,
+            host.ShellManager.ExplorerHelper,
+            host.ShellManager.FullScreenHelper,
+            AppBarScreen.FromPrimaryScreen(),
+            ToAppBarEdge(metrics.Edge),
+
+            // Never AppBarMode.AutoHide. Windows allows one autohide AppBar per screen edge and
+            // Explorer's taskbar holds that slot as a consequence of how it is suppressed; asking
+            // for it produces "a toolbar is already hidden on that side of the screen"
+            // (shell-integration §2.4). Tier 0 is a reserved bar painted black, not a hidden one.
+            AppBarMode.Normal,
+
+            // Depth of the reserved rectangle across the bar's short axis: 64 DIP on a vertical
+            // bar, 56 on a horizontal one. ReservedExtent already resolves that by edge.
+            metrics.ReservedExtent)
+    {
+        Metrics = metrics;
+        Windows = host.ShellManager.Tasks.GroupedWindows;
+
+        DataContext = this;
+        InitializeComponent();
+    }
+
+    /// <summary>Geometry for this bar, straight from the spec model.</summary>
+    public BarMetrics Metrics { get; }
+
+    /// <summary>The live window list.</summary>
+    public ICollectionView Windows { get; }
+
+    /// <summary>Slot pitch — the hit target's extent along the bar's long axis. 44 DIP.</summary>
+    public double SlotPitch => Metrics.Slot.Pitch;
+
+    /// <summary>Drawn icon extent. 24 DIP.</summary>
+    public double IconExtent => Metrics.Slot.IconExtent;
+
+    /// <summary>Content band across the bar's short axis. 56 DIP vertical, 48 horizontal.</summary>
+    public double ContentBand => Metrics.ContentBand;
+
+    /// <summary>
+    /// The row sits at the aligned end: bottom on a vertical bar (§7.3), left on a horizontal one
+    /// (§7.1), so the Start button ends up adjacent to where the Start menu actually opens.
+    /// </summary>
+    public VerticalAlignment RowAlignment =>
+        Metrics.Alignment == Alignment.Center || !Metrics.Edge.IsVertical()
+            ? VerticalAlignment.Center
+            : VerticalAlignment.Bottom;
+
+    /// <summary>
+    /// Inset from the aligned end (§6.3). Left-alignment leaves nowhere for negative drift to go,
+    /// so the row is held off the corner by the larger of Windows 11's own padding and the peak
+    /// drift offset.
+    /// </summary>
+    public Thickness RowMargin => Metrics.Edge.IsVertical()
+        ? new Thickness(0, 0, 0, Metrics.RowInset)
+        : new Thickness(Metrics.RowInset, 0, 0, 0);
+
+    /// <summary>Closes the bar, which the AppBar base class otherwise refuses to do.</summary>
+    public void CloseForShutdown()
+    {
+        AllowClose = true;
+        Close();
+    }
+
+    private void OnExitClick(object sender, RoutedEventArgs e) => CloseForShutdown();
+
+    private static AppBarEdge ToAppBarEdge(CoreBarEdge edge) => edge switch
+    {
+        CoreBarEdge.Left => AppBarEdge.Left,
+        CoreBarEdge.Top => AppBarEdge.Top,
+        CoreBarEdge.Right => AppBarEdge.Right,
+        CoreBarEdge.Bottom => AppBarEdge.Bottom,
+        _ => throw new ArgumentOutOfRangeException(nameof(edge)),
+    };
+}

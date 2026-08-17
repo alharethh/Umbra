@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Umbra.Core/Umbra.Core.csproj" />
+    <Project Path="src/Umbra.Shell/Umbra.Shell.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Umbra.Core.Tests/Umbra.Core.Tests.csproj" />
+    <Project Path="tests/Umbra.Shell.Tests/Umbra.Shell.Tests.csproj" />
   </Folder>
 </Solution>

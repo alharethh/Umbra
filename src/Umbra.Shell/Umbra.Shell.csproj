@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>Umbra</AssemblyName>
+    <RootNamespace>Umbra.Shell</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- An application, not a library: no XML docs to generate. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ManagedShell" Version="0.0.370" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Umbra.Core\Umbra.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Umbra.Shell.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -8,8 +8,21 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- Every figure in this library is a number; never let a locale decide how one parses or prints. -->
-    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+
+  <!--
+    Deliberately NOT set here: <InvariantGlobalization>true</InvariantGlobalization>.
+
+    It looks right for a library whose entire content is numbers, but it is an application-level
+    runtime switch, not a compile-time one, so it flowed into Umbra.Shell and took WPF's ICU
+    dependency out from under it. The symptom was a XamlParseException — "Cannot find non-neutral
+    culture related to 'en-us'" — thrown the first time any popup or context menu was opened, which
+    killed the process. It did not show up until the bar was running on a real desktop.
+
+    Culture-independence is enforced where it actually matters instead: every parse and format that
+    could be affected passes CultureInfo.InvariantCulture explicitly, and
+    LuminanceTests.Hex_RoundTrips_Independently_Of_Culture guards the one round-trip that converts
+    between text and colour.
+  -->
 
 </Project>
