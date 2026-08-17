@@ -1,6 +1,7 @@
 using System.IO;
 using ManagedShell.WindowsTasks;
 using Umbra.Shell.Diagnostics;
+using Umbra.Shell.Tasks;
 
 namespace Umbra.Shell.Rendering;
 
@@ -42,19 +43,19 @@ internal sealed class OutlineSettings
     /// <summary>Turns outline mode on for every icon, regardless of the stored choices.</summary>
     public bool ApplyToAll { get; set; }
 
-    /// <summary>Whether this window's application should be outlined.</summary>
-    public bool IsEnabled(ApplicationWindow? window)
+    /// <summary>Whether this application should be outlined.</summary>
+    public bool IsEnabled(string? key)
     {
         if (ApplyToAll) return true;
-
-        string? key = KeyFor(window);
         return key is not null && _enabled.Contains(key);
     }
 
-    /// <summary>Flips the setting for this window's application and persists it.</summary>
-    public void Toggle(ApplicationWindow? window)
+    /// <summary>Whether this window's application should be outlined.</summary>
+    public bool IsEnabled(ApplicationWindow? window) => IsEnabled(AppIdentity.For(window));
+
+    /// <summary>Flips the setting for an application and persists it.</summary>
+    public void Toggle(string? key)
     {
-        string? key = KeyFor(window);
         if (key is null) return;
 
         if (!_enabled.Add(key)) _enabled.Remove(key);
@@ -63,24 +64,6 @@ internal sealed class OutlineSettings
 
         Save();
         Changed?.Invoke();
-    }
-
-    /// <summary>
-    /// A stable identity for the application behind a window.
-    /// </summary>
-    /// <remarks>
-    /// The app user model ID is the better key where one exists — it is what Windows itself uses to
-    /// group taskbar buttons — and the executable path is the fallback. The window title is
-    /// deliberately not used: it changes as the user works, and the setting would evaporate.
-    /// </remarks>
-    private static string? KeyFor(ApplicationWindow? window)
-    {
-        if (window is null) return null;
-
-        if (!string.IsNullOrWhiteSpace(window.AppUserModelID)) return window.AppUserModelID;
-        if (!string.IsNullOrWhiteSpace(window.WinFileName)) return window.WinFileName;
-
-        return null;
     }
 
     private void Load()

@@ -28,12 +28,12 @@ internal sealed class TierIconConverter : IMultiValueConverter
 
         // values[2] is the revision counter. Its value is never read — it is in the binding purely
         // so that toggling any application's setting invalidates every icon's binding at once.
-        ManagedShell.WindowsTasks.ApplicationWindow? window =
-            values.Length > 3 ? values[3] as ManagedShell.WindowsTasks.ApplicationWindow : null;
+        Umbra.Shell.Tasks.TaskbarSlot? slot =
+            values.Length > 3 ? values[3] as Umbra.Shell.Tasks.TaskbarSlot : null;
 
-        if (window is not null) _pipeline.ReportOnce(window.Title, source);
+        if (slot is not null) _pipeline.ReportOnce(slot.Title, source);
 
-        bool outline = Settings?.IsEnabled(window) ?? false;
+        bool outline = Settings?.IsEnabled(slot?.Key) ?? false;
         return _pipeline.Render(source, Element, level, outline);
     }
 

@@ -1,6 +1,7 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
-using ManagedShell.WindowsTasks;
+using Umbra.Shell.Tasks;
 
 namespace Umbra.Shell.Rendering;
 
@@ -36,10 +37,13 @@ internal sealed class IndicatorWidthConverter : IValueConverter
 
     public object Convert(object value, Type targetType, object? parameter, CultureInfo culture)
     {
+        // A pinned application that is not running has no indicator at all — the icon alone says
+        // "this is here", and a pill would say "this is open", which would be a lie.
+        if (value is TaskbarSlot { IsRunning: false }) return 0.0;
+
         if (!AlongBar) return Thickness;
 
-        bool active = value is ApplicationWindow.WindowState.Active;
-        return active ? Active : Inactive;
+        return value is TaskbarSlot { IsActive: true } ? Active : Inactive;
     }
 
     public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>

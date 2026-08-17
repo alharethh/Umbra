@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
@@ -16,6 +17,7 @@ using Umbra.Shell.Diagnostics;
 using Umbra.Shell.Motion;
 using Umbra.Shell.Rendering;
 using Umbra.Shell.Shell;
+using Umbra.Shell.Tasks;
 using Umbra.Shell.Tiers;
 using Umbra.Shell.Wear;
 using CoreBarEdge = Umbra.Core.Layout.BarEdge;
@@ -69,6 +71,8 @@ internal partial class BarWindow : AppBarWindow
     {
         Metrics = metrics;
         Windows = host.ShellManager.Tasks.GroupedWindows;
+
+        _tasks = new TaskbarModel(Windows, Pins);
 
         // Null when tray hosting is switched off, which is the default — see ShellHost. Pinned
         // rather than all: the unpinned ones belong behind an overflow chevron, which is §7.1's
@@ -129,6 +133,7 @@ internal partial class BarWindow : AppBarWindow
     private readonly NotificationArea? _notificationArea;
     private readonly DispatcherTimer _clock;
     private readonly StartMenuWatcher _startMenu = new();
+    private readonly TaskbarModel _tasks;
 
     /// <summary>
     /// How long the glyph stays coloured after a press, independently of the menu.
@@ -227,8 +232,14 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>Geometry for this bar, straight from the spec model.</summary>
     public BarMetrics Metrics { get; }
 
-    /// <summary>The live window list.</summary>
+    /// <summary>The live window list, as ManagedShell reports it.</summary>
     public ICollectionView Windows { get; }
+
+    /// <summary>Pinned applications (§9 / build order step 9).</summary>
+    public PinSettings Pins { get; } = new();
+
+    /// <summary>What the bar actually shows: one slot per application.</summary>
+    public ObservableCollection<TaskbarSlot> Slots => _tasks.Slots;
 
     /// <summary>The notification area's icons (§11.1), or null when tray hosting is off.</summary>
     public ICollectionView? TrayIcons { get; }
@@ -619,23 +630,39 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>Per-icon outline toggle, from that icon's own context menu (§5.3).</summary>
     private void OnSlotOutlineClick(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: ApplicationWindow window })
-            Outlines.Toggle(window);
+        if (sender is FrameworkElement { DataContext: TaskbarSlot slot })
+            Outlines.Toggle(slot.Key);
     }
 
     /// <summary>
-    /// Ticks the menu item to match the application's current setting as the menu opens. Set here
-    /// rather than bound, because a ContextMenu lives in its own popup tree and a
-    /// RelativeSource binding up to the window resolves to nothing.
+    /// Brings the menu into line with the slot as it opens. Set here rather than bound, because a
+    /// ContextMenu lives in its own popup tree and a RelativeSource binding up to the window
+    /// resolves to nothing.
     /// </summary>
     private void OnSlotContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: ApplicationWindow window } element) return;
+        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot } element) return;
         if (element.ContextMenu is null) return;
 
         foreach (object child in element.ContextMenu.Items)
-            if (child is MenuItem { Name: "SlotOutlineItem" } item)
-                item.IsChecked = Outlines.IsEnabled(window);
+        {
+            switch (child)
+            {
+                case MenuItem { Name: "SlotOutlineItem" } outline:
+                    outline.IsChecked = Outlines.IsEnabled(slot.Key);
+                    break;
+
+                case MenuItem { Name: "SlotPinItem" } pin:
+                    pin.Header = slot.IsPinned ? "Unpin from bar" : "Pin to bar";
+                    pin.IsEnabled = slot.IsPinned || slot.IsRunning;
+                    break;
+
+                case MenuItem { Name: "SlotCloseItem" } close:
+                    close.IsEnabled = slot.IsRunning;
+                    close.Header = slot.Windows.Count > 1 ? $"Close {slot.Windows.Count} windows" : "Close window";
+                    break;
+            }
+        }
     }
 
     /// <summary>
@@ -644,18 +671,71 @@ internal partial class BarWindow : AppBarWindow
     /// </summary>
     private void OnSlotClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: ApplicationWindow window }) return;
+        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot }) return;
+
+        e.Handled = true;
+
+        // Nothing running: this is a pinned application, so start it.
+        if (!slot.IsRunning)
+        {
+            Launch(slot);
+            return;
+        }
 
         // Asking Windows directly rather than trusting ManagedShell's State bookkeeping: State is
         // maintained from foreground-change events, and a click that arrives mid-transition can see
         // a stale value. The foreground window is the ground truth for "is this the one I am
         // looking at".
-        bool isForeground = GetForegroundWindow() == window.Handle;
+        IntPtr foreground = GetForegroundWindow();
+        ApplicationWindow? active = slot.Windows.FirstOrDefault(w => w.Handle == foreground);
 
-        if (isForeground && !window.IsMinimized) window.Minimize();
-        else window.BringToFront();
+        if (active is null)
+        {
+            slot.Windows[0].BringToFront();
+            return;
+        }
 
-        e.Handled = true;
+        // Already looking at it. One window minimises, as the Windows taskbar does; several cycle
+        // to the next, which is the more useful thing to do with a group.
+        if (slot.Windows.Count == 1)
+        {
+            if (!active.IsMinimized) active.Minimize();
+            else active.BringToFront();
+            return;
+        }
+
+        int current = 0;
+        for (int i = 0; i < slot.Windows.Count; i++)
+            if (ReferenceEquals(slot.Windows[i], active)) { current = i; break; }
+
+        slot.Windows[(current + 1) % slot.Windows.Count].BringToFront();
+    }
+
+    private void Launch(TaskbarSlot slot)
+    {
+        string? path = slot.Pin?.Path;
+
+        try
+        {
+            // A path is a plain executable; anything else is an app user model ID, which is how
+            // packaged applications are started and cannot be run as a file.
+            if (!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))
+                ManagedShell.Common.Helpers.ShellHelper.StartProcess(path, string.Empty, string.Empty, string.Empty);
+            else
+                ManagedShell.Common.Helpers.ShellHelper.ActivateApplication(slot.Key, string.Empty);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            BringUpLog.Write(ex, $"failed to launch {slot.Key}");
+        }
+    }
+
+    private void OnSlotPinClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot }) return;
+
+        if (slot.IsPinned) Pins.Unpin(slot.Key);
+        else if (slot.Windows.Count > 0) Pins.Pin(slot.Windows[0]);
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -696,8 +776,11 @@ internal partial class BarWindow : AppBarWindow
 
     private void OnSlotClose(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: ApplicationWindow window })
-            window.Close();
+        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot }) return;
+
+        // Closing a group closes all of it, which is what the Windows taskbar does. Iterating a
+        // copy: closing a window removes it from the slot's list as we go.
+        foreach (ApplicationWindow window in slot.Windows.ToArray()) window.Close();
     }
 
     /// <summary>

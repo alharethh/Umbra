@@ -143,7 +143,7 @@
             hit slots underneath do not move at all (P5).
         -->
         <ItemsControl x:Name="WindowList"
-                      ItemsSource="{Binding Windows}"
+                      ItemsSource="{Binding Slots}"
                       HorizontalAlignment="{Binding RowHorizontalAlignment}"
                       VerticalAlignment="{Binding RowVerticalAlignment}"
                       Width="{Binding RowWidth}"
@@ -172,13 +172,15 @@
 
                         <Grid.ContextMenu>
                             <ContextMenu>
+                                <!-- Headers and enabled state are set as the menu opens. -->
+                                <MenuItem x:Name="SlotPinItem" Header="Pin to bar" Click="OnSlotPinClick" />
                                 <!-- §5.3: a per-icon opt-in, applied to the worst offenders only. -->
                                 <MenuItem x:Name="SlotOutlineItem"
                                           Header="Outline this icon"
                                           IsCheckable="True"
                                           Click="OnSlotOutlineClick" />
                                 <Separator />
-                                <MenuItem Header="Close window" Click="OnSlotClose" />
+                                <MenuItem x:Name="SlotCloseItem" Header="Close window" Click="OnSlotClose" />
                             </ContextMenu>
                         </Grid.ContextMenu>
 
@@ -202,7 +204,7 @@
                                     <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
                                     <!-- Never read; present so a settings change invalidates every icon. -->
                                     <Binding Path="OutlineRevision" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                    <!-- The window itself, so the converter can look up its application's setting. -->
+                                    <!-- The slot, so the converter can look up its application's setting. -->
                                     <Binding />
                                 </MultiBinding>
                             </Image.Source>
@@ -216,8 +218,8 @@
                         -->
                         <Rectangle RadiusX="1.5" RadiusY="1.5"
                                    RenderTransform="{Binding ContentOffset, RelativeSource={RelativeSource AncestorType=Window}}"
-                                   Width="{Binding State, Converter={StaticResource PillAlong}}"
-                                   Height="{Binding State, Converter={StaticResource PillAcross}}"
+                                   Width="{Binding Converter={StaticResource PillAlong}}"
+                                   Height="{Binding Converter={StaticResource PillAcross}}"
                                    HorizontalAlignment="{Binding PillHorizontalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
                                    VerticalAlignment="{Binding PillVerticalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Margin="{Binding PillMargin, RelativeSource={RelativeSource AncestorType=Window}}"
