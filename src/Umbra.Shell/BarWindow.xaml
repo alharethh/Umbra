@@ -76,19 +76,37 @@
 
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
+                    <!--
+                        This Grid is the hit slot. Per P5 it is computed from the undrifted layout
+                        and never moves: only the content inside it drifts, so a click always lands
+                        where the user sees the icon.
+                    -->
                     <Grid Background="Transparent"
                           ToolTip="{Binding Title}"
+                          MouseLeftButtonUp="OnSlotClick"
                           Width="{Binding SlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                           Height="{Binding SlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+
+                        <Grid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Close window" Click="OnSlotClose" />
+                            </ContextMenu>
+                        </Grid.ContextMenu>
 
                         <!--
                             The icon is rebuilt for the current tier level: monochrome and
                             normalised so its P90 lands on the tier target at rest, cross-fading
                             to luminance-capped full chroma at Tier 2 (§3.1, §3.2, §5.1).
+
+                            RenderTransform, not LayoutTransform: the offset is fractional and must
+                            stay fractional. A layout pass would round it to the pixel grid and
+                            quietly destroy the sub-pixel micro-jitter the whole motion layer rests
+                            on (§5.2, §6.1).
                         -->
                         <Image Width="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
                                Height="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
-                               RenderOptions.BitmapScalingMode="HighQuality">
+                               RenderOptions.BitmapScalingMode="HighQuality"
+                               RenderTransform="{Binding ContentOffset, RelativeSource={RelativeSource AncestorType=Window}}">
                             <Image.Source>
                                 <MultiBinding Converter="{StaticResource TierIcon}">
                                     <Binding Path="Icon" />
@@ -104,6 +122,7 @@
                             alive.
                         -->
                         <Rectangle RadiusX="1" RadiusY="1"
+                                   RenderTransform="{Binding ContentOffset, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Width="{Binding PillWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Height="{Binding PillHeight, RelativeSource={RelativeSource AncestorType=Window}}"
                                    HorizontalAlignment="{Binding PillHorizontalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"

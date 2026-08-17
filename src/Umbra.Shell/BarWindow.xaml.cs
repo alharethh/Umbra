@@ -1,9 +1,15 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using ManagedShell.AppBar;
+using ManagedShell.WindowsTasks;
 using Umbra.Core.Layout;
+using Umbra.Core.Motion;
 using Umbra.Shell.Diagnostics;
+using Umbra.Shell.Motion;
 using Umbra.Shell.Shell;
 using Umbra.Shell.Tiers;
 using Umbra.Shell.Wear;
@@ -29,6 +35,12 @@ namespace Umbra.Shell;
 /// </remarks>
 internal partial class BarWindow : AppBarWindow
 {
+    /// <summary>
+    /// Whether the motion layer runs. The experiment in §11.2 Q1 is a week with drift on against a
+    /// week with it off, compared on the heatmaps, so switching it must not need a rebuild.
+    /// </summary>
+    public bool MotionEnabled { get; init; } = true;
+
     public BarWindow(ShellHost host, BarMetrics metrics)
         : base(
             host.ShellManager.AppBarManager,
@@ -63,12 +75,24 @@ internal partial class BarWindow : AppBarWindow
         Closed += (_, _) =>
         {
             _proximity.Dispose();
+            _motion?.Dispose();
             _wear?.Dispose();
         };
     }
 
     private readonly ProximityDriver _proximity;
+    private MotionDriver? _motion;
     private WearSampler? _wear;
+
+    /// <summary>
+    /// The drift and micro-jitter offset, applied to the drawn content of every slot.
+    /// </summary>
+    /// <remarks>
+    /// One shared transform, so the whole content group moves coherently and icons never reorder or
+    /// move relative to each other (§6.2). It is applied <b>inside</b> each hit slot rather than to
+    /// the row, so the click targets stay exactly where the undrifted layout put them (P5, §6.5).
+    /// </remarks>
+    public TranslateTransform ContentOffset { get; } = new();
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -89,6 +113,27 @@ internal partial class BarWindow : AppBarWindow
         _wear.Start();
 
         BringUpLog.Write($"wear accumulator: {width}x{height} physical px ({_wear.Accumulator.SizeInBytes / 1024} KB)");
+
+        if (MotionEnabled)
+        {
+            _motion = new MotionDriver(Metrics);
+            _motion.OffsetChanged += (dx, dy) =>
+            {
+                ContentOffset.X = dx;
+                ContentOffset.Y = dy;
+            };
+            _motion.Start();
+        }
+        else
+        {
+            BringUpLog.Write("motion disabled by --no-motion");
+        }
+
+        BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
+            $"motion: drift +/-{Metrics.Slot.DriftAmplitude:F2} px long axis, " +
+            $"+/-{Metrics.ShortAxisDriftAmplitude:F2} px short axis, " +
+            $"micro +/-{Metrics.Slot.MicroAmplitude:F2} px at {MotionModel.MicroUpdateRateHz} Hz, " +
+            $"peak {Metrics.Slot.PeakOffset:F2} px against a {Metrics.Slot.Gutter:F2} px gutter"));
     }
 
     private void OnHeatmapClick(object sender, RoutedEventArgs e)
@@ -212,6 +257,28 @@ internal partial class BarWindow : AppBarWindow
     }
 
     private void OnExitClick(object sender, RoutedEventArgs e) => CloseForShutdown();
+
+    /// <summary>
+    /// Click a slot to activate its window, or to minimise it if it is already in front — the
+    /// behaviour the Windows taskbar has.
+    /// </summary>
+    private void OnSlotClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ApplicationWindow window }) return;
+
+        if (window.State == ApplicationWindow.WindowState.Active && !window.IsMinimized)
+            window.Minimize();
+        else
+            window.BringToFront();
+
+        e.Handled = true;
+    }
+
+    private void OnSlotClose(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ApplicationWindow window })
+            window.Close();
+    }
 
     private static AppBarEdge ToAppBarEdge(CoreBarEdge edge) => edge switch
     {

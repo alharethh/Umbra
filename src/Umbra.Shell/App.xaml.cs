@@ -36,7 +36,9 @@ public partial class App : Application
         BarEdge edge = ParseEdge(e.Args);
         BarMetrics metrics = new(edge, Alignment.Start, scale: 1.0);
 
-        _bar = new BarWindow(_host, metrics);
+        bool motion = !e.Args.Contains("--no-motion", StringComparer.OrdinalIgnoreCase);
+
+        _bar = new BarWindow(_host, metrics) { MotionEnabled = motion };
         _bar.Closed += (_, _) => Shutdown();
         _bar.Show();
 
