@@ -40,7 +40,7 @@
         <render:TierIconConverter x:Key="TrayTierIcon" Element="TrayIcon" />
         <render:TierBrushConverter x:Key="IndicatorBrush" Element="RunningIndicator" />
         <render:TierBrushConverter x:Key="ClockBrush" Element="Clock" />
-        <render:TierBrushConverter x:Key="StartBrush" Element="StartGlyph" />
+        <render:StartGlyphBrushConverter x:Key="StartBrush" />
 
         <!-- A long pill for the foreground window, a short one for the rest, as Windows 11 does. -->
         <render:IndicatorWidthConverter x:Key="PillAlong" AlongBar="True" />
@@ -120,9 +120,14 @@
                     <Style TargetType="Rectangle">
                         <Setter Property="Width" Value="10.7" />
                         <Setter Property="Height" Value="10.7" />
-                        <Setter Property="Fill"
-                                Value="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window},
-                                                Converter={StaticResource StartBrush}}" />
+                        <Setter Property="Fill">
+                            <Setter.Value>
+                                <MultiBinding Converter="{StaticResource StartBrush}">
+                                    <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                    <Binding Path="StartActive" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                </MultiBinding>
+                            </Setter.Value>
+                        </Setter>
                     </Style>
                 </Canvas.Resources>
 

@@ -53,6 +53,12 @@ internal sealed class ProximityDriver : IDisposable
     /// <summary>Raised when the tier level changes enough to be worth repainting.</summary>
     public event Action<double>? LevelChanged;
 
+    /// <summary>
+    /// Raised on every tick. For anything that needs polling but does not deserve its own timer —
+    /// §6.6 turns on not adding wake-ups, and this one is already running.
+    /// </summary>
+    public event Action? Ticked;
+
     /// <summary>Current continuous tier level, 0..2.</summary>
     public double Level => _controller.Level;
 
@@ -96,6 +102,8 @@ internal sealed class ProximityDriver : IDisposable
 
         if (Math.Abs(_controller.Level - previous) > 1e-6)
             LevelChanged?.Invoke(_controller.Level);
+
+        Ticked?.Invoke();
 
         bool settledAtRest = _controller.Level <= 1e-6 && Distance >= _controller.AmbientBand;
         _timer.Interval = TimeSpan.FromMilliseconds(settledAtRest ? IdleIntervalMs : ActiveIntervalMs);

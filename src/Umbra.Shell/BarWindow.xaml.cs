@@ -90,6 +90,22 @@ internal partial class BarWindow : AppBarWindow
 
         _proximity.LevelChanged += level => TierLevel = level;
 
+        // Polled from the proximity tick rather than its own timer — §6.6 is about not adding
+        // wake-ups, and this needs no better resolution than the tier ramp does.
+        //
+        // The tick is authoritative, and deliberately so. Setting the flag on click and leaving the
+        // watcher to clear it means the glyph stays coloured forever if the menu never opens — and
+        // it can fail to open: ShowStartMenu is a synthesised Win keypress, which does nothing when
+        // a higher-integrity window has focus (§7.0). Recomputing the whole condition every tick
+        // cannot get stuck.
+        _proximity.Ticked += () =>
+        {
+            _startMenu.Poll();
+
+            bool justPressed = DateTime.UtcNow - _startPressedAt < StartPressGrace;
+            StartActive = _startMenu.IsOpen || justPressed;
+        };
+
         OnClockTick(null, EventArgs.Empty);
         _clock = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _clock.Tick += OnClockTick;
@@ -107,6 +123,19 @@ internal partial class BarWindow : AppBarWindow
     private readonly ProximityDriver _proximity;
     private readonly NotificationArea? _notificationArea;
     private readonly DispatcherTimer _clock;
+    private readonly StartMenuWatcher _startMenu = new();
+
+    /// <summary>
+    /// How long the glyph stays coloured after a press, independently of the menu.
+    /// </summary>
+    /// <remarks>
+    /// Covers the gap between the click and the menu taking the foreground, and bounds the failure
+    /// when the menu never appears at all. Slightly longer than the press animation, so the colour
+    /// does not drop out mid-spring.
+    /// </remarks>
+    private static readonly TimeSpan StartPressGrace = TimeSpan.FromMilliseconds(450);
+
+    private DateTime _startPressedAt = DateTime.MinValue;
     private MotionDriver? _motion;
     private WearSampler? _wear;
 
@@ -394,6 +423,19 @@ internal partial class BarWindow : AppBarWindow
         set => SetValue(OutlineRevisionProperty, value);
     }
 
+    /// <summary>
+    /// True while the Start menu is open, or briefly during the press animation. Colours the glyph.
+    /// </summary>
+    public static readonly DependencyProperty StartActiveProperty = DependencyProperty.Register(
+        nameof(StartActive), typeof(bool), typeof(BarWindow), new PropertyMetadata(false));
+
+    /// <inheritdoc cref="StartActiveProperty"/>
+    public bool StartActive
+    {
+        get => (bool)GetValue(StartActiveProperty);
+        set => SetValue(StartActiveProperty, value);
+    }
+
     /// <summary>Turns outline mode on for every icon at startup — a testing convenience.</summary>
     /// <remarks>
     /// Writes straight through to <see cref="Outlines"/> rather than being stored and copied in the
@@ -463,6 +505,11 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     private void OnStartClick(object sender, MouseButtonEventArgs e)
     {
+        // Colour on the same frame as the press rather than a poll interval later. The tick clears
+        // it again once the grace expires and the menu is not open.
+        _startPressedAt = DateTime.UtcNow;
+        StartActive = true;
+
         PlayStartPress();
         ManagedShell.Common.Helpers.ShellHelper.ShowStartMenu();
         e.Handled = true;
