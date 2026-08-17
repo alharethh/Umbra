@@ -59,9 +59,15 @@ internal sealed class IconPipeline
     {
         IconBitmap art = ToIconBitmap(source);
 
-        // Outline first: it changes how much of the icon is lit, and normalisation then sets how
-        // bright what remains should be. The other order would normalise the fill and then throw
-        // most of it away, landing the stroke below the tier target.
+        // Outline before normalisation: it changes how much of the icon is lit, and normalisation
+        // then sets how bright what remains should be. The other order would normalise the fill and
+        // then throw most of it away, landing the stroke below the tier target.
+        //
+        // Edges are found on the source artwork and the renderer scales the result down, which
+        // leaves the lines soft. Detecting them at the drawn size instead was tried and reverted:
+        // it was crisper, but it concentrated the same light into fewer pixels and drove the
+        // brightest of them to 0.72 — above the Tier 2 ceiling — cutting the saving from 71% to
+        // 58% for an improvement the project owner judged not worth it.
         if (outline) art = IconNormalizer.ToOutline(art);
 
         TierRender appearance = TierPalette.Resolve(element, level);
