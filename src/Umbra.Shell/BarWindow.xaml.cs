@@ -104,6 +104,11 @@ internal partial class BarWindow : AppBarWindow
 
             bool justPressed = DateTime.UtcNow - _startPressedAt < StartPressGrace;
             StartActive = _startMenu.IsOpen || justPressed;
+
+            // Keep polling at the fast interval while the menu is up, even if the pointer has
+            // wandered off the bar. Otherwise the tick drops to 100 ms and the colour outlives the
+            // menu by up to a tenth of a second, which is long enough to look like lag.
+            _proximity.KeepFast = StartActive;
         };
 
         OnClockTick(null, EventArgs.Empty);
@@ -505,10 +510,13 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     private void OnStartClick(object sender, MouseButtonEventArgs e)
     {
-        // Colour on the same frame as the press rather than a poll interval later. The tick clears
-        // it again once the grace expires and the menu is not open.
-        _startPressedAt = DateTime.UtcNow;
-        StartActive = true;
+        // Clicking Start toggles: if the menu is already open this press closes it, and the colour
+        // must go with it. Granting the press grace here would hold the glyph blue for another
+        // 450 ms after the menu had gone, which reads as lag.
+        bool opening = !_startMenu.IsOpen;
+
+        _startPressedAt = opening ? DateTime.UtcNow : DateTime.MinValue;
+        StartActive = opening;
 
         PlayStartPress();
         ManagedShell.Common.Helpers.ShellHelper.ShowStartMenu();

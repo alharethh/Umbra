@@ -65,6 +65,16 @@ internal sealed class ProximityDriver : IDisposable
     /// <summary>Distance from the pointer to the bar, in device-independent pixels.</summary>
     public double Distance { get; private set; } = double.MaxValue;
 
+    /// <summary>
+    /// Holds the tick at the fast interval regardless of pointer distance, for callers that need
+    /// prompt polling while something transient is on screen.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately opt-in and expected to be switched off again. §6.6 turns on the display being
+    /// allowed to idle, so a permanent fast tick is exactly what this class exists to avoid.
+    /// </remarks>
+    public bool KeepFast { get; set; }
+
     public void Start() => _timer.Start();
 
     public void Dispose()
@@ -105,7 +115,7 @@ internal sealed class ProximityDriver : IDisposable
 
         Ticked?.Invoke();
 
-        bool settledAtRest = _controller.Level <= 1e-6 && Distance >= _controller.AmbientBand;
+        bool settledAtRest = !KeepFast && _controller.Level <= 1e-6 && Distance >= _controller.AmbientBand;
         _timer.Interval = TimeSpan.FromMilliseconds(settledAtRest ? IdleIntervalMs : ActiveIntervalMs);
     }
 
