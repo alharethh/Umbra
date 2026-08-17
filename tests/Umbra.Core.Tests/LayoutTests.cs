@@ -166,17 +166,18 @@ public class LayoutTests
         BarMetrics vertical = new(BarEdge.Left);
 
         Assert.Equal(48.0, horizontal.ContentBand);
-        Assert.Equal(56.0, horizontal.ReservedExtent);
+        Assert.Equal(48.0, horizontal.ReservedExtent);
         Assert.Equal(56.0, vertical.ContentBand);
-        Assert.Equal(64.0, vertical.ReservedExtent);
+        Assert.Equal(56.0, vertical.ReservedExtent);
 
-        // §8: the reserved band is 8 px larger than the content — v1 attributed this to long-axis
-        // drift headroom, which §6.3 no longer requires.
-        Assert.Equal(8.0, horizontal.ReservedExtent - horizontal.ContentBand);
-        Assert.Equal(8.0, vertical.ReservedExtent - vertical.ContentBand);
+        // §8 credited an extra 8 px to short-axis drift and corner rounding. Neither needs it, so
+        // the reserved band is the content band — which also makes the bar exactly as tall as the
+        // Windows 11 taskbar it replaces.
+        Assert.Equal(0.0, horizontal.ReservedExtent - horizontal.ContentBand);
+        Assert.Equal(0.0, vertical.ReservedExtent - vertical.ContentBand);
 
         Rect bottom = horizontal.ReservedRect(ScreenWidth, ScreenHeight);
-        Assert.Equal(new Rect(0, ScreenHeight - 56, ScreenWidth, 56), bottom);
+        Assert.Equal(new Rect(0, ScreenHeight - 48, ScreenWidth, 48), bottom);
     }
 
     [Fact]
@@ -192,22 +193,36 @@ public class LayoutTests
     }
 
     [Fact]
-    public void Short_Axis_Drift_Exceeds_The_Margin_Section8_Attributes_To_It()
+    public void Short_Axis_Drift_Is_Contained_By_The_Content_Band_Alone()
     {
-        // Recorded rather than resolved. §6.2's formula gives 0.50 × A_max_short = 4.8 px, and
-        // micro-jitter adds 1.95 px on the same axis, for 6.75 px of short-axis travel. §6.2
-        // annotates the amplitude "≈ ±4 px" and §8 attributes the reserved band's 8 px (4 per
-        // side) to short-axis drift — neither of which matches 6.75. The motion stays inside the
-        // slot, so P5 is not at risk; what is unresolved is which of the two figures §8 meant.
+        // The resolution of §8's reserved-band discrepancy. §6.2's formula gives 4.8 px of drift
+        // and micro-jitter adds 1.95 px on the same axis, for 6.75 px of travel — which §8's 8 px
+        // (4 per side) never covered. It did not need to: the content band already leaves 12 px of
+        // clearance either side of a 24 px icon, so the drift is contained without any reserved
+        // margin at all, and the bar can be exactly as tall as the taskbar it replaces.
         BarMetrics bar = new(BarEdge.Bottom);
 
         Approx.Equal(9.6, bar.ShortAxisMaxAmplitude, 1e-9, "A_max_short");
         Approx.Equal(4.8, bar.ShortAxisDriftAmplitude, 1e-9, "0.50 × A_max_short");
         Approx.Equal(6.75, bar.ShortAxisPeakOffset, 1e-9, "short-axis drift plus micro-jitter");
-        Approx.Equal(4.0, bar.ReservedHeadroom, 1e-9, "margin between content band and reserved rect");
 
-        Assert.True(bar.ShortAxisFitsContentBand, "Short-axis travel stays inside the content band, so P5 holds.");
-        Assert.False(bar.ShortAxisFitsReservedHeadroom, "But it does not fit the 8 px §8 credits to it.");
+        Approx.Equal(12.0, (bar.ContentBand - bar.Slot.IconExtent) / 2.0, 1e-9, "clearance within the band");
+        Assert.True(bar.ShortAxisFitsContentBand);
+        Assert.Equal(0.0, bar.ReservedHeadroom);
+    }
+
+    [Theory]
+    [InlineData(BarEdge.Bottom)]
+    [InlineData(BarEdge.Top)]
+    [InlineData(BarEdge.Left)]
+    [InlineData(BarEdge.Right)]
+    public void Short_Axis_Travel_Fits_Every_Edge_Without_Reserved_Headroom(BarEdge edge)
+    {
+        BarMetrics bar = new(edge);
+
+        Assert.True(bar.ShortAxisFitsContentBand,
+            $"{edge}: {bar.ShortAxisPeakOffset:F2} px of travel against " +
+            $"{(bar.ContentBand - bar.Slot.IconExtent) / 2.0:F2} px of clearance.");
     }
 
     [Fact]

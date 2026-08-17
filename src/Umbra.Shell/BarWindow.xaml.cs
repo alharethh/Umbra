@@ -238,11 +238,24 @@ internal partial class BarWindow : AppBarWindow
     public string ClockDate { get; private set; } = string.Empty;
 
     /// <summary>
-    /// Seconds are never displayed (§6.4): high-frequency change in a tiny fixed area with almost
-    /// no informational value, and the colon does not blink either — halving its duty would double
-    /// the transition count for visual noise.
+    /// Seconds appear from Tier 1 upward — that is, only while the pointer is near the bar.
     /// </summary>
-    public bool ShowsSeconds => false;
+    /// <remarks>
+    /// <para>
+    /// §6.4 removes seconds outright, and its reasoning is about repaints rather than wear: a
+    /// ticking seconds field is "high-frequency change in a tiny fixed area with almost no
+    /// informational value". Note it is not especially costly in <i>wear</i> terms — the digits
+    /// vary, so the light is spread across the segment shapes rather than burned into one pattern.
+    /// What it costs is a repaint every second forever, which works directly against §6.6's
+    /// requirement that the display be allowed to idle so the panel can run its compensation
+    /// cycles.
+    /// </para>
+    /// <para>
+    /// Tying them to the proximity band keeps both: seconds when someone is actually looking, and
+    /// a bar that repaints once a minute the other ~92% of the time.
+    /// </para>
+    /// </remarks>
+    public bool ShowsSeconds => TierLevel >= 1.0;
 
     /// <summary>The date line appears from Tier 1 upward (§7.1, §7.3).</summary>
     public bool ShowsDate => TierLevel >= 1.0;
@@ -342,9 +355,16 @@ internal partial class BarWindow : AppBarWindow
 
     private static void OnTierLevelChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        // The clock's date line appears from Tier 1, and it is bound through a plain property
-        // rather than the dependency property, so it needs telling.
-        if (d is BarWindow bar) bar.OnPropertyChanged(nameof(ShowsDate));
+        // The clock's date line and its seconds both appear from Tier 1, and both are bound through
+        // plain properties rather than the dependency property, so they need telling.
+        if (d is not BarWindow bar) return;
+
+        bar.OnPropertyChanged(nameof(ShowsDate));
+        bar.OnPropertyChanged(nameof(ShowsSeconds));
+
+        // Rebuild the string immediately rather than waiting up to a second for the next tick,
+        // so seconds appear as the bar lights rather than after it.
+        bar.OnClockTick(null, EventArgs.Empty);
     }
 
     /// <inheritdoc cref="TierLevelProperty"/>
@@ -460,7 +480,7 @@ internal partial class BarWindow : AppBarWindow
     private void OnClockTick(object? sender, EventArgs e)
     {
         DateTime now = DateTime.Now;
-        string time = now.ToString("HH:mm", CultureInfo.CurrentCulture);
+        string time = now.ToString(ShowsSeconds ? "HH:mm:ss" : "HH:mm", CultureInfo.CurrentCulture);
         if (time == ClockTime) return;
 
         ClockTime = time;

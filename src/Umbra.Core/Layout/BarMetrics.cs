@@ -19,14 +19,33 @@ public readonly record struct BarMetrics
     /// <summary>Content band of a horizontal bar at 100% scaling.</summary>
     public const double BaseHorizontalContentBand = 48.0;
 
-    /// <summary>Reserved extent of a horizontal bar at 100% scaling.</summary>
-    public const double BaseHorizontalReserved = 56.0;
+    /// <summary>
+    /// Reserved extent of a horizontal bar at 100% scaling — the same 48 px as the Windows 11
+    /// taskbar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// §7.1 and §8 specify 56 px, 8 px more than the content band, "for short-axis drift and corner
+    /// rounding". <b>Measured, neither needs it.</b> Short-axis travel peaks at 6.75 px (§6.2's
+    /// 4.8 px of drift plus 1.95 px of micro-jitter) while the content band already leaves 12 px of
+    /// clearance either side of a 24 px icon, so the drift is contained without touching the
+    /// reserved margin. Corner rounding costs no space at all, because rounding is achieved by not
+    /// lighting pixels (§4).
+    /// </para>
+    /// <para>
+    /// This is the resolution of the discrepancy that <c>ShortAxisFitsReservedHeadroom</c> recorded:
+    /// the reserved band did not cover what §8 credited to it, and the answer is that it never
+    /// needed to. Dropping to 48 px also makes Umbra exactly as tall as the taskbar it replaces,
+    /// which is what §7's fidelity requirement wanted in the first place.
+    /// </para>
+    /// </remarks>
+    public const double BaseHorizontalReserved = 48.0;
 
     /// <summary>Content band of a vertical bar at 100% scaling.</summary>
     public const double BaseVerticalContentBand = 56.0;
 
-    /// <summary>Reserved extent of a vertical bar at 100% scaling.</summary>
-    public const double BaseVerticalReserved = 64.0;
+    /// <summary>Reserved extent of a vertical bar at 100% scaling. Same reasoning as horizontal.</summary>
+    public const double BaseVerticalReserved = 56.0;
 
     /// <summary>
     /// Windows 11's own padding before the first icon when left-aligned, at 100% scaling.

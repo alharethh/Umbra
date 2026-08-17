@@ -41,6 +41,10 @@
         <render:TierBrushConverter x:Key="IndicatorBrush" Element="RunningIndicator" />
         <render:TierBrushConverter x:Key="ClockBrush" Element="Clock" />
         <render:TierBrushConverter x:Key="StartBrush" Element="StartGlyph" />
+
+        <!-- A long pill for the foreground window, a short one for the rest, as Windows 11 does. -->
+        <render:IndicatorWidthConverter x:Key="PillAlong" AlongBar="True" />
+        <render:IndicatorWidthConverter x:Key="PillAcross" AlongBar="False" />
     </Window.Resources>
 
     <!--
@@ -64,9 +68,12 @@
             draws at the Windows 11 inset — free, because hit geometry is invisible, and strictly
             better than Windows 11, which insets its own button and loses the corner as a target.
 
-            An outline, not the four-colour logo (§8): this is the most temporally invariant element
-            on the entire screen, and four saturated filled squares is the worst possible case for
-            something that never moves.
+            Four filled squares in the Windows 11 arrangement, but neutral rather than the
+            four-colour logo. §8 asked for an outline because "four saturated squares is the worst
+            case" for the most temporally invariant element on the screen — the saturation was the
+            expensive part, not the fill. A neutral glyph is carried by the white emitter (P4), and
+            the tier system already holds it at #333333 while the pointer is away, so the filled
+            version costs a little more lit area at a luminance that is already near the floor.
         -->
         <Grid x:Name="StartButton"
               Background="Transparent"
@@ -84,19 +91,20 @@
                     RenderTransform="{Binding ContentOffset}">
                 <Canvas.Resources>
                     <Style TargetType="Rectangle">
-                        <Setter Property="Width" Value="8" />
-                        <Setter Property="Height" Value="8" />
-                        <Setter Property="StrokeThickness" Value="1.5" />
-                        <Setter Property="Stroke"
+                        <Setter Property="Width" Value="9" />
+                        <Setter Property="Height" Value="9" />
+                        <Setter Property="RadiusX" Value="1" />
+                        <Setter Property="RadiusY" Value="1" />
+                        <Setter Property="Fill"
                                 Value="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window},
                                                 Converter={StaticResource StartBrush}}" />
                     </Style>
                 </Canvas.Resources>
 
-                <Rectangle Canvas.Left="3"  Canvas.Top="3" />
-                <Rectangle Canvas.Left="13" Canvas.Top="3" />
-                <Rectangle Canvas.Left="3"  Canvas.Top="13" />
-                <Rectangle Canvas.Left="13" Canvas.Top="13" />
+                <Rectangle Canvas.Left="2.5"  Canvas.Top="2.5" />
+                <Rectangle Canvas.Left="12.5" Canvas.Top="2.5" />
+                <Rectangle Canvas.Left="2.5"  Canvas.Top="12.5" />
+                <Rectangle Canvas.Left="12.5" Canvas.Top="12.5" />
             </Canvas>
         </Grid>
 
@@ -176,10 +184,10 @@
                             through the proximity ramp is the most visible sign the tier system is
                             alive.
                         -->
-                        <Rectangle RadiusX="1" RadiusY="1"
+                        <Rectangle RadiusX="1.5" RadiusY="1.5"
                                    RenderTransform="{Binding ContentOffset, RelativeSource={RelativeSource AncestorType=Window}}"
-                                   Width="{Binding PillWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-                                   Height="{Binding PillHeight, RelativeSource={RelativeSource AncestorType=Window}}"
+                                   Width="{Binding State, Converter={StaticResource PillAlong}}"
+                                   Height="{Binding State, Converter={StaticResource PillAcross}}"
                                    HorizontalAlignment="{Binding PillHorizontalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
                                    VerticalAlignment="{Binding PillVerticalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Margin="{Binding PillMargin, RelativeSource={RelativeSource AncestorType=Window}}"
