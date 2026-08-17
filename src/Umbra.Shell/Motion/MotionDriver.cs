@@ -63,6 +63,9 @@ internal sealed class MotionDriver : IDisposable
     /// <summary>Raised when the offset changes, in device-independent pixels.</summary>
     public event Action<double, double>? OffsetChanged;
 
+    /// <summary>As <see cref="OffsetChanged"/>, but for the clock's own jitter frequencies (§6.4).</summary>
+    public event Action<double, double>? ClockOffsetChanged;
+
     /// <summary>Whether motion is currently running, and why not if it is not.</summary>
     public MotionSuppression Suppression => _clock.Suppression;
 
@@ -94,6 +97,13 @@ internal sealed class MotionDriver : IDisposable
 
         (double dx, double dy) = offset.ToScreen(_metrics.Edge);
         OffsetChanged?.Invoke(dx, dy);
+
+        // The clock drifts with everything else but jitters on its own frequencies (§6.4).
+        MotionOffset clock = MotionModel.Clock(
+            _clock.PhaseSeconds, _metrics.Slot, _metrics.ShortAxisDriftAmplitude);
+
+        (double cdx, double cdy) = clock.ToScreen(_metrics.Edge);
+        ClockOffsetChanged?.Invoke(cdx, cdy);
 
         // The first few ticks only. Motion is imperceptible by design (P6), so a log is the only
         // practical way to confirm it is running and that the offsets are fractional rather than

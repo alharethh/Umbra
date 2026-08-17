@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ManagedShell.AppBar;
 using ManagedShell.Interop;
 using ManagedShell.WindowsTasks;
@@ -38,6 +39,9 @@ namespace Umbra.Shell;
 /// </remarks>
 internal partial class BarWindow : AppBarWindow
 {
+    // AppBarWindow already implements INotifyPropertyChanged and exposes OnPropertyChanged, so the
+    // clock's plain properties notify through the base class rather than a second implementation.
+
     /// <summary>
     /// Whether the motion layer runs. The experiment in §11.2 Q1 is a week with drift on against a
     /// week with it off, compared on the heatmaps, so switching it must not need a rebuild.
@@ -65,10 +69,11 @@ internal partial class BarWindow : AppBarWindow
         Metrics = metrics;
         Windows = host.ShellManager.Tasks.GroupedWindows;
 
-        // Pinned rather than all: the unpinned ones belong behind an overflow chevron, which is
-        // §7.1's "tray overflow flyout" and is not built yet.
-        TrayIcons = host.ShellManager.NotificationArea.PinnedIcons;
+        // Null when tray hosting is switched off, which is the default — see ShellHost. Pinned
+        // rather than all: the unpinned ones belong behind an overflow chevron, which is §7.1's
+        // "tray overflow flyout" and is not built yet.
         _notificationArea = host.ShellManager.NotificationArea;
+        TrayIcons = _notificationArea?.PinnedIcons;
 
         DataContext = this;
         InitializeComponent();
@@ -84,9 +89,14 @@ internal partial class BarWindow : AppBarWindow
 
         _proximity.LevelChanged += level => TierLevel = level;
 
+        OnClockTick(null, EventArgs.Empty);
+        _clock = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+        _clock.Tick += OnClockTick;
+
         Loaded += OnLoaded;
         Closed += (_, _) =>
         {
+            _clock.Stop();
             _proximity.Dispose();
             _motion?.Dispose();
             _wear?.Dispose();
@@ -94,7 +104,8 @@ internal partial class BarWindow : AppBarWindow
     }
 
     private readonly ProximityDriver _proximity;
-    private readonly NotificationArea _notificationArea;
+    private readonly NotificationArea? _notificationArea;
+    private readonly DispatcherTimer _clock;
     private MotionDriver? _motion;
     private WearSampler? _wear;
 
@@ -111,6 +122,7 @@ internal partial class BarWindow : AppBarWindow
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         _proximity.Start();
+        _clock.Start();
 
         // Built here rather than in the constructor because the accumulator is sized in physical
         // pixels and the window has no size until it has been laid out.
@@ -128,8 +140,11 @@ internal partial class BarWindow : AppBarWindow
 
         BringUpLog.Write($"wear accumulator: {width}x{height} physical px ({_wear.Accumulator.SizeInBytes / 1024} KB)");
 
-        LogTrayContents("at load");
-        _notificationArea.TrayIcons.CollectionChanged += (_, _) => LogTrayContents("changed");
+        if (_notificationArea is not null)
+        {
+            LogTrayContents("at load");
+            _notificationArea.TrayIcons.CollectionChanged += (_, _) => LogTrayContents("changed");
+        }
 
         if (MotionEnabled)
         {
@@ -143,6 +158,12 @@ internal partial class BarWindow : AppBarWindow
 
                 TrayOffset.X = dx * trayRatio;
                 TrayOffset.Y = dy * trayRatio;
+            };
+
+            _motion.ClockOffsetChanged += (dx, dy) =>
+            {
+                ClockOffset.X = dx;
+                ClockOffset.Y = dy;
             };
             _motion.Start();
         }
@@ -173,8 +194,8 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>The live window list.</summary>
     public ICollectionView Windows { get; }
 
-    /// <summary>The notification area's icons (§11.1).</summary>
-    public ICollectionView TrayIcons { get; }
+    /// <summary>The notification area's icons (§11.1), or null when tray hosting is off.</summary>
+    public ICollectionView? TrayIcons { get; }
 
     /// <summary>
     /// The notification area's drift offset — the same phase as the icon row, scaled down to what
@@ -198,6 +219,57 @@ internal partial class BarWindow : AppBarWindow
     /// <inheritdoc cref="TrayHorizontalAlignment"/>
     public VerticalAlignment TrayVerticalAlignment =>
         IsVertical ? VerticalAlignment.Top : VerticalAlignment.Center;
+
+    /// <summary>
+    /// The clock's own drift offset. It shares the content group's drift but jitters on different
+    /// frequencies (§6.4).
+    /// </summary>
+    /// <remarks>
+    /// v1 gave the clock a phase offset on the icon row's frequency. Wear integrates over many
+    /// cycles, so a phase offset produces an identical accumulated distribution — it decorrelates
+    /// the instantaneous appearance and nothing else. Different frequencies are the fix.
+    /// </remarks>
+    public TranslateTransform ClockOffset { get; } = new();
+
+    /// <summary>Current time, refreshed once a minute.</summary>
+    public string ClockTime { get; private set; } = string.Empty;
+
+    /// <summary>Current date, shown from Tier 1 upward.</summary>
+    public string ClockDate { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Seconds are never displayed (§6.4): high-frequency change in a tiny fixed area with almost
+    /// no informational value, and the colon does not blink either — halving its duty would double
+    /// the transition count for visual noise.
+    /// </summary>
+    public bool ShowsSeconds => false;
+
+    /// <summary>The date line appears from Tier 1 upward (§7.1, §7.3).</summary>
+    public bool ShowsDate => TierLevel >= 1.0;
+
+    /// <summary>The Start button sits at the aligned end, ahead of the icon row.</summary>
+    public HorizontalAlignment StartHorizontalAlignment =>
+        IsVertical ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+
+    /// <inheritdoc cref="StartHorizontalAlignment"/>
+    public VerticalAlignment StartVerticalAlignment =>
+        IsVertical ? VerticalAlignment.Bottom : VerticalAlignment.Center;
+
+    /// <summary>
+    /// Hit width, reaching the screen corner on a horizontal bar (§6.5).
+    /// </summary>
+    public double StartHitWidth => IsVertical ? Metrics.ReservedExtent : Metrics.RowInset + Metrics.Slot.Pitch;
+
+    /// <inheritdoc cref="StartHitWidth"/>
+    public double StartHitHeight => IsVertical ? Metrics.RowInset + Metrics.Slot.Pitch : Metrics.ReservedExtent;
+
+    /// <summary>
+    /// Pushes the glyph off the corner to the Windows 11 inset, leaving the hit rectangle behind it
+    /// reaching all the way in.
+    /// </summary>
+    public Thickness StartGlyphMargin => IsVertical
+        ? new Thickness(0, 0, 0, Metrics.RowInset)
+        : new Thickness(Metrics.RowInset, 0, 0, 0);
 
     /// <summary>Holds the tray off the trailing corner, mirroring the row inset (§6.3).</summary>
     public Thickness TrayMargin => IsVertical
@@ -251,18 +323,29 @@ internal partial class BarWindow : AppBarWindow
     /// so the row is held off the corner by the larger of Windows 11's own padding and the peak
     /// drift offset.
     /// </summary>
+    /// <remarks>
+    /// The Start button occupies the first slot at the aligned end (§7.1), so the application row
+    /// begins one pitch further along.
+    /// </remarks>
     public Thickness RowMargin => Metrics.Alignment == Alignment.Center
         ? default
         : IsVertical
-            ? new Thickness(0, 0, 0, Metrics.RowInset)
-            : new Thickness(Metrics.RowInset, 0, 0, 0);
+            ? new Thickness(0, 0, 0, Metrics.RowInset + Metrics.Slot.Pitch)
+            : new Thickness(Metrics.RowInset + Metrics.Slot.Pitch, 0, 0, 0);
 
     /// <summary>
     /// The continuous tier level, 0..2, driven by pointer proximity (§3.4). A dependency property
     /// so that every tier-dependent binding re-evaluates as the ramp moves.
     /// </summary>
     public static readonly DependencyProperty TierLevelProperty = DependencyProperty.Register(
-        nameof(TierLevel), typeof(double), typeof(BarWindow), new PropertyMetadata(0.0));
+        nameof(TierLevel), typeof(double), typeof(BarWindow), new PropertyMetadata(0.0, OnTierLevelChanged));
+
+    private static void OnTierLevelChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        // The clock's date line appears from Tier 1, and it is bound through a plain property
+        // rather than the dependency property, so it needs telling.
+        if (d is BarWindow bar) bar.OnPropertyChanged(nameof(ShowsDate));
+    }
 
     /// <inheritdoc cref="TierLevelProperty"/>
     public double TierLevel
@@ -345,10 +428,56 @@ internal partial class BarWindow : AppBarWindow
 
     private void OnExitClick(object sender, RoutedEventArgs e) => CloseForShutdown();
 
+    /// <summary>
+    /// Opens the Windows Start menu.
+    /// </summary>
+    /// <remarks>
+    /// This is a synthesised Win keypress and there is nothing else on offer — no API accepts a
+    /// position, which is why §7.0 accepts that the menu cannot be moved. On the bottom edge with
+    /// left alignment it lands beneath this button anyway; on the other three edges it opens at the
+    /// bottom of the screen regardless, which is documented and accepted rather than worked around.
+    ///
+    /// It is global input injection, so it fails silently when a higher-integrity window has focus.
+    /// </remarks>
+    private void OnStartClick(object sender, MouseButtonEventArgs e)
+    {
+        ManagedShell.Common.Helpers.ShellHelper.ShowStartMenu();
+        e.Handled = true;
+    }
+
+    /// <summary>Win+X, the same way.</summary>
+    private void OnStartContextMenu(object sender, MouseButtonEventArgs e)
+    {
+        ManagedShell.Common.Helpers.ShellHelper.ShowStartContextMenu();
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Refreshes the clock. Ticks every second but only touches the UI when the displayed minute
+    /// changes — the display has no seconds, so a per-second repaint would light the same pixels
+    /// sixty times for one change.
+    /// </summary>
+    private void OnClockTick(object? sender, EventArgs e)
+    {
+        DateTime now = DateTime.Now;
+        string time = now.ToString("HH:mm", CultureInfo.CurrentCulture);
+        if (time == ClockTime) return;
+
+        ClockTime = time;
+        ClockDate = IsVertical
+            ? now.ToString("d", CultureInfo.CurrentCulture)
+            : now.ToString("ddd d MMM", CultureInfo.CurrentCulture);
+
+        OnPropertyChanged(nameof(ClockTime));
+        OnPropertyChanged(nameof(ClockDate));
+    }
+
     private int _loggedTrayChanges;
 
     private void LogTrayContents(string reason)
     {
+        if (_notificationArea is null) return;
+
         // Only the first few, or a chatty tray writes to disk forever.
         if (_loggedTrayChanges++ > 6) return;
 
@@ -463,7 +592,7 @@ internal partial class BarWindow : AppBarWindow
     /// </summary>
     private void UpdateTrayHostSize()
     {
-        if (!IsLoaded) return;
+        if (!IsLoaded || _notificationArea is null) return;
 
         try
         {

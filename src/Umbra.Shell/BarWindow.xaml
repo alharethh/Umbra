@@ -39,6 +39,8 @@
         <render:TierIconConverter x:Key="TierIcon" Element="RunningIcon" />
         <render:TierIconConverter x:Key="TrayTierIcon" Element="TrayIcon" />
         <render:TierBrushConverter x:Key="IndicatorBrush" Element="RunningIndicator" />
+        <render:TierBrushConverter x:Key="ClockBrush" Element="Clock" />
+        <render:TierBrushConverter x:Key="StartBrush" Element="StartGlyph" />
     </Window.Resources>
 
     <!--
@@ -56,6 +58,47 @@
                 <MenuItem Header="Exit Umbra" Click="OnExitClick" />
             </ContextMenu>
         </Grid.ContextMenu>
+
+        <!--
+            The Start button. Its hit rectangle reaches the screen corner (§6.5) while the glyph
+            draws at the Windows 11 inset — free, because hit geometry is invisible, and strictly
+            better than Windows 11, which insets its own button and loses the corner as a target.
+
+            An outline, not the four-colour logo (§8): this is the most temporally invariant element
+            on the entire screen, and four saturated filled squares is the worst possible case for
+            something that never moves.
+        -->
+        <Grid x:Name="StartButton"
+              Background="Transparent"
+              ToolTip="Start"
+              MouseLeftButtonUp="OnStartClick"
+              MouseRightButtonUp="OnStartContextMenu"
+              HorizontalAlignment="{Binding StartHorizontalAlignment}"
+              VerticalAlignment="{Binding StartVerticalAlignment}"
+              Width="{Binding StartHitWidth}"
+              Height="{Binding StartHitHeight}">
+
+            <Canvas Width="24" Height="24"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Margin="{Binding StartGlyphMargin}"
+                    RenderTransform="{Binding ContentOffset}">
+                <Canvas.Resources>
+                    <Style TargetType="Rectangle">
+                        <Setter Property="Width" Value="8" />
+                        <Setter Property="Height" Value="8" />
+                        <Setter Property="StrokeThickness" Value="1.5" />
+                        <Setter Property="Stroke"
+                                Value="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window},
+                                                Converter={StaticResource StartBrush}}" />
+                    </Style>
+                </Canvas.Resources>
+
+                <Rectangle Canvas.Left="3"  Canvas.Top="3" />
+                <Rectangle Canvas.Left="13" Canvas.Top="3" />
+                <Rectangle Canvas.Left="3"  Canvas.Top="13" />
+                <Rectangle Canvas.Left="13" Canvas.Top="13" />
+            </Canvas>
+        </Grid>
 
         <!--
             The drifting content group, once §6 lands. Everything inside it moves together; the
@@ -148,15 +191,21 @@
         </ItemsControl>
 
         <!--
-            The notification area, at the trailing end of the bar (§7.1). Its slots are smaller than
-            the icon row's, so it uses its own derived drift amplitude — applying the row's would
-            push these icons out of their slots and break P5.
+            The trailing group: notification area, then the clock at the very end (§7.1).
+        -->
+        <StackPanel Orientation="{Binding RowOrientation}"
+                    HorizontalAlignment="{Binding TrayHorizontalAlignment}"
+                    VerticalAlignment="{Binding TrayVerticalAlignment}"
+                    Margin="{Binding TrayMargin}">
+
+        <!--
+            The notification area. Its slots are smaller than the icon row's, so it uses its own
+            derived drift amplitude — applying the row's would push these icons out of their slots
+            and break P5.
         -->
         <ItemsControl x:Name="TrayHost"
                       ItemsSource="{Binding TrayIcons}"
-                      HorizontalAlignment="{Binding TrayHorizontalAlignment}"
-                      VerticalAlignment="{Binding TrayVerticalAlignment}"
-                      Margin="{Binding TrayMargin}">
+                      VerticalAlignment="Center">
 
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -193,6 +242,43 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
+
+            <!--
+                The clock. No seconds at any tier (§6.4) — a ticking seconds field is
+                high-frequency change in a tiny fixed area with almost no informational value — and
+                the colon does not blink. The date appears from Tier 1 upward.
+
+                Drifts with everything else but jitters on its own frequencies, because digits
+                change while digit *positions* do not, and the colon never changes at all.
+            -->
+            <StackPanel VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Margin="8,0,0,0"
+                        RenderTransform="{Binding ClockOffset}">
+
+                <TextBlock Text="{Binding ClockTime}"
+                           FontSize="14"
+                           TextAlignment="Center"
+                           Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}" />
+
+                <TextBlock Text="{Binding ClockDate}"
+                           FontSize="10"
+                           TextAlignment="Center"
+                           Opacity="0.75"
+                           Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowsDate}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
+        </StackPanel>
     </Grid>
 
 </appbar:AppBarWindow>

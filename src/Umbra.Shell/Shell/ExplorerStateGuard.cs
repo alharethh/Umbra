@@ -52,8 +52,17 @@ internal sealed class ExplorerStateGuard : IDisposable
     /// <summary>The state Explorer's taskbar was in before Umbra touched it.</summary>
     public NativeMethods.ABState OriginalState { get; private set; }
 
+    /// <summary>Explorer's <c>TaskbarAl</c> before Umbra touched it, or null if it was absent.</summary>
+    public int? OriginalAlignment { get; private set; }
+
     /// <summary>True when startup found leftovers from a run that did not exit cleanly.</summary>
     public bool RecoveredFromUncleanExit { get; private set; }
+
+    /// <summary>
+    /// Points Explorer's taskbar alignment at Umbra's own, so the Start menu opens beneath our
+    /// Start button rather than wherever Explorer's alignment would have put it (§7.0).
+    /// </summary>
+    public void ApplyAlignment(int alignment) => _taskbar.SetAlignment(alignment);
 
     /// <summary>
     /// Repairs the damage from a previous unclean exit, if there was one, then records the state
@@ -62,20 +71,26 @@ internal sealed class ExplorerStateGuard : IDisposable
     /// </summary>
     public void Capture()
     {
-        if (TryReadPersistedState(out NativeMethods.ABState orphaned))
+        if (TryReadPersistedState(out NativeMethods.ABState orphaned, out int? orphanedAlignment))
         {
-            // A previous run died with Explorer's taskbar autohidden. Put it back before reading
-            // the current state, or the damage gets recorded as the baseline.
+            // A previous run died with Explorer's taskbar autohidden and its alignment overwritten.
+            // Put both back before reading the current state, or the damage gets recorded as the
+            // baseline and every later run faithfully restores it.
             RecoveredFromUncleanExit = true;
+
             _taskbar.SetState(orphaned);
+            _taskbar.SetAlignment(orphanedAlignment);
+
             OriginalState = orphaned;
+            OriginalAlignment = orphanedAlignment;
         }
         else
         {
             OriginalState = _taskbar.GetState();
+            OriginalAlignment = _taskbar.GetAlignment();
         }
 
-        Persist(OriginalState);
+        Persist(OriginalState, OriginalAlignment);
     }
 
     /// <summary>Restores Explorer's taskbar and clears the on-disk marker. Safe to call twice.</summary>
@@ -88,6 +103,7 @@ internal sealed class ExplorerStateGuard : IDisposable
         {
             _taskbar.Hidden = false;
             _taskbar.SetState(OriginalState);
+            _taskbar.SetAlignment(OriginalAlignment);
         }
         finally
         {
@@ -97,20 +113,43 @@ internal sealed class ExplorerStateGuard : IDisposable
 
     public void Dispose() => Restore();
 
-    private bool TryReadPersistedState(out NativeMethods.ABState state)
+    /// <remarks>
+    /// A missing <c>alignment</c> line means <c>TaskbarAl</c> was absent before Umbra ran, which is
+    /// different from it being zero — restoring must delete the value rather than write one.
+    /// </remarks>
+    private bool TryReadPersistedState(out NativeMethods.ABState state, out int? alignment)
     {
         state = NativeMethods.ABState.Default;
+        alignment = null;
 
         try
         {
             if (!File.Exists(_statePath)) return false;
 
-            string text = File.ReadAllText(_statePath).Trim();
-            if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
-                return false;
+            bool found = false;
 
-            state = (NativeMethods.ABState)value;
-            return true;
+            foreach (string line in File.ReadAllLines(_statePath))
+            {
+                string[] parts = line.Split('=', 2);
+                if (parts.Length != 2) continue;
+
+                string key = parts[0].Trim();
+                string value = parts[1].Trim();
+
+                if (key == "state" &&
+                    int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+                {
+                    state = (NativeMethods.ABState)parsed;
+                    found = true;
+                }
+                else if (key == "alignment" && value.Length > 0 &&
+                         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int align))
+                {
+                    alignment = align;
+                }
+            }
+
+            return found;
         }
         catch (IOException)
         {
@@ -122,14 +161,22 @@ internal sealed class ExplorerStateGuard : IDisposable
         }
     }
 
-    private void Persist(NativeMethods.ABState state)
+    private void Persist(NativeMethods.ABState state, int? alignment)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_statePath)!);
-            File.WriteAllText(
-                _statePath,
-                ((int)state).ToString(CultureInfo.InvariantCulture));
+
+            List<string> lines =
+            [
+                "# Explorer state before Umbra started. Present means Umbra is running or died.",
+                string.Create(CultureInfo.InvariantCulture, $"state={(int)state}"),
+            ];
+
+            if (alignment is not null)
+                lines.Add(string.Create(CultureInfo.InvariantCulture, $"alignment={alignment.Value}"));
+
+            File.WriteAllLines(_statePath, lines);
         }
         catch (IOException)
         {

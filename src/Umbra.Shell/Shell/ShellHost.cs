@@ -54,6 +54,11 @@ internal sealed class ShellHost : IDisposable
         _explorerState = new ExplorerStateGuard(new ExplorerTaskbarState(ShellManager.ExplorerHelper));
         _explorerState.Capture();
 
+        // §7.0: point Explorer's alignment at ours so the Start menu opens beneath our Start
+        // button. Umbra is left-aligned by default, which is TaskbarAl = 0. Restored on exit, and
+        // after a hard kill by the same marker file that restores the autohide state.
+        _explorerState.ApplyAlignment(0);
+
         // The load-bearing call. This sets Explorer's taskbar to autohide, which is what releases
         // its reserved work area — without it both bars reserve space and every maximised window
         // comes up short by two taskbar heights.

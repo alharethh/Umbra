@@ -32,9 +32,15 @@ public class ExplorerStateGuardTests : IDisposable
 
     private sealed class FakeTaskbar : ITaskbarState
     {
-        public FakeTaskbar(NativeMethods.ABState initial) => State = initial;
+        public FakeTaskbar(NativeMethods.ABState initial, int? alignment = null)
+        {
+            State = initial;
+            Alignment = alignment;
+        }
 
         public NativeMethods.ABState State { get; private set; }
+
+        public int? Alignment { get; private set; }
 
         public bool Hidden { get; set; }
 
@@ -48,11 +54,16 @@ public class ExplorerStateGuardTests : IDisposable
             SetStateCalls++;
         }
 
-        /// <summary>What the shell does to suppress Explorer: autohide, plus the re-hide watchdog.</summary>
+        public int? GetAlignment() => Alignment;
+
+        public void SetAlignment(int? alignment) => Alignment = alignment;
+
+        /// <summary>What the shell does to suppress Explorer: autohide, hide, and claim alignment.</summary>
         public void SuppressLikeUmbraDoes()
         {
             State = NativeMethods.ABState.AutoHide;
             Hidden = true;
+            Alignment = 0;
         }
     }
 
@@ -181,6 +192,64 @@ public class ExplorerStateGuardTests : IDisposable
 
         Assert.Equal(callsAfterFirst, taskbar.SetStateCalls);
         Assert.Equal(NativeMethods.ABState.Default, taskbar.State);
+    }
+
+    [Fact]
+    public void Restores_The_Taskbar_Alignment_Umbra_Overwrote()
+    {
+        // §7.0 writes TaskbarAl so the Start menu opens beneath our Start button. §11.2 Q4 widens
+        // crash recovery to cover it, because a user who had a centred taskbar and finds it
+        // left-aligned afterwards has been quietly reconfigured.
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default, alignment: 1);
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+
+        guard.Capture();
+        guard.ApplyAlignment(0);
+
+        Assert.Equal(0, taskbar.Alignment);
+
+        guard.Restore();
+        Assert.Equal(1, taskbar.Alignment);
+    }
+
+    [Fact]
+    public void An_Absent_Alignment_Is_Restored_As_Absent_Not_As_Zero()
+    {
+        // TaskbarAl missing means Windows is using its own default. Writing a value back that was
+        // never there is still a change to the user's machine, so absence has to round-trip.
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default, alignment: null);
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+
+        guard.Capture();
+        guard.ApplyAlignment(0);
+        guard.Restore();
+
+        Assert.Null(taskbar.Alignment);
+    }
+
+    [Fact]
+    public void Alignment_Survives_A_Hard_Kill()
+    {
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default, alignment: 1);
+
+        // First run claims the alignment, then dies without restoring.
+        ExplorerStateGuard first = new(taskbar, _statePath);
+        first.Capture();
+        first.ApplyAlignment(0);
+        taskbar.SuppressLikeUmbraDoes();
+
+        Assert.Equal(0, taskbar.Alignment);
+
+        // Second run repairs it before recording its own baseline.
+        ExplorerStateGuard second = new(taskbar, _statePath);
+        second.Capture();
+
+        Assert.True(second.RecoveredFromUncleanExit);
+        Assert.Equal(1, taskbar.Alignment);
+        Assert.Equal(1, second.OriginalAlignment);
+
+        second.Restore();
+        Assert.Equal(1, taskbar.Alignment);
     }
 
     [Fact]
