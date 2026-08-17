@@ -123,6 +123,7 @@ internal partial class BarWindow : AppBarWindow
     {
         _proximity.Start();
         _clock.Start();
+        SuppressActivation();
 
         // Built here rather than in the constructor because the accumulator is sized in physical
         // pixels and the window has no size until it has been laid out.
@@ -542,12 +543,52 @@ internal partial class BarWindow : AppBarWindow
     {
         if (sender is not FrameworkElement { DataContext: ApplicationWindow window }) return;
 
-        if (window.State == ApplicationWindow.WindowState.Active && !window.IsMinimized)
-            window.Minimize();
-        else
-            window.BringToFront();
+        // Asking Windows directly rather than trusting ManagedShell's State bookkeeping: State is
+        // maintained from foreground-change events, and a click that arrives mid-transition can see
+        // a stale value. The foreground window is the ground truth for "is this the one I am
+        // looking at".
+        bool isForeground = GetForegroundWindow() == window.Handle;
+
+        if (isForeground && !window.IsMinimized) window.Minimize();
+        else window.BringToFront();
 
         e.Handled = true;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    /// <summary>
+    /// Stops the bar becoming the foreground window when it is clicked.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Without this, clicking a slot activates Umbra and the application loses foreground before
+    /// the click handler runs — so "is this window already in front?" always answers no, and
+    /// clicking the active window's icon re-activates it instead of minimising it. That is the bug
+    /// this fixes, and it was invisible from the code: the handler reads correctly and simply never
+    /// sees the state it is testing for.
+    /// </para>
+    /// <para>
+    /// Real taskbars do the same. A taskbar that stole focus every time you clicked it would send
+    /// the window you were typing in to the background on the way past.
+    /// </para>
+    /// </remarks>
+    private void SuppressActivation()
+    {
+        const int GWL_EXSTYLE = -20;
+        const long WS_EX_NOACTIVATE = 0x08000000;
+
+        if (Handle == IntPtr.Zero) return;
+
+        long style = GetWindowLongPtr(Handle, GWL_EXSTYLE).ToInt64();
+        SetWindowLongPtr(Handle, GWL_EXSTYLE, new IntPtr(style | WS_EX_NOACTIVATE));
     }
 
     private void OnSlotClose(object sender, RoutedEventArgs e)
