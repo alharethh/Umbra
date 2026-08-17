@@ -21,7 +21,7 @@ namespace Umbra.Shell.Rendering;
 /// the pointer is away, which is ~92% of the time.
 /// </para>
 /// </remarks>
-internal sealed class IndicatorWidthConverter : IValueConverter
+internal sealed class IndicatorWidthConverter : IMultiValueConverter
 {
     /// <summary>Pill extent for the foreground window, in device-independent pixels.</summary>
     public double Active { get; set; } = 16.0;
@@ -35,17 +35,28 @@ internal sealed class IndicatorWidthConverter : IValueConverter
     /// <summary>True when this converter is producing the axis the pill grows along.</summary>
     public bool AlongBar { get; set; } = true;
 
-    public object Convert(object value, Type targetType, object? parameter, CultureInfo culture)
+    /// <summary>
+    /// Takes <c>IsRunning</c> and <c>IsActive</c> as separate bindings.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a single binding to the slot itself. A <c>Binding</c> with no path resolves
+    /// the object once and never re-evaluates, because there is no property for WPF to watch — the
+    /// indicator was computed at slot creation and then frozen, so it never appeared at all. Naming
+    /// the two properties is what makes it live.
+    /// </remarks>
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
     {
+        bool running = values.Length > 0 && values[0] is true;
+        bool active = values.Length > 1 && values[1] is true;
+
         // A pinned application that is not running has no indicator at all — the icon alone says
         // "this is here", and a pill would say "this is open", which would be a lie.
-        if (value is TaskbarSlot { IsRunning: false }) return 0.0;
-
+        if (!running) return 0.0;
         if (!AlongBar) return Thickness;
 
-        return value is TaskbarSlot { IsActive: true } ? Active : Inactive;
+        return active ? Active : Inactive;
     }
 
-    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
+    public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }

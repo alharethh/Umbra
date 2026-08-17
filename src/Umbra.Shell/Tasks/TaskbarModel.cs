@@ -34,6 +34,16 @@ internal sealed class TaskbarModel : IDisposable
     /// <summary>The bar's slots, in display order.</summary>
     public ObservableCollection<TaskbarSlot> Slots { get; } = [];
 
+    /// <summary>
+    /// Refreshes which slot owns the foreground window. Called from the bar's existing tick rather
+    /// than a timer of its own; Windows does not push foreground changes to us and ManagedShell's
+    /// own tracking is not reliable enough to drive the indicator.
+    /// </summary>
+    public void UpdateForeground(IntPtr foreground)
+    {
+        foreach (TaskbarSlot slot in Slots) slot.SetForeground(foreground);
+    }
+
     public void Dispose()
     {
         if (_windows is INotifyCollectionChanged observable)

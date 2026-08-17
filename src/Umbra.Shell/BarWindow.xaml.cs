@@ -109,6 +109,9 @@ internal partial class BarWindow : AppBarWindow
             bool justPressed = DateTime.UtcNow - _startPressedAt < StartPressGrace;
             StartActive = _startMenu.IsOpen || justPressed;
 
+            // Which slot owns the foreground window, for the running indicator.
+            _tasks.UpdateForeground(GetForegroundWindow());
+
             // Keep polling at the fast interval while the menu is up, even if the pointer has
             // wandered off the bar. Otherwise the tick drops to 100 ms and the colour outlives the
             // menu by up to a tenth of a second, which is long enough to look like lag.
@@ -671,9 +674,10 @@ internal partial class BarWindow : AppBarWindow
     /// </summary>
     private void OnSlotClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot }) return;
+        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot } element) return;
 
         e.Handled = true;
+        PlayIconPress(element);
 
         // Nothing running: this is a pinned application, so start it.
         if (!slot.IsRunning)
@@ -709,6 +713,58 @@ internal partial class BarWindow : AppBarWindow
             if (ReferenceEquals(slot.Windows[i], active)) { current = i; break; }
 
         slot.Windows[(current + 1) % slot.Windows.Count].BringToFront();
+    }
+
+    /// <summary>
+    /// Press feedback on an application icon: a quick dip and spring, the same shape as the Start
+    /// button's.
+    /// </summary>
+    /// <remarks>
+    /// Applied to the icon inside the slot rather than to the slot itself, so the hit rectangle
+    /// stays exactly where it was (P5) — the same separation the drift transform uses. Costs
+    /// nothing in wear terms: it runs for 260 ms while the pointer is necessarily on the bar, so
+    /// the icon is at Tier 2 anyway, and nothing stays lit afterwards.
+    /// </remarks>
+    private static void PlayIconPress(FrameworkElement slotElement)
+    {
+        if (!SystemParameters.ClientAreaAnimation) return;
+
+        // The Image lives inside a DataTemplate, so it is reached through the visual tree rather
+        // than by name — a template's names belong to its own scope, not the slot's.
+        Image? icon = FindDescendant<Image>(slotElement);
+        if (icon?.RenderTransform is not TransformGroup group) return;
+        if (group.Children.FirstOrDefault() is not ScaleTransform scale) return;
+
+        QuadraticEase down = new() { EasingMode = EasingMode.EaseOut };
+        BackEase back = new() { EasingMode = EasingMode.EaseOut, Amplitude = 0.6 };
+
+        DoubleAnimationUsingKeyFrames Squash() => new()
+        {
+            KeyFrames =
+            {
+                new EasingDoubleKeyFrame(0.82, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(80)), down),
+                new EasingDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(260)), back),
+            },
+        };
+
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, Squash());
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Squash());
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        int count = VisualTreeHelper.GetChildrenCount(root);
+
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match) return match;
+
+            T? nested = FindDescendant<T>(child);
+            if (nested is not null) return nested;
+        }
+
+        return null;
     }
 
     private void Launch(TaskbarSlot slot)

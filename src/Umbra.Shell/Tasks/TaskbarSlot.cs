@@ -43,8 +43,27 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     /// <summary>Whether anything is running.</summary>
     public bool IsRunning => _windows.Count > 0;
 
-    /// <summary>Whether one of this application's windows is the foreground window.</summary>
-    public bool IsActive => _windows.Any(w => w.State == ApplicationWindow.WindowState.Active);
+    /// <summary>
+    /// Whether one of this application's windows is the foreground window.
+    /// </summary>
+    /// <remarks>
+    /// Driven from the real foreground window rather than ManagedShell's <c>State</c>. State is
+    /// maintained from foreground-change events and goes stale — the same reason clicking a slot
+    /// asks Windows directly. Updated by <see cref="SetForeground"/> from the bar's existing tick.
+    /// </remarks>
+    public bool IsActive { get; private set; }
+
+    /// <summary>Recomputes <see cref="IsActive"/> against the current foreground window.</summary>
+    /// <returns>True when the value changed.</returns>
+    public bool SetForeground(IntPtr foreground)
+    {
+        bool active = _windows.Any(w => w.Handle == foreground);
+        if (active == IsActive) return false;
+
+        IsActive = active;
+        Raise(nameof(IsActive));
+        return true;
+    }
 
     /// <summary>What to show on hover.</summary>
     public string Title => _windows.Count switch
@@ -64,7 +83,16 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         get
         {
             ImageSource? live = _windows.Select(w => w.Icon).FirstOrDefault(i => i is not null);
-            if (live is not null) return live;
+
+            if (live is not null)
+            {
+                // Remember it. When the last window closes, this is what keeps a pinned application
+                // visible: reading the icon back out of the executable does not always work — the
+                // recorded path can be empty, or point at something that is not a plain exe — and
+                // when it fails the slot renders as a gap rather than an icon.
+                _icon = live;
+                return live;
+            }
 
             if (_icon is not null) return _icon;
             if (string.IsNullOrWhiteSpace(Pin?.Path)) return null;
@@ -113,9 +141,6 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         // else a window reports is not shown here.
         switch (e.PropertyName)
         {
-            case nameof(ApplicationWindow.State):
-                Raise(nameof(IsActive));
-                break;
             case nameof(ApplicationWindow.Title):
                 Raise(nameof(Title));
                 break;

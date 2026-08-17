@@ -194,10 +194,26 @@
                             quietly destroy the sub-pixel micro-jitter the whole motion layer rests
                             on (§5.2, §6.1).
                         -->
-                        <Image Width="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                        <Image x:Name="SlotIcon"
+                               Width="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
                                Height="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
                                RenderOptions.BitmapScalingMode="HighQuality"
-                               RenderTransform="{Binding ContentOffset, RelativeSource={RelativeSource AncestorType=Window}}">
+                               RenderTransformOrigin="0.5,0.5">
+
+                            <!--
+                                Press feedback composed with the drift, rather than replacing it.
+                                The scale is animated from code; the translate carries the same
+                                offset every other element gets.
+                            -->
+                            <Image.RenderTransform>
+                                <TransformGroup>
+                                    <ScaleTransform />
+                                    <TranslateTransform
+                                        X="{Binding ContentOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Y="{Binding ContentOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                </TransformGroup>
+                            </Image.RenderTransform>
+
                             <Image.Source>
                                 <MultiBinding Converter="{StaticResource TierIcon}">
                                     <Binding Path="Icon" />
@@ -217,14 +233,37 @@
                             alive.
                         -->
                         <Rectangle RadiusX="1.5" RadiusY="1.5"
-                                   RenderTransform="{Binding ContentOffset, RelativeSource={RelativeSource AncestorType=Window}}"
-                                   Width="{Binding Converter={StaticResource PillAlong}}"
-                                   Height="{Binding Converter={StaticResource PillAcross}}"
                                    HorizontalAlignment="{Binding PillHorizontalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
                                    VerticalAlignment="{Binding PillVerticalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Margin="{Binding PillMargin, RelativeSource={RelativeSource AncestorType=Window}}"
-                                   Fill="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window},
-                                                  Converter={StaticResource IndicatorBrush}}" />
+                                   Fill="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource IndicatorBrush}}">
+
+                            <!--
+                                Its own TranslateTransform, fed the same values, rather than the
+                                shared ContentOffset instance. Assigning one Transform to every
+                                slot's rectangle stopped them rendering at all — the widths and the
+                                fill were both correct and nothing was drawn. Each element gets its
+                                own, as the icon and the Start glyph already do.
+                            -->
+                            <Rectangle.RenderTransform>
+                                <TranslateTransform
+                                    X="{Binding ContentOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Y="{Binding ContentOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
+                            </Rectangle.RenderTransform>
+
+                            <Rectangle.Width>
+                                <MultiBinding Converter="{StaticResource PillAlong}">
+                                    <Binding Path="IsRunning" />
+                                    <Binding Path="IsActive" />
+                                </MultiBinding>
+                            </Rectangle.Width>
+                            <Rectangle.Height>
+                                <MultiBinding Converter="{StaticResource PillAcross}">
+                                    <Binding Path="IsRunning" />
+                                    <Binding Path="IsActive" />
+                                </MultiBinding>
+                            </Rectangle.Height>
+                        </Rectangle>
                     </Grid>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
