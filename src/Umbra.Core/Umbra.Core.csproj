@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Umbra.Core</RootNamespace>
+    <Description>
+      Spec-bearing core of Umbra: colour, wear, layout, motion, tier and icon models.
+      No WPF and no Windows dependency — everything here is testable in isolation.
+    </Description>
+  </PropertyGroup>
+
+</Project>
