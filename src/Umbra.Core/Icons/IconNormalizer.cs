@@ -59,6 +59,88 @@ public static class IconNormalizer
     }
 
     /// <summary>
+    /// Step 2 of §5.1: replaces every pixel with a neutral grey of the same relative luminance.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Neutral is not a compromise here, it is the efficient path (P4): on a WRGB panel a grey is
+    /// carried predominantly by the unfiltered white emitter, whereas saturated colour requires
+    /// filtering white light and discarding most of it, driving the emitter harder for the same
+    /// luminance. Note the wear model in <see cref="Wear.WearModel"/> does not capture that
+    /// difference — it sees only luminance — so this is a panel-level argument, not something the
+    /// heatmap will show.
+    /// </para>
+    /// <para>
+    /// Alpha is preserved, because the silhouette is what carries recognition once the colour is
+    /// gone.
+    /// </para>
+    /// </remarks>
+    public static IconBitmap ToMonochrome(IconBitmap icon)
+    {
+        ArgumentNullException.ThrowIfNull(icon);
+
+        IconBitmap result = new(icon.Width, icon.Height);
+        Span<Rgba> source = icon.Pixels;
+        Span<Rgba> target = result.Pixels;
+
+        for (int i = 0; i < source.Length; i++)
+        {
+            Rgba pixel = source[i];
+            byte grey = Srgb.ToByte(Srgb.RelativeLuminance(pixel.Rgb));
+            target[i] = new Rgba(grey, grey, grey, pixel.A);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The §5.1 pipeline for a rest tier: desaturate, then scale so the <see cref="Percentile"/>
+    /// luminance lands on <paramref name="targetLuminance"/>.
+    /// </summary>
+    /// <remarks>
+    /// Order matters. Desaturating first and normalising second lands the <i>grey</i> icon's P90 on
+    /// the target; normalising first would land the colour icon's P90 there and then move it again
+    /// when the colours collapse to their luminances. A neutral grey can always reach any target
+    /// below white without clipping, which is why this direction is safe and
+    /// <see cref="CapTo"/> is not.
+    /// </remarks>
+    public static IconBitmap Prepare(IconBitmap icon, double targetLuminance, bool monochrome)
+    {
+        ArgumentNullException.ThrowIfNull(icon);
+
+        return Normalise(monochrome ? ToMonochrome(icon) : icon, targetLuminance);
+    }
+
+    /// <summary>
+    /// The §3.2 Tier 2 treatment: tone-map the source artwork down so its <see cref="Percentile"/>
+    /// luminance lands at or below <paramref name="cap"/>, leaving hue and saturation untouched.
+    /// Icons already below the cap are returned unchanged.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Downward only, and that is not a shortcut.</b> §3.2 specifies a cap, not a target, and
+    /// scaling a saturated colour <i>up</i> to a luminance its gamut cannot reach clips the
+    /// dominant channel — which both undershoots the target and distorts the hue the cap exists to
+    /// preserve. A pure red tops out at L = 0.2126 however hard it is driven; asking it for 0.45
+    /// yields 0.287 and a visibly different red.
+    /// </para>
+    /// <para>
+    /// So a dim icon stays dim at Tier 2. That is the correct behaviour: the cap is a ceiling on
+    /// what an icon may cost, not a brightness every icon must be brought up to.
+    /// </para>
+    /// </remarks>
+    public static IconBitmap CapTo(IconBitmap icon, double cap)
+    {
+        ArgumentNullException.ThrowIfNull(icon);
+        ArgumentOutOfRangeException.ThrowIfNegative(cap);
+
+        double peak = PercentileLuminance(icon);
+        if (peak <= cap || peak <= 0.0) return icon.Clone();
+
+        return Scale(icon, cap / peak);
+    }
+
+    /// <summary>
     /// Scales an icon in linear light so its <see cref="Percentile"/> luminance lands on
     /// <paramref name="targetLuminance"/> — the tier's target for that element.
     /// </summary>

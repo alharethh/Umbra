@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using ManagedShell.AppBar;
 using Umbra.Core.Layout;
 using Umbra.Shell.Shell;
+using Umbra.Shell.Tiers;
 using CoreBarEdge = Umbra.Core.Layout.BarEdge;
 
 namespace Umbra.Shell;
@@ -49,7 +50,17 @@ internal partial class BarWindow : AppBarWindow
 
         DataContext = this;
         InitializeComponent();
+
+        _proximity = new ProximityDriver(
+            () => new System.Windows.Rect(Left, Top, Width, Height),
+            () => DpiScale <= 0 ? 1.0 : DpiScale);
+
+        _proximity.LevelChanged += level => TierLevel = level;
+        Loaded += (_, _) => _proximity.Start();
+        Closed += (_, _) => _proximity.Dispose();
     }
+
+    private readonly ProximityDriver _proximity;
 
     /// <summary>Geometry for this bar, straight from the spec model.</summary>
     public BarMetrics Metrics { get; }
@@ -109,6 +120,51 @@ internal partial class BarWindow : AppBarWindow
         : IsVertical
             ? new Thickness(0, 0, 0, Metrics.RowInset)
             : new Thickness(Metrics.RowInset, 0, 0, 0);
+
+    /// <summary>
+    /// The continuous tier level, 0..2, driven by pointer proximity (§3.4). A dependency property
+    /// so that every tier-dependent binding re-evaluates as the ramp moves.
+    /// </summary>
+    public static readonly DependencyProperty TierLevelProperty = DependencyProperty.Register(
+        nameof(TierLevel), typeof(double), typeof(BarWindow), new PropertyMetadata(0.0));
+
+    /// <inheritdoc cref="TierLevelProperty"/>
+    public double TierLevel
+    {
+        get => (double)GetValue(TierLevelProperty);
+        set => SetValue(TierLevelProperty, value);
+    }
+
+    /// <summary>Running-indicator pill geometry — it rotates with the bar (§7.3).</summary>
+    public double PillWidth => IsVertical ? 3 : 16;
+
+    /// <inheritdoc cref="PillWidth"/>
+    public double PillHeight => IsVertical ? 16 : 3;
+
+    /// <summary>The pill sits on the screen-edge side of the icon.</summary>
+    public HorizontalAlignment PillHorizontalAlignment => Metrics.Edge switch
+    {
+        CoreBarEdge.Left => HorizontalAlignment.Left,
+        CoreBarEdge.Right => HorizontalAlignment.Right,
+        _ => HorizontalAlignment.Center,
+    };
+
+    /// <inheritdoc cref="PillHorizontalAlignment"/>
+    public VerticalAlignment PillVerticalAlignment => Metrics.Edge switch
+    {
+        CoreBarEdge.Top => VerticalAlignment.Top,
+        CoreBarEdge.Bottom => VerticalAlignment.Bottom,
+        _ => VerticalAlignment.Center,
+    };
+
+    /// <summary>Holds the pill just clear of the screen edge.</summary>
+    public Thickness PillMargin => Metrics.Edge switch
+    {
+        CoreBarEdge.Left => new Thickness(1, 0, 0, 0),
+        CoreBarEdge.Right => new Thickness(0, 0, 1, 0),
+        CoreBarEdge.Top => new Thickness(0, 1, 0, 0),
+        _ => new Thickness(0, 0, 0, 1),
+    };
 
     /// <summary>Closes the bar, which the AppBar base class otherwise refuses to do.</summary>
     public void CloseForShutdown()

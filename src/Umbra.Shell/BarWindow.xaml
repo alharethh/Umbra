@@ -2,6 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:appbar="clr-namespace:ManagedShell.AppBar;assembly=ManagedShell.AppBar"
+        xmlns:render="clr-namespace:Umbra.Shell.Rendering"
+        xmlns:tiers="clr-namespace:Umbra.Core.Tiers;assembly=Umbra.Core"
         x:ClassModifier="internal"
         Title="Umbra"
         ShowInTaskbar="False"
@@ -32,6 +34,11 @@
         No ClearTypeHint is set anywhere, and none may be reintroduced further down the tree.
         Set here at step 1 so they are never wrong later, even though nothing drifts yet.
     -->
+
+    <Window.Resources>
+        <render:TierIconConverter x:Key="TierIcon" Element="RunningIcon" />
+        <render:TierBrushConverter x:Key="IndicatorBrush" Element="RunningIndicator" />
+    </Window.Resources>
 
     <!--
         Background="Transparent" rather than unset: an unset background is not hit-testable, and
@@ -72,10 +79,36 @@
                           Width="{Binding SlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                           Height="{Binding SlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
-                        <Image Source="{Binding Icon}"
-                               Width="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                        <!--
+                            The icon is rebuilt for the current tier level: monochrome and
+                            normalised so its P90 lands on the tier target at rest, cross-fading
+                            to luminance-capped full chroma at Tier 2 (§3.1, §3.2, §5.1).
+                        -->
+                        <Image Width="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
                                Height="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
-                               RenderOptions.BitmapScalingMode="HighQuality" />
+                               RenderOptions.BitmapScalingMode="HighQuality">
+                            <Image.Source>
+                                <MultiBinding Converter="{StaticResource TierIcon}">
+                                    <Binding Path="Icon" />
+                                    <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                </MultiBinding>
+                            </Image.Source>
+                        </Image>
+
+                        <!--
+                            Running indicator. Hidden at Tier 0 — TierPalette resolves it to black,
+                            which against a black bar costs nothing at all (P1) — and fading up
+                            through the proximity ramp is the most visible sign the tier system is
+                            alive.
+                        -->
+                        <Rectangle RadiusX="1" RadiusY="1"
+                                   Width="{Binding PillWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                                   Height="{Binding PillHeight, RelativeSource={RelativeSource AncestorType=Window}}"
+                                   HorizontalAlignment="{Binding PillHorizontalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
+                                   VerticalAlignment="{Binding PillVerticalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
+                                   Margin="{Binding PillMargin, RelativeSource={RelativeSource AncestorType=Window}}"
+                                   Fill="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window},
+                                                  Converter={StaticResource IndicatorBrush}}" />
                     </Grid>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>

@@ -23,7 +23,8 @@ reserve space and every maximised window is short by two taskbar heights.
 
 ## Step 2 — bottom edge, autohide contention (§11.2 Q3)
 
-**Result: the predicted contention does not occur on this machine. Q3 is resolved, not deferred.**
+**Result: the predicted flicker artefact does not occur. Q3 is resolved as a release blocker — but read
+the scope of the claim below, which is narrower than "no contention".**
 
 shell-integration §2.5 predicted a 10 Hz race — pointer reaches the bottom edge, Explorer reveals
 its autohidden taskbar, ManagedShell's 100 ms watchdog re-hides it — with a persistent 1 px line
@@ -41,10 +42,22 @@ into the edge** (synthetic input does not trigger the reveal — see below):
 | Intrusion pixels on screen | **0** (min, median and max) |
 | Intrusion changes | **0** |
 
-**Why it does not happen.** The prediction assumed Explorer's taskbar stays a live window that
-reveals on hover. It does not: ManagedShell hides it with `SetWindowPos(SWP_HIDEWINDOW)`, and a
-hidden window is not eligible for the autohide reveal at all. The watchdog never fires because
-nothing re-shows the window — 0 transitions in 40 s confirms it. The race has no second party.
+**Why it does not happen — and what the zeroes actually mean.** The prediction assumed Explorer's
+taskbar stays a live window that reveals on hover. It does not: ManagedShell hides it with
+`SetWindowPos(SWP_HIDEWINDOW)`, and a hidden window is not eligible for the autohide reveal at all.
+
+**So the zeroes above measure a dead trigger, not a clean one.** Hover cannot reveal a hidden
+window, so testing hover was guaranteed to observe nothing whatever the design did. Reported
+first time round as "no contention", which was wrong: what it shows is that Explorer's taskbar is
+fully suppressed while Umbra runs.
+
+Observed by the user, not by this harness: **the Win key still surfaces Explorer's taskbar**, drawn
+underneath Umbra, and the Start menu opens correctly over it. That is the contention path that
+remains, and it is unmeasured. It is also **working as intended** — Umbra is a replacement taskbar,
+so Explorer's being unreachable underneath it is the goal, and Start still works, which is the
+functional requirement. No damage persists after Umbra exits: window visibility, `WS_EX_TOPMOST`,
+parked position, `ABM_GETSTATE`, the `StuckRects3` autohide bit and the work area all return to
+their pre-launch values.
 
 Note this is *not* the same mechanism as ordinary autohide, which is what made the baseline
 confusing (below).
@@ -84,6 +97,44 @@ that meant nothing at all; both are discarded.
 - **Soak.** 40 s of sweeping, not hours of use. An intermittent artefact would not necessarily show.
 - **The tray is not running yet.** Build order step 7 adds ManagedShell's second 100 ms timer and
   its Z-order interception; this measurement predates both.
+
+## Step 3 — tier system and monochrome normalisation
+
+Pointer proximity driving the tier level, verified against the spec's own figures:
+
+| Pointer distance | Expected level | Measured |
+| :---- | :---- | :---- |
+| 896 DIP | 0 (beyond the 120 px band) | 0.000 |
+| 80 DIP | 0.5 — the ramp midpoint, `(120−80)/80` | 0.500 |
+| 0 DIP (on the bar) | 2 after the dwell guard | 2.000 |
+
+Release timing matches §3.4: level 2.0 → 0.468 → 0.000 over ~800 ms, i.e. 400 ms per tier.
+
+**Emitted luminance, sampled from screen pixels** rather than from the model — this is what the
+panel actually sees:
+
+| Tier | P99 | Max | Target |
+| :---- | :---- | :---- | :---- |
+| 0 — dormant | 0.048 | 0.072 | P90 → 0.0513 (`#404040`, running icon) |
+| 0.5 — mid ramp | 0.060 | 0.089 | between `#404040` and `#4D4D4D` |
+| 2 — engaged | 0.422 | 0.494 | P90 → 0.45 cap |
+
+**Decision recorded: the Tier 2 cap is applied to P90, not to the maximum.** §3.2 says "tone-mapped
+so their peak luminance lands at the cap" while §5.1 argues for a percentile over the maximum
+(immune to a single stray bright pixel). Capping the percentile means the top decile can exceed the
+cap — measured max 0.494 against a 0.45 cap, 10% over. The wear cost of that overshoot is
+`(0.494/0.45)^1.7 = 1.17`, applied to ~0.1% of an icon's pixels, so it is immaterial to the budget.
+Capping the maximum instead would let one stray pixel dim an entire icon, which is the failure §5.1
+chose the percentile to avoid.
+
+### A methodological trap worth knowing
+
+The first attempt at this measurement appeared to show icons going full-chroma at 80 px, which
+would have been a real bug. It was the test harness: **PowerShell is DPI-unaware, so its
+`SetCursorPos` coordinates are virtualised** — asking for `(1280,1270)` puts the cursor at physical
+`(1600,1587)`, off the bottom of a 1440 px screen, where it clamps onto the bar. Both the "near" and
+"on the bar" cases were measuring Tier 2. Drive the cursor in DIP from a DPI-unaware process, or
+physical from an aware one, but do not mix them.
 
 ## Still open
 
