@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using ManagedShell.AppBar;
 using Umbra.Core.Layout;
 using Umbra.Shell.Shell;
@@ -65,23 +66,49 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>Content band across the bar's short axis. 56 DIP vertical, 48 horizontal.</summary>
     public double ContentBand => Metrics.ContentBand;
 
+    /// <summary>True when the bar runs down a screen side rather than across the top or bottom.</summary>
+    public bool IsVertical => Metrics.Edge.IsVertical();
+
+    /// <summary>Icons stack along the bar's long axis.</summary>
+    public Orientation RowOrientation => IsVertical ? Orientation.Vertical : Orientation.Horizontal;
+
     /// <summary>
     /// The row sits at the aligned end: bottom on a vertical bar (§7.3), left on a horizontal one
     /// (§7.1), so the Start button ends up adjacent to where the Start menu actually opens.
     /// </summary>
-    public VerticalAlignment RowAlignment =>
-        Metrics.Alignment == Alignment.Center || !Metrics.Edge.IsVertical()
-            ? VerticalAlignment.Center
-            : VerticalAlignment.Bottom;
+    public VerticalAlignment RowVerticalAlignment =>
+        IsVertical && Metrics.Alignment == Alignment.Start
+            ? VerticalAlignment.Bottom
+            : VerticalAlignment.Center;
+
+    /// <inheritdoc cref="RowVerticalAlignment"/>
+    public HorizontalAlignment RowHorizontalAlignment =>
+        !IsVertical && Metrics.Alignment == Alignment.Start
+            ? HorizontalAlignment.Left
+            : HorizontalAlignment.Center;
+
+    /// <summary>Short axis is fixed to the content band; the long axis sizes to its content.</summary>
+    public double RowWidth => IsVertical ? ContentBand : double.NaN;
+
+    /// <inheritdoc cref="RowWidth"/>
+    public double RowHeight => IsVertical ? double.NaN : ContentBand;
+
+    /// <summary>One slot: pitch along the long axis, content band across the short one.</summary>
+    public double SlotWidth => IsVertical ? ContentBand : SlotPitch;
+
+    /// <inheritdoc cref="SlotWidth"/>
+    public double SlotHeight => IsVertical ? SlotPitch : ContentBand;
 
     /// <summary>
     /// Inset from the aligned end (§6.3). Left-alignment leaves nowhere for negative drift to go,
     /// so the row is held off the corner by the larger of Windows 11's own padding and the peak
     /// drift offset.
     /// </summary>
-    public Thickness RowMargin => Metrics.Edge.IsVertical()
-        ? new Thickness(0, 0, 0, Metrics.RowInset)
-        : new Thickness(Metrics.RowInset, 0, 0, 0);
+    public Thickness RowMargin => Metrics.Alignment == Alignment.Center
+        ? default
+        : IsVertical
+            ? new Thickness(0, 0, 0, Metrics.RowInset)
+            : new Thickness(Metrics.RowInset, 0, 0, 0);
 
     /// <summary>Closes the bar, which the AppBar base class otherwise refuses to do.</summary>
     public void CloseForShutdown()

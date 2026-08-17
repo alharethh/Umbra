@@ -53,17 +53,24 @@
         -->
         <ItemsControl x:Name="WindowList"
                       ItemsSource="{Binding Windows}"
-                      HorizontalAlignment="Center"
-                      VerticalAlignment="{Binding RowAlignment}"
-                      Width="{Binding ContentBand}"
+                      HorizontalAlignment="{Binding RowHorizontalAlignment}"
+                      VerticalAlignment="{Binding RowVerticalAlignment}"
+                      Width="{Binding RowWidth}"
+                      Height="{Binding RowHeight}"
                       Margin="{Binding RowMargin}">
+
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="{Binding RowOrientation, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
 
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <Grid Background="Transparent"
                           ToolTip="{Binding Title}"
-                          Width="{Binding ContentBand, RelativeSource={RelativeSource AncestorType=Window}}"
-                          Height="{Binding SlotPitch, RelativeSource={RelativeSource AncestorType=Window}}">
+                          Width="{Binding SlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                          Height="{Binding SlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
                         <Image Source="{Binding Icon}"
                                Width="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"

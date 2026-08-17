@@ -29,11 +29,12 @@ public partial class App : Application
         if (_host.RecoveredFromUncleanExit)
             BringUpLog.Write("recovered Explorer taskbar state from a previous unclean exit");
 
-        // Step 1 brings the bar up on the LEFT edge. It is the only edge with no autohide
-        // contention from Explorer, so it isolates Umbra's behaviour from Explorer's
-        // (shell-integration §2.5). Bottom is step 2, and its contention is a release blocker
-        // because bottom is the shipping default.
-        BarMetrics metrics = new(BarEdge.Left, Alignment.Start, scale: 1.0);
+        // Bottom is the shipping default (§7.1) and the only edge that contends with Explorer's
+        // autohidden taskbar (shell-integration §2.5). Left is the control: it is the one edge
+        // where none of that contention exists, so running the two back to back is what makes the
+        // contention attributable rather than merely observed.
+        BarEdge edge = ParseEdge(e.Args);
+        BarMetrics metrics = new(edge, Alignment.Start, scale: 1.0);
 
         _bar = new BarWindow(_host, metrics);
         _bar.Closed += (_, _) => Shutdown();
@@ -50,6 +51,22 @@ public partial class App : Application
         _host = null;
 
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// <c>--edge left|top|right|bottom</c>. Defaults to bottom, the shipping default (§7.1).
+    /// </summary>
+    private static BarEdge ParseEdge(string[] args)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (!string.Equals(args[i], "--edge", StringComparison.OrdinalIgnoreCase)) continue;
+            if (Enum.TryParse(args[i + 1], ignoreCase: true, out BarEdge parsed)) return parsed;
+
+            BringUpLog.Write($"unrecognised --edge value '{args[i + 1]}', falling back to Bottom");
+        }
+
+        return BarEdge.Bottom;
     }
 
     private static void LogGeometry(BarMetrics metrics, BarWindow bar)
