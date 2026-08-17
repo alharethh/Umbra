@@ -90,22 +90,22 @@
                     Margin="{Binding StartGlyphMargin}"
                     RenderTransform="{Binding ContentOffset}">
                 <!--
-                    Matched to the Windows 11 logo's proportions: large squares with a thin gutter,
-                    filling 22 of the 24 px box. Earlier versions used a generous gutter on the
-                    theory that the gap is what identifies the shape; against the real logo that
-                    reads as a grid of four tiles rather than as the Start button, and the gutter is
-                    nearer an eighth of a square than a quarter.
+                    Square corners and a thin cross: four 10.7 px squares separated by 0.8 px,
+                    filling 22.2 of the 24 px box.
 
-                    It costs about a third more lit area than the smaller version, which is accepted
-                    — the glyph is 24 px, it sits at #333333 for the ~92% of the time the pointer is
-                    away, and being recognisable as Start is the point of drawing it at all.
+                    Both numbers were arrived at by rendering candidates at true size against the
+                    real logo rather than by adjusting one at a time. Rounded corners and a wide
+                    gutter both push it away from reading as Start — rounding softens a 10 px square
+                    into a blob, and a wide gutter turns the shape into a grid of four tiles.
+
+                    The 0.8 px gap is one whole physical pixel at 125% scaling, which is as thin as
+                    it can be and still be a gap. It will antialias as the glyph drifts, which is
+                    intended: fractional positioning is what varies the edge gradient (§6.1).
                 -->
                 <Canvas.Resources>
                     <Style TargetType="Rectangle">
-                        <Setter Property="Width" Value="10.4" />
-                        <Setter Property="Height" Value="10.4" />
-                        <Setter Property="RadiusX" Value="1.6" />
-                        <Setter Property="RadiusY" Value="1.6" />
+                        <Setter Property="Width" Value="10.7" />
+                        <Setter Property="Height" Value="10.7" />
                         <Setter Property="Fill"
                                 Value="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window},
                                                 Converter={StaticResource StartBrush}}" />
@@ -113,9 +113,9 @@
                 </Canvas.Resources>
 
                 <Rectangle Canvas.Left="0.9"  Canvas.Top="0.9" />
-                <Rectangle Canvas.Left="12.7" Canvas.Top="0.9" />
-                <Rectangle Canvas.Left="0.9"  Canvas.Top="12.7" />
-                <Rectangle Canvas.Left="12.7" Canvas.Top="12.7" />
+                <Rectangle Canvas.Left="12.4" Canvas.Top="0.9" />
+                <Rectangle Canvas.Left="0.9"  Canvas.Top="12.4" />
+                <Rectangle Canvas.Left="12.4" Canvas.Top="12.4" />
             </Canvas>
         </Grid>
 
