@@ -314,6 +314,30 @@ public class IconNormalizerTests
     }
 
     [Fact]
+    public void Outline_Mode_Does_Not_Band_A_Smooth_Gradient()
+    {
+        // The failure that made the first implementation unusable. A smooth ramp crosses any
+        // neighbour-difference threshold at every step, so the naive detector reported the whole
+        // ramp as edge and the icon came back as bands and speckle. A gradient has no ridge, so
+        // non-maximum suppression should find almost nothing in its interior.
+        IconBitmap ramp = new(24, 24);
+        for (int y = 0; y < 24; y++)
+            for (int x = 0; x < 24; x++)
+            {
+                byte level = (byte)(20 + x * 9);
+                ramp[x, y] = new Rgba(level, level, level, 255);
+            }
+
+        IconBitmap outlined = IconNormalizer.ToOutline(ramp);
+
+        // Only the silhouette ring should survive: 24×24 minus the 22×22 interior = 92 pixels.
+        int kept = 0;
+        foreach (Rgba pixel in outlined.Pixels) if (pixel.A > 0) kept++;
+
+        Assert.InRange(kept, 80, 140);
+    }
+
+    [Fact]
     public void Outline_Mode_Finds_Internal_Luminance_Edges_Too()
     {
         // §5.3 detects "the alpha silhouette plus internal luminance edges", so a logo with shapes

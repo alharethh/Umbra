@@ -195,12 +195,29 @@ It also revises the premise. §5.3 assumes pin sets dominated by solid-fill logo
 application icons largely are not that, so the headline 70–85% is a best case rather than a typical
 one. Worth saying plainly in the README alongside the §2.4 caveats.
 
-**Known quality problem.** Interiors look poor on gradient-heavy artwork. Internal edges are found
-by thresholding the luminance difference between neighbours, and a smooth gradient crosses that
-threshold repeatedly, producing banding and speckle rather than a clean line. Fixable with
-non-maximum suppression or a sharper gradient test — but not worth the work until per-icon opt-in
-exists and someone wants it on more than two icons. §11.2 Q10 stands: silhouettes read well,
-interiors do not.
+**Interior quality — fixed.** The first implementation flagged a pixel whenever a neighbour differed
+by more than a threshold. That works on flat-shaded artwork and falls apart on gradients: a smooth
+ramp crosses the threshold at every step, so the whole ramp came back as edge and the icons rendered
+as bands and speckle.
+
+Replaced with ridge detection — blur, Sobel, non-maximum suppression along the gradient direction,
+then hysteresis thresholding. A real boundary is a ridge and survives; a smooth ramp has no ridge,
+so almost nothing does.
+
+Two bugs surfaced while doing it, both of which produced plausible-looking output:
+
+- **A purely relative threshold has no defence against a flat icon.** With the cut taken as a
+  fraction of the icon's own strongest gradient, a uniform icon's strongest "gradient" is
+  floating-point dust from the blur — around 1e-17 — and a fraction of that admits every pixel in
+  the image. A solid square came back 94% intact instead of 24%. Fixed with an absolute floor
+  alongside the relative one.
+- **Non-maximum suppression with `>=` on both sides keeps plateaus.** On a constant-gradient ramp
+  every pixel ties with both neighbours and every pixel survives — reintroducing the exact banding
+  the suppression was added to remove. Strict inequality on one side thins a plateau to its leading
+  edge.
+
+§11.2 Q10 is now answered for one real icon set: the automatic outlines are usable. They are not as
+clean as hand-authored glyphs would be, and busy artwork stays busy, but the banding is gone.
 
 ## Still open
 

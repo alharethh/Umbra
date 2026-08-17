@@ -202,8 +202,9 @@ public static class IconNormalizer
     /// </para>
     /// </remarks>
     /// <param name="icon">The source artwork.</param>
-    /// <param name="luminanceThreshold">
-    /// How much linear luminance must change between neighbours to count as an internal edge.
+    /// <param name="edgeStrength">
+    /// How strong an internal boundary must be to count, as a fraction of the icon's own strongest
+    /// gradient. Relative rather than absolute so low-contrast artwork is not simply ignored.
     /// </param>
     /// <param name="alphaThreshold">How much alpha must change to count as a silhouette edge.</param>
     /// <param name="thickness">
@@ -213,14 +214,18 @@ public static class IconNormalizer
     /// </param>
     public static IconBitmap ToOutline(
         IconBitmap icon,
-        double luminanceThreshold = 0.02,
+        double edgeStrength = 0.10,
         int alphaThreshold = 32,
         int thickness = 1)
     {
         ArgumentNullException.ThrowIfNull(icon);
         ArgumentOutOfRangeException.ThrowIfNegative(thickness);
 
-        bool[] edges = DetectEdges(icon, luminanceThreshold, alphaThreshold);
+        bool[] edges = Silhouette(icon, alphaThreshold);
+        bool[] interior = InteriorEdges(icon, edgeStrength);
+
+        for (int i = 0; i < edges.Length; i++) edges[i] |= interior[i];
+
         if (thickness > 1) edges = Dilate(edges, icon.Width, icon.Height, thickness - 1);
 
         IconBitmap result = new(icon.Width, icon.Height);
@@ -233,22 +238,15 @@ public static class IconNormalizer
         return result;
     }
 
-    private static bool[] DetectEdges(IconBitmap icon, double luminanceThreshold, int alphaThreshold)
+    /// <summary>
+    /// The alpha silhouette. This one genuinely is a step change — a pixel is in the shape or it is
+    /// not — so a plain threshold is the right tool and needs none of the machinery below.
+    /// </summary>
+    private static bool[] Silhouette(IconBitmap icon, int alphaThreshold)
     {
         int width = icon.Width;
         int height = icon.Height;
-
-        double[] emitted = new double[width * height];
-        int[] alpha = new int[width * height];
         Span<Rgba> pixels = icon.Pixels;
-
-        for (int i = 0; i < pixels.Length; i++)
-        {
-            Rgba pixel = pixels[i];
-            alpha[i] = pixel.A;
-            emitted[i] = pixel.A == 0 ? 0.0 : Srgb.RelativeLuminance(pixel.Rgb);
-        }
-
         bool[] edges = new bool[width * height];
 
         for (int y = 0; y < height; y++)
@@ -256,7 +254,7 @@ public static class IconNormalizer
             for (int x = 0; x < width; x++)
             {
                 int index = y * width + x;
-                if (alpha[index] == 0) continue;          // transparent pixels emit nothing anyway
+                if (pixels[index].A == 0) continue;
 
                 for (int dy = -1; dy <= 1 && !edges[index]; dy++)
                 {
@@ -267,23 +265,213 @@ public static class IconNormalizer
                         int nx = x + dx;
                         int ny = y + dy;
 
-                        // Off the edge of the artwork counts as transparent, so the outermost ring
-                        // of a full-bleed icon is still detected as its silhouette.
+                        // Off the artwork counts as transparent, so a full-bleed icon still gets
+                        // its outermost ring detected.
                         if (nx < 0 || ny < 0 || nx >= width || ny >= height)
                         {
                             edges[index] = true;
                             break;
                         }
 
-                        int neighbour = ny * width + nx;
-
-                        if (Math.Abs(alpha[index] - alpha[neighbour]) >= alphaThreshold ||
-                            Math.Abs(emitted[index] - emitted[neighbour]) >= luminanceThreshold)
+                        if (Math.Abs(pixels[index].A - pixels[ny * width + nx].A) >= alphaThreshold)
                         {
                             edges[index] = true;
                             break;
                         }
                     }
+                }
+            }
+        }
+
+        return edges;
+    }
+
+    /// <summary>
+    /// Internal luminance edges, found as <i>ridges</i> in the gradient rather than as any place
+    /// the gradient is non-zero.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The naive version — flag a pixel whenever a neighbour differs by more than some threshold —
+    /// works on flat-shaded artwork and falls apart on anything with a gradient in it. A smooth
+    /// ramp crosses the threshold at every step, so the whole ramp is reported as edge and the icon
+    /// comes back as bands and speckle instead of lines. That was the first implementation and it
+    /// looked exactly as bad as that description suggests.
+    /// </para>
+    /// <para>
+    /// The fix is non-maximum suppression: blur slightly, take the Sobel gradient, and keep a pixel
+    /// only where its gradient magnitude is a local maximum <i>along the gradient direction</i>.
+    /// A real boundary is a ridge and survives; a smooth ramp has no ridge — its magnitude is
+    /// roughly constant — so almost nothing survives, which is the desired answer. Hysteresis then
+    /// keeps weak pixels only where they connect to strong ones, so lines stay joined up without
+    /// admitting isolated noise.
+    /// </para>
+    /// </remarks>
+    private static bool[] InteriorEdges(IconBitmap icon, double edgeStrength)
+    {
+        int width = icon.Width;
+        int height = icon.Height;
+
+        if (width < 3 || height < 3) return new bool[width * height];
+
+        double[] emitted = new double[width * height];
+        Span<Rgba> pixels = icon.Pixels;
+
+        for (int i = 0; i < emitted.Length; i++)
+        {
+            Rgba pixel = pixels[i];
+            emitted[i] = pixel.A == 0 ? 0.0 : Srgb.RelativeLuminance(pixel.Rgb) * (pixel.A / 255.0);
+        }
+
+        double[] smoothed = Blur(emitted, width, height);
+        double[] magnitude = new double[width * height];
+        double[] angleX = new double[width * height];
+        double[] angleY = new double[width * height];
+
+        for (int y = 1; y < height - 1; y++)
+        {
+            for (int x = 1; x < width - 1; x++)
+            {
+                int i = y * width + x;
+
+                double gx =
+                    -smoothed[i - width - 1] + smoothed[i - width + 1]
+                    - 2 * smoothed[i - 1] + 2 * smoothed[i + 1]
+                    - smoothed[i + width - 1] + smoothed[i + width + 1];
+
+                double gy =
+                    -smoothed[i - width - 1] - 2 * smoothed[i - width] - smoothed[i - width + 1]
+                    + smoothed[i + width - 1] + 2 * smoothed[i + width] + smoothed[i + width + 1];
+
+                magnitude[i] = Math.Sqrt(gx * gx + gy * gy);
+                angleX[i] = gx;
+                angleY[i] = gy;
+            }
+        }
+
+        // Suppress everything that is not a ridge crest.
+        double[] thinned = new double[width * height];
+
+        for (int y = 1; y < height - 1; y++)
+        {
+            for (int x = 1; x < width - 1; x++)
+            {
+                int i = y * width + x;
+                if (magnitude[i] <= 0.0) continue;
+
+                // Quantise the gradient direction to the nearest of four axes and compare against
+                // the two neighbours that lie along it.
+                double gx = angleX[i];
+                double gy = angleY[i];
+                double absX = Math.Abs(gx);
+                double absY = Math.Abs(gy);
+
+                int stepX, stepY;
+
+                if (absX >= 2.414 * absY) { stepX = 1; stepY = 0; }
+                else if (absY >= 2.414 * absX) { stepX = 0; stepY = 1; }
+                else { stepX = 1; stepY = gx * gy >= 0 ? 1 : -1; }
+
+                double before = magnitude[i - stepY * width - stepX];
+                double after = magnitude[i + stepY * width + stepX];
+
+                // Strictly greater on one side, not both. With >= on both, a constant-gradient ramp
+                // is a plateau where every pixel ties with its neighbours and every pixel survives
+                // — which is the banding this whole function exists to remove. Breaking the tie on
+                // one side thins a plateau to its leading edge and leaves real crests intact.
+                if (magnitude[i] > before && magnitude[i] >= after) thinned[i] = magnitude[i];
+            }
+        }
+
+        return Hysteresis(thinned, width, height, edgeStrength);
+    }
+
+    private static double[] Blur(double[] source, int width, int height)
+    {
+        double[] result = new double[source.Length];
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                double sum = 0.0;
+                double weight = 0.0;
+
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+
+                        double w = (dx == 0 ? 2 : 1) * (dy == 0 ? 2 : 1);
+                        sum += source[ny * width + nx] * w;
+                        weight += w;
+                    }
+                }
+
+                result[y * width + x] = weight > 0 ? sum / weight : 0.0;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Two thresholds: strong pixels are edges outright, weak ones only where they touch a strong
+    /// one. Keeps boundaries continuous without letting isolated noise through.
+    /// </summary>
+    private static bool[] Hysteresis(double[] magnitude, int width, int height, double edgeStrength)
+    {
+        double peak = 0.0;
+        foreach (double value in magnitude) if (value > peak) peak = value;
+
+        bool[] edges = new bool[magnitude.Length];
+
+        // An absolute floor as well as a relative one. A purely relative threshold has no defence
+        // against a flat icon: there the strongest "gradient" is floating-point dust from the blur,
+        // around 1e-17, and a fraction of that admits every pixel in the image. A Sobel step across
+        // a real boundary of ΔL is roughly 4ΔL, so this floor corresponds to boundaries of about
+        // half a percent in linear luminance — below that there is no internal structure to find.
+        const double MinimumGradient = 0.02;
+
+        if (peak <= MinimumGradient) return edges;
+
+        // Relative to the icon's own strongest edge, so low-contrast artwork is not simply ignored
+        // and high-contrast artwork does not light up everywhere.
+        double high = Math.Max(peak * edgeStrength, MinimumGradient);
+        double low = high * 0.4;
+
+        Queue<int> pending = new();
+
+        for (int i = 0; i < magnitude.Length; i++)
+        {
+            if (magnitude[i] < high) continue;
+
+            edges[i] = true;
+            pending.Enqueue(i);
+        }
+
+        while (pending.Count > 0)
+        {
+            int index = pending.Dequeue();
+            int x = index % width;
+            int y = index / width;
+
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int nx = x + dx;
+                    int ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+
+                    int neighbour = ny * width + nx;
+                    if (edges[neighbour] || magnitude[neighbour] < low) continue;
+
+                    edges[neighbour] = true;
+                    pending.Enqueue(neighbour);
                 }
             }
         }

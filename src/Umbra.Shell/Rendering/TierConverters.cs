@@ -16,17 +16,24 @@ internal sealed class TierIconConverter : IMultiValueConverter
     /// <summary>Which row of the §3.1 table this icon follows.</summary>
     public BarElement Element { get; set; } = BarElement.RunningIcon;
 
+    /// <summary>Which applications are outlined. Assigned by the window after it loads its XAML.</summary>
+    public OutlineSettings? Settings { get; set; }
+
     public object? Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
     {
         if (values.Length < 2) return null;
         if (values[0] is not ImageSource source) return null;
 
         double level = values[1] is double d ? d : 0.0;
-        bool outline = values.Length > 2 && values[2] is true;
 
-        if (values.Length > 3 && values[3] is string title)
-            _pipeline.ReportOnce(title, source);
+        // values[2] is the revision counter. Its value is never read — it is in the binding purely
+        // so that toggling any application's setting invalidates every icon's binding at once.
+        ManagedShell.WindowsTasks.ApplicationWindow? window =
+            values.Length > 3 ? values[3] as ManagedShell.WindowsTasks.ApplicationWindow : null;
 
+        if (window is not null) _pipeline.ReportOnce(window.Title, source);
+
+        bool outline = Settings?.IsEnabled(window) ?? false;
         return _pipeline.Render(source, Element, level, outline);
     }
 

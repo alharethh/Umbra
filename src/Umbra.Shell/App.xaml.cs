@@ -38,7 +38,12 @@ public partial class App : Application
 
         bool motion = !e.Args.Contains("--no-motion", StringComparer.OrdinalIgnoreCase);
 
-        _bar = new BarWindow(_host, metrics) { MotionEnabled = motion };
+        // --outline turns it on for every icon at startup. The real control is per-icon, from each
+        // icon's own context menu; this exists so the rendering can be captured deterministically
+        // without driving menus.
+        bool outlineAll = e.Args.Contains("--outline", StringComparer.OrdinalIgnoreCase);
+
+        _bar = new BarWindow(_host, metrics) { MotionEnabled = motion, OutlineAll = outlineAll };
         _bar.Closed += (_, _) => Shutdown();
         _bar.Show();
 

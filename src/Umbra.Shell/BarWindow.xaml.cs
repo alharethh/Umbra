@@ -10,6 +10,7 @@ using Umbra.Core.Layout;
 using Umbra.Core.Motion;
 using Umbra.Shell.Diagnostics;
 using Umbra.Shell.Motion;
+using Umbra.Shell.Rendering;
 using Umbra.Shell.Shell;
 using Umbra.Shell.Tiers;
 using Umbra.Shell.Wear;
@@ -64,6 +65,11 @@ internal partial class BarWindow : AppBarWindow
 
         DataContext = this;
         InitializeComponent();
+
+        Outlines.Changed += () => OutlineRevision++;
+
+        // The converter lives in XAML resources, so its dependency is handed to it here.
+        if (Resources["TierIcon"] is TierIconConverter converter) converter.Settings = Outlines;
 
         _proximity = new ProximityDriver(
             () => new System.Windows.Rect(Left, Top, Width, Height),
@@ -219,18 +225,38 @@ internal partial class BarWindow : AppBarWindow
     }
 
     /// <summary>
-    /// Outline mode (§5.3), currently a global toggle rather than the per-icon opt-in the spec
-    /// calls for — the per-icon setting needs the settings UI, which is build order step 9.
+    /// Bumped whenever any application's outline setting changes.
     /// </summary>
-    public static readonly DependencyProperty OutlineModeProperty = DependencyProperty.Register(
-        nameof(OutlineMode), typeof(bool), typeof(BarWindow), new PropertyMetadata(false));
+    /// <remarks>
+    /// The icon bindings include this, so changing one application's setting re-evaluates every
+    /// icon. Cheaper than making each icon observe the settings object individually, and the row is
+    /// a handful of items.
+    /// </remarks>
+    public static readonly DependencyProperty OutlineRevisionProperty = DependencyProperty.Register(
+        nameof(OutlineRevision), typeof(int), typeof(BarWindow), new PropertyMetadata(0));
 
-    /// <inheritdoc cref="OutlineModeProperty"/>
-    public bool OutlineMode
+    /// <inheritdoc cref="OutlineRevisionProperty"/>
+    public int OutlineRevision
     {
-        get => (bool)GetValue(OutlineModeProperty);
-        set => SetValue(OutlineModeProperty, value);
+        get => (int)GetValue(OutlineRevisionProperty);
+        set => SetValue(OutlineRevisionProperty, value);
     }
+
+    /// <summary>Turns outline mode on for every icon at startup — a testing convenience.</summary>
+    /// <remarks>
+    /// Writes straight through to <see cref="Outlines"/> rather than being stored and copied in the
+    /// constructor. Object initializers run <i>after</i> the constructor body, so a constructor that
+    /// read this property would always see <see langword="false"/> and the flag would silently do
+    /// nothing.
+    /// </remarks>
+    public bool OutlineAll
+    {
+        get => Outlines.ApplyToAll;
+        init => Outlines.ApplyToAll = value;
+    }
+
+    /// <summary>Per-application outline choices (§5.3).</summary>
+    public OutlineSettings Outlines { get; } = new();
 
     /// <summary>Running-indicator pill geometry — it rotates with the bar (§7.3).</summary>
     public double PillWidth => IsVertical ? 3 : 16;
@@ -272,12 +298,26 @@ internal partial class BarWindow : AppBarWindow
 
     private void OnExitClick(object sender, RoutedEventArgs e) => CloseForShutdown();
 
-    private void OnOutlineModeClick(object sender, RoutedEventArgs e)
+    /// <summary>Per-icon outline toggle, from that icon's own context menu (§5.3).</summary>
+    private void OnSlotOutlineClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuItem item) return;
+        if (sender is FrameworkElement { DataContext: ApplicationWindow window })
+            Outlines.Toggle(window);
+    }
 
-        OutlineMode = item.IsChecked;
-        BringUpLog.Write($"outline mode: {(OutlineMode ? "on" : "off")}");
+    /// <summary>
+    /// Ticks the menu item to match the application's current setting as the menu opens. Set here
+    /// rather than bound, because a ContextMenu lives in its own popup tree and a
+    /// RelativeSource binding up to the window resolves to nothing.
+    /// </summary>
+    private void OnSlotContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ApplicationWindow window } element) return;
+        if (element.ContextMenu is null) return;
+
+        foreach (object child in element.ContextMenu.Items)
+            if (child is MenuItem { Name: "SlotOutlineItem" } item)
+                item.IsChecked = Outlines.IsEnabled(window);
     }
 
     /// <summary>
