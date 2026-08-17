@@ -218,6 +218,20 @@ internal partial class BarWindow : AppBarWindow
         set => SetValue(TierLevelProperty, value);
     }
 
+    /// <summary>
+    /// Outline mode (§5.3), currently a global toggle rather than the per-icon opt-in the spec
+    /// calls for — the per-icon setting needs the settings UI, which is build order step 9.
+    /// </summary>
+    public static readonly DependencyProperty OutlineModeProperty = DependencyProperty.Register(
+        nameof(OutlineMode), typeof(bool), typeof(BarWindow), new PropertyMetadata(false));
+
+    /// <inheritdoc cref="OutlineModeProperty"/>
+    public bool OutlineMode
+    {
+        get => (bool)GetValue(OutlineModeProperty);
+        set => SetValue(OutlineModeProperty, value);
+    }
+
     /// <summary>Running-indicator pill geometry — it rotates with the bar (§7.3).</summary>
     public double PillWidth => IsVertical ? 3 : 16;
 
@@ -257,6 +271,14 @@ internal partial class BarWindow : AppBarWindow
     }
 
     private void OnExitClick(object sender, RoutedEventArgs e) => CloseForShutdown();
+
+    private void OnOutlineModeClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem item) return;
+
+        OutlineMode = item.IsChecked;
+        BringUpLog.Write($"outline mode: {(OutlineMode ? "on" : "off")}");
+    }
 
     /// <summary>
     /// Click a slot to activate its window, or to minimise it if it is already in front — the

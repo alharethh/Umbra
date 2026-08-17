@@ -31,27 +31,33 @@ internal sealed class IconPipeline
     /// </summary>
     private const int LevelSteps = 64;
 
-    private readonly Dictionary<(ImageSource Source, int Level), BitmapSource> _cache = [];
+    private readonly Dictionary<(ImageSource Source, int Level, bool Outline), BitmapSource> _cache = [];
 
     /// <summary>Renders <paramref name="source"/> as it should appear at a continuous tier level.</summary>
-    public BitmapSource? Render(ImageSource? source, BarElement element, double level)
+    public BitmapSource? Render(ImageSource? source, BarElement element, double level, bool outline = false)
     {
         if (source is not BitmapSource bitmap) return null;
 
         int quantised = (int)Math.Round(Math.Clamp(level, 0.0, 2.0) / 2.0 * LevelSteps);
-        if (_cache.TryGetValue((source, quantised), out BitmapSource? cached)) return cached;
+        if (_cache.TryGetValue((source, quantised, outline), out BitmapSource? cached)) return cached;
 
-        BitmapSource rendered = Build(bitmap, element, quantised / (double)LevelSteps * 2.0);
-        _cache[(source, quantised)] = rendered;
+        BitmapSource rendered = Build(bitmap, element, quantised / (double)LevelSteps * 2.0, outline);
+        _cache[(source, quantised, outline)] = rendered;
         return rendered;
     }
 
     /// <summary>Drops cached bitmaps. Call when the icon set changes materially.</summary>
     public void Clear() => _cache.Clear();
 
-    private static BitmapSource Build(BitmapSource source, BarElement element, double level)
+    private static BitmapSource Build(BitmapSource source, BarElement element, double level, bool outline)
     {
         IconBitmap art = ToIconBitmap(source);
+
+        // Outline first: it changes how much of the icon is lit, and normalisation then sets how
+        // bright what remains should be. The other order would normalise the fill and then throw
+        // most of it away, landing the stroke below the tier target.
+        if (outline) art = IconNormalizer.ToOutline(art);
+
         TierRender appearance = TierPalette.Resolve(element, level);
 
         // The monochrome layer, normalised so its P90 lands on the tier's target luminance.

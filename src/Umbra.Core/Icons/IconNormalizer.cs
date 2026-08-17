@@ -180,6 +180,145 @@ public static class IconNormalizer
     }
 
     /// <summary>
+    /// Outline mode (§5.3): keep the icon's edges, discard its fill.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Under P5 this is the <b>primary</b> defence for icon interiors, not an optional extra.
+    /// Slot-bounded drift cannot help there — meaningful interior reduction needs an amplitude
+    /// greater than the icon's own width, which is nearly three times the whole gutter — so the
+    /// only thing that reduces interior wear is removing the interior.
+    /// </para>
+    /// <para>
+    /// Edges come from two sources, per §5.3: the alpha silhouette, and internal luminance
+    /// boundaries. A solid-fill logo therefore keeps its outline and any internal shapes, and loses
+    /// the flat regions between them.
+    /// </para>
+    /// <para>
+    /// <b>Whether the result looks acceptable is not settled</b> — spec §11.2 Q10 asks exactly that
+    /// and expects it may need hand-authored glyphs for common apps. This produces the automatic
+    /// version so the question can be answered by looking at a real pin set. It stays a per-icon
+    /// opt-in either way; applying it to everything by default would cost recognisability unevenly.
+    /// </para>
+    /// </remarks>
+    /// <param name="icon">The source artwork.</param>
+    /// <param name="luminanceThreshold">
+    /// How much linear luminance must change between neighbours to count as an internal edge.
+    /// </param>
+    /// <param name="alphaThreshold">How much alpha must change to count as a silhouette edge.</param>
+    /// <param name="thickness">
+    /// Stroke half-width in <i>source</i> pixels. §5.3 asks for 1.5 px of stroke on screen, which
+    /// depends on the source resolution against the drawn size — a 32 px source drawn at 24 px
+    /// needs a thicker source stroke than a 24 px one does.
+    /// </param>
+    public static IconBitmap ToOutline(
+        IconBitmap icon,
+        double luminanceThreshold = 0.02,
+        int alphaThreshold = 32,
+        int thickness = 1)
+    {
+        ArgumentNullException.ThrowIfNull(icon);
+        ArgumentOutOfRangeException.ThrowIfNegative(thickness);
+
+        bool[] edges = DetectEdges(icon, luminanceThreshold, alphaThreshold);
+        if (thickness > 1) edges = Dilate(edges, icon.Width, icon.Height, thickness - 1);
+
+        IconBitmap result = new(icon.Width, icon.Height);
+        Span<Rgba> source = icon.Pixels;
+        Span<Rgba> target = result.Pixels;
+
+        for (int i = 0; i < source.Length; i++)
+            if (edges[i]) target[i] = source[i];
+
+        return result;
+    }
+
+    private static bool[] DetectEdges(IconBitmap icon, double luminanceThreshold, int alphaThreshold)
+    {
+        int width = icon.Width;
+        int height = icon.Height;
+
+        double[] emitted = new double[width * height];
+        int[] alpha = new int[width * height];
+        Span<Rgba> pixels = icon.Pixels;
+
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            Rgba pixel = pixels[i];
+            alpha[i] = pixel.A;
+            emitted[i] = pixel.A == 0 ? 0.0 : Srgb.RelativeLuminance(pixel.Rgb);
+        }
+
+        bool[] edges = new bool[width * height];
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int index = y * width + x;
+                if (alpha[index] == 0) continue;          // transparent pixels emit nothing anyway
+
+                for (int dy = -1; dy <= 1 && !edges[index]; dy++)
+                {
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if (dx == 0 && dy == 0) continue;
+
+                        int nx = x + dx;
+                        int ny = y + dy;
+
+                        // Off the edge of the artwork counts as transparent, so the outermost ring
+                        // of a full-bleed icon is still detected as its silhouette.
+                        if (nx < 0 || ny < 0 || nx >= width || ny >= height)
+                        {
+                            edges[index] = true;
+                            break;
+                        }
+
+                        int neighbour = ny * width + nx;
+
+                        if (Math.Abs(alpha[index] - alpha[neighbour]) >= alphaThreshold ||
+                            Math.Abs(emitted[index] - emitted[neighbour]) >= luminanceThreshold)
+                        {
+                            edges[index] = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        return edges;
+    }
+
+    private static bool[] Dilate(bool[] mask, int width, int height, int radius)
+    {
+        bool[] result = new bool[mask.Length];
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!mask[y * width + x]) continue;
+
+                for (int dy = -radius; dy <= radius; dy++)
+                {
+                    for (int dx = -radius; dx <= radius; dx++)
+                    {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+
+                        result[ny * width + nx] = true;
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Total linear luminance over the icon, weighted by alpha — the energy proxy that P90 does
     /// not equalise, and what actually predicts per-slot wear.
     /// </summary>

@@ -50,6 +50,12 @@
 
         <Grid.ContextMenu>
             <ContextMenu>
+                <!--
+                    Handled in code rather than bound. A ContextMenu sits in its own popup tree, so
+                    RelativeSource AncestorType=Window resolves to nothing and the binding fails
+                    silently — the menu ticks and the setting never changes.
+                -->
+                <MenuItem Header="Outline mode" IsCheckable="True" Click="OnOutlineModeClick" />
                 <MenuItem Header="Wear heatmap…" Click="OnHeatmapClick" />
                 <Separator />
                 <MenuItem Header="Exit Umbra" Click="OnExitClick" />
@@ -111,6 +117,7 @@
                                 <MultiBinding Converter="{StaticResource TierIcon}">
                                     <Binding Path="Icon" />
                                     <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                    <Binding Path="OutlineMode" RelativeSource="{RelativeSource AncestorType=Window}" />
                                 </MultiBinding>
                             </Image.Source>
                         </Image>

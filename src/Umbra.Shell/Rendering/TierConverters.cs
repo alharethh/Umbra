@@ -22,7 +22,9 @@ internal sealed class TierIconConverter : IMultiValueConverter
         if (values[0] is not ImageSource source) return null;
 
         double level = values[1] is double d ? d : 0.0;
-        return _pipeline.Render(source, Element, level);
+        bool outline = values.Length > 2 && values[2] is true;
+
+        return _pipeline.Render(source, Element, level, outline);
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture) =>

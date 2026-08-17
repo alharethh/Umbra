@@ -284,6 +284,96 @@ public class IconNormalizerTests
     }
 
     [Fact]
+    public void Outline_Mode_Hits_The_Published_Lit_Area_Reduction()
+    {
+        // §5.3 puts the saving at "roughly 70–85%" of lit area for a solid-fill logo. That is the
+        // number the mode exists for, so it is the number asserted.
+        IconBitmap solid = Uniform(16, 16, 0x80);
+        IconBitmap outlined = IconNormalizer.ToOutline(solid);
+
+        double reduction = 1.0 - IconNormalizer.IntegratedLuminance(outlined)
+                                 / IconNormalizer.IntegratedLuminance(solid);
+
+        Assert.InRange(reduction, 0.70, 0.85);
+    }
+
+    [Fact]
+    public void Outline_Mode_Keeps_The_Silhouette_And_Drops_The_Fill()
+    {
+        IconBitmap solid = Uniform(8, 8, 0x80);
+        IconBitmap outlined = IconNormalizer.ToOutline(solid);
+
+        // Border survives.
+        Assert.Equal(0x80, outlined[0, 0].R);
+        Assert.Equal(255, outlined[0, 0].A);
+        Assert.Equal(255, outlined[7, 3].A);
+
+        // Interior is gone.
+        Assert.Equal(0, outlined[3, 3].A);
+        Assert.Equal(0, outlined[4, 4].A);
+    }
+
+    [Fact]
+    public void Outline_Mode_Finds_Internal_Luminance_Edges_Too()
+    {
+        // §5.3 detects "the alpha silhouette plus internal luminance edges", so a logo with shapes
+        // inside it keeps those shapes rather than collapsing to a bare rectangle.
+        IconBitmap art = Uniform(12, 12, 0x30);
+        for (int y = 4; y < 8; y++)
+            for (int x = 4; x < 8; x++)
+                art[x, y] = new Rgba(0xF0, 0xF0, 0xF0, 255);
+
+        IconBitmap outlined = IconNormalizer.ToOutline(art);
+
+        // The boundary of the inner square is kept...
+        Assert.Equal(255, outlined[4, 4].A);
+        Assert.Equal(255, outlined[7, 7].A);
+
+        // ...while the flat dark field between the two boundaries is dropped.
+        Assert.Equal(0, outlined[2, 6].A);
+    }
+
+    [Fact]
+    public void Outline_Mode_Barely_Changes_An_Icon_That_Is_Already_Strokes()
+    {
+        // Nothing to remove: a thin-stroke logo is essentially all edge already. This is why the
+        // mode is a per-icon opt-in — applying it globally would spend effort where there is no
+        // interior to reclaim.
+        IconBitmap strokes = Outline(16, 16, 0x80);
+        IconBitmap outlined = IconNormalizer.ToOutline(strokes);
+
+        Approx.Relative(
+            IconNormalizer.IntegratedLuminance(strokes),
+            IconNormalizer.IntegratedLuminance(outlined),
+            0.05,
+            "a stroke icon is unchanged by outlining");
+    }
+
+    [Fact]
+    public void Outline_Mode_Composes_With_Tier_Normalisation()
+    {
+        // The two operations are independent: outline removes area, normalisation sets brightness.
+        // Running both must still land P90 on the tier target.
+        IconBitmap solid = Uniform(16, 16, 0x80);
+        const double target = 0.0331048;
+
+        IconBitmap prepared = IconNormalizer.Prepare(
+            IconNormalizer.ToOutline(solid), target, monochrome: true);
+
+        Approx.Relative(target, IconNormalizer.PercentileLuminance(prepared), 0.02,
+            "P90 after outlining and normalising");
+    }
+
+    [Fact]
+    public void Outline_Mode_Survives_A_Fully_Transparent_Icon()
+    {
+        IconBitmap empty = new(8, 8);
+        IconBitmap outlined = IconNormalizer.ToOutline(empty);
+
+        Assert.Equal(0.0, IconNormalizer.IntegratedLuminance(outlined));
+    }
+
+    [Fact]
     public void Median_Handles_Even_And_Odd_Counts()
     {
         Assert.Equal(2.0, IconNormalizer.Median([1.0, 2.0, 3.0]));
