@@ -32,9 +32,12 @@ internal sealed class ShellHost : IDisposable
             // upscaling it would put a soft icon under a normaliser that measures percentiles.
             TaskIconSize = IconSize.Large,
 
-            // Step 7.
-            EnableTrayService = false,
-            AutoStartTrayService = false,
+            // Tray hosting (build order step 7). This is the second of the two permanent 100 ms
+            // timers shell-integration §2.3 describes — the first re-hides Explorer's taskbar, this
+            // one re-asserts our tray window's Z-order. Both are outside our control and both bear
+            // on §11.2 Q2, whether they prevent the display from ever idling.
+            EnableTrayService = true,
+            AutoStartTrayService = true,
 
             EnableWin11DpiWorkaround = false,
         };
@@ -50,6 +53,20 @@ internal sealed class ShellHost : IDisposable
         ShellManager.ExplorerHelper.HideExplorerTaskbar = true;
 
         ShellManager.Tasks.Initialize();
+
+        Diagnostics.BringUpLog.Write(
+            $"tray before init: handle=0x{ShellManager.NotificationArea.Handle.ToInt64():X} " +
+            $"failed={ShellManager.NotificationArea.IsFailed} " +
+            $"icons={ShellManager.NotificationArea.TrayIcons.Count}");
+
+        // Claims the tray and broadcasts TaskbarCreated, which is what makes every running
+        // application re-add its notification icon.
+        ShellManager.NotificationArea.Initialize();
+
+        Diagnostics.BringUpLog.Write(
+            $"tray after init: handle=0x{ShellManager.NotificationArea.Handle.ToInt64():X} " +
+            $"failed={ShellManager.NotificationArea.IsFailed} " +
+            $"icons={ShellManager.NotificationArea.TrayIcons.Count}");
     }
 
     public ShellManager ShellManager { get; }

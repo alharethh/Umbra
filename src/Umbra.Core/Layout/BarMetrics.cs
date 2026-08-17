@@ -69,6 +69,32 @@ public readonly record struct BarMetrics
     /// <summary>The slot and its derived drift amplitudes.</summary>
     public SlotMetrics Slot { get; }
 
+    /// <summary>Notification-area slot pitch at 100% scaling.</summary>
+    public const double BaseTrayPitch = 24.0;
+
+    /// <summary>Notification-area icon extent at 100% scaling.</summary>
+    public const double BaseTrayIconExtent = 16.0;
+
+    /// <summary>
+    /// The notification area's slot, which is smaller than a task button's and therefore drifts
+    /// less.
+    /// </summary>
+    /// <remarks>
+    /// §6.2 derives drift amplitude from the slot rather than asserting it, and a tray icon's slot
+    /// is not a task button's: a 16 px icon in a 24 px pitch leaves a 4 px gutter, against 10 px
+    /// for the icon row. Applying the row's ±7.41 px peak offset here would push tray icons clean
+    /// out of their slots and break P5, so each group drifts by its own derived amount. They share
+    /// a phase, so they still move in sympathy — what they do not share is amplitude, which is a
+    /// narrower reading of §6.2's "coherent" than the icon row alone required.
+    /// </remarks>
+    public SlotMetrics TraySlot => new(BaseTrayPitch * Scale, BaseTrayIconExtent * Scale);
+
+    /// <summary>
+    /// How much less the notification area drifts than the icon row, as a fraction.
+    /// </summary>
+    public double TrayDriftRatio =>
+        Slot.MaxAmplitude <= 0.0 ? 0.0 : TraySlot.MaxAmplitude / Slot.MaxAmplitude;
+
     /// <summary>Windows 11's measured padding before the first icon, in scaled pixels.</summary>
     public double MeasuredWindows11RowInset { get; }
 

@@ -5,7 +5,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using ManagedShell.AppBar;
+using ManagedShell.Interop;
 using ManagedShell.WindowsTasks;
+using ManagedShell.WindowsTray;
 using Umbra.Core.Layout;
 using Umbra.Core.Motion;
 using Umbra.Shell.Diagnostics;
@@ -63,6 +65,11 @@ internal partial class BarWindow : AppBarWindow
         Metrics = metrics;
         Windows = host.ShellManager.Tasks.GroupedWindows;
 
+        // Pinned rather than all: the unpinned ones belong behind an overflow chevron, which is
+        // §7.1's "tray overflow flyout" and is not built yet.
+        TrayIcons = host.ShellManager.NotificationArea.PinnedIcons;
+        _notificationArea = host.ShellManager.NotificationArea;
+
         DataContext = this;
         InitializeComponent();
 
@@ -87,6 +94,7 @@ internal partial class BarWindow : AppBarWindow
     }
 
     private readonly ProximityDriver _proximity;
+    private readonly NotificationArea _notificationArea;
     private MotionDriver? _motion;
     private WearSampler? _wear;
 
@@ -120,13 +128,21 @@ internal partial class BarWindow : AppBarWindow
 
         BringUpLog.Write($"wear accumulator: {width}x{height} physical px ({_wear.Accumulator.SizeInBytes / 1024} KB)");
 
+        LogTrayContents("at load");
+        _notificationArea.TrayIcons.CollectionChanged += (_, _) => LogTrayContents("changed");
+
         if (MotionEnabled)
         {
             _motion = new MotionDriver(Metrics);
+            double trayRatio = Metrics.TrayDriftRatio;
+
             _motion.OffsetChanged += (dx, dy) =>
             {
                 ContentOffset.X = dx;
                 ContentOffset.Y = dy;
+
+                TrayOffset.X = dx * trayRatio;
+                TrayOffset.Y = dy * trayRatio;
             };
             _motion.Start();
         }
@@ -156,6 +172,37 @@ internal partial class BarWindow : AppBarWindow
 
     /// <summary>The live window list.</summary>
     public ICollectionView Windows { get; }
+
+    /// <summary>The notification area's icons (§11.1).</summary>
+    public ICollectionView TrayIcons { get; }
+
+    /// <summary>
+    /// The notification area's drift offset — the same phase as the icon row, scaled down to what
+    /// a tray slot can contain (§6.2, P5).
+    /// </summary>
+    public TranslateTransform TrayOffset { get; } = new();
+
+    /// <summary>Tray slot size along the bar's long axis.</summary>
+    public double TraySlotWidth => IsVertical ? Metrics.ContentBand : Metrics.TraySlot.Pitch;
+
+    /// <inheritdoc cref="TraySlotWidth"/>
+    public double TraySlotHeight => IsVertical ? Metrics.TraySlot.Pitch : Metrics.ContentBand;
+
+    /// <summary>Drawn extent of a tray icon.</summary>
+    public double TrayIconExtent => Metrics.TraySlot.IconExtent;
+
+    /// <summary>The notification area sits at the trailing end, opposite the icon row (§7.1).</summary>
+    public HorizontalAlignment TrayHorizontalAlignment =>
+        IsVertical ? HorizontalAlignment.Center : HorizontalAlignment.Right;
+
+    /// <inheritdoc cref="TrayHorizontalAlignment"/>
+    public VerticalAlignment TrayVerticalAlignment =>
+        IsVertical ? VerticalAlignment.Top : VerticalAlignment.Center;
+
+    /// <summary>Holds the tray off the trailing corner, mirroring the row inset (§6.3).</summary>
+    public Thickness TrayMargin => IsVertical
+        ? new Thickness(0, Metrics.RowInset, 0, 0)
+        : new Thickness(0, 0, Metrics.RowInset, 0);
 
     /// <summary>Slot pitch — the hit target's extent along the bar's long axis. 44 DIP.</summary>
     public double SlotPitch => Metrics.Slot.Pitch;
@@ -298,6 +345,24 @@ internal partial class BarWindow : AppBarWindow
 
     private void OnExitClick(object sender, RoutedEventArgs e) => CloseForShutdown();
 
+    private int _loggedTrayChanges;
+
+    private void LogTrayContents(string reason)
+    {
+        // Only the first few, or a chatty tray writes to disk forever.
+        if (_loggedTrayChanges++ > 6) return;
+
+        int all = _notificationArea.TrayIcons.Count;
+        int pinned = _notificationArea.PinnedIcons.Cast<object>().Count();
+        int unpinned = _notificationArea.UnpinnedIcons.Cast<object>().Count();
+
+        BringUpLog.Write($"tray {reason}: {all} total, {pinned} pinned, {unpinned} unpinned");
+
+        foreach (NotifyIcon icon in _notificationArea.TrayIcons.Take(12))
+            BringUpLog.Write($"  tray icon | pinned={icon.IsPinned} hidden={icon.IsHidden} " +
+                             $"| {icon.Title} | {icon.Path}");
+    }
+
     /// <summary>Per-icon outline toggle, from that icon's own context menu (§5.3).</summary>
     private void OnSlotOutlineClick(object sender, RoutedEventArgs e)
     {
@@ -341,6 +406,98 @@ internal partial class BarWindow : AppBarWindow
         if (sender is FrameworkElement { DataContext: ApplicationWindow window })
             window.Close();
     }
+
+    /// <summary>
+    /// Forwards a click on a tray icon back to the application that owns it.
+    /// </summary>
+    /// <remarks>
+    /// The notification area is a proxy, not a replacement: the icon belongs to another process and
+    /// only that process knows what clicking it means. ManagedShell repackages this into the
+    /// callback message the owner registered for, which is why the screen position has to travel
+    /// with it — that is where the owner will put its menu.
+    /// </remarks>
+    private void OnTrayIconMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
+
+        UpdateTrayHostSize();
+        icon.IconMouseDown(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);
+        e.Handled = true;
+    }
+
+    private void OnTrayIconMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
+
+        icon.IconMouseUp(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);
+        e.Handled = true;
+    }
+
+    private void OnTrayIconMouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: NotifyIcon icon })
+            icon.IconMouseEnter(PackedCursorPosition());
+    }
+
+    private void OnTrayIconMouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: NotifyIcon icon })
+            icon.IconMouseLeave(PackedCursorPosition());
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int GetDoubleClickTime();
+
+    private static int DoubleClickTime => GetDoubleClickTime();
+
+    /// <summary>Cursor position packed into a single value, as the tray callback protocol expects.</summary>
+    private static uint PackedCursorPosition()
+    {
+        NativeMethods.GetCursorPos(out NativeMethods.POINT cursor);
+        return (uint)((cursor.y << 16) | (cursor.x & 0xFFFF));
+    }
+
+    /// <summary>
+    /// Tells the notification area where it is on screen, so an application's flyout opens next to
+    /// its icon rather than wherever Explorer's taskbar used to be (§11.1).
+    /// </summary>
+    private void UpdateTrayHostSize()
+    {
+        if (!IsLoaded) return;
+
+        try
+        {
+            GeneralTransform transform = TrayHost.TransformToAncestor(this);
+            System.Windows.Rect bounds = transform.TransformBounds(
+                new System.Windows.Rect(0, 0, TrayHost.ActualWidth, TrayHost.ActualHeight));
+
+            double scale = DpiScale <= 0 ? 1.0 : DpiScale;
+
+            _notificationArea.SetTrayHostSizeData(new TrayHostSizeData
+            {
+                edge = ToAppBarEdgeNative(Metrics.Edge),
+                rc = new NativeMethods.Rect
+                {
+                    Left = (int)Math.Round((Left + bounds.Left) * scale),
+                    Top = (int)Math.Round((Top + bounds.Top) * scale),
+                    Right = (int)Math.Round((Left + bounds.Right) * scale),
+                    Bottom = (int)Math.Round((Top + bounds.Bottom) * scale),
+                },
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            // Not connected to the visual tree yet; the next click will set it.
+        }
+    }
+
+    private static NativeMethods.ABEdge ToAppBarEdgeNative(CoreBarEdge edge) => edge switch
+    {
+        CoreBarEdge.Left => NativeMethods.ABEdge.ABE_LEFT,
+        CoreBarEdge.Top => NativeMethods.ABEdge.ABE_TOP,
+        CoreBarEdge.Right => NativeMethods.ABEdge.ABE_RIGHT,
+        _ => NativeMethods.ABEdge.ABE_BOTTOM,
+    };
 
     private static AppBarEdge ToAppBarEdge(CoreBarEdge edge) => edge switch
     {

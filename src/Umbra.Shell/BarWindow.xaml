@@ -37,6 +37,7 @@
 
     <Window.Resources>
         <render:TierIconConverter x:Key="TierIcon" Element="RunningIcon" />
+        <render:TierIconConverter x:Key="TrayTierIcon" Element="TrayIcon" />
         <render:TierBrushConverter x:Key="IndicatorBrush" Element="RunningIndicator" />
     </Window.Resources>
 
@@ -141,6 +142,53 @@
                                    Margin="{Binding PillMargin, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Fill="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window},
                                                   Converter={StaticResource IndicatorBrush}}" />
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!--
+            The notification area, at the trailing end of the bar (§7.1). Its slots are smaller than
+            the icon row's, so it uses its own derived drift amplitude — applying the row's would
+            push these icons out of their slots and break P5.
+        -->
+        <ItemsControl x:Name="TrayHost"
+                      ItemsSource="{Binding TrayIcons}"
+                      HorizontalAlignment="{Binding TrayHorizontalAlignment}"
+                      VerticalAlignment="{Binding TrayVerticalAlignment}"
+                      Margin="{Binding TrayMargin}">
+
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="{Binding RowOrientation, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Grid Background="Transparent"
+                          ToolTip="{Binding Title}"
+                          MouseLeftButtonDown="OnTrayIconMouseDown"
+                          MouseLeftButtonUp="OnTrayIconMouseUp"
+                          MouseRightButtonDown="OnTrayIconMouseDown"
+                          MouseRightButtonUp="OnTrayIconMouseUp"
+                          MouseEnter="OnTrayIconMouseEnter"
+                          MouseLeave="OnTrayIconMouseLeave"
+                          Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                          Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+
+                        <Image Width="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                               Height="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                               RenderOptions.BitmapScalingMode="HighQuality"
+                               RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <Image.Source>
+                                <MultiBinding Converter="{StaticResource TrayTierIcon}">
+                                    <Binding Path="Icon" />
+                                    <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                    <Binding Path="OutlineRevision" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                </MultiBinding>
+                            </Image.Source>
+                        </Image>
                     </Grid>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>

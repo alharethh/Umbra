@@ -260,6 +260,38 @@ public class LayoutTests
     }
 
     [Fact]
+    public void The_Tray_Drifts_Less_Because_Its_Slots_Are_Smaller()
+    {
+        // P5 applies per slot, and a tray slot is not a task button. Applying the icon row's
+        // amplitude to a 4 px gutter would put tray icons outside their own slots.
+        BarMetrics bar = new(BarEdge.Bottom);
+
+        Assert.Equal(24.0, bar.TraySlot.Pitch);
+        Assert.Equal(16.0, bar.TraySlot.IconExtent);
+        Approx.Equal(4.0, bar.TraySlot.Gutter, 1e-9, "tray gutter");
+
+        Assert.True(bar.Slot.PeakOffset > bar.TraySlot.Gutter,
+            "Precondition: the icon row's offset would not fit a tray slot.");
+
+        Assert.True(bar.TraySlot.SatisfiesSlotContainment);
+        Assert.True(bar.TraySlot.PeakOffset < bar.TraySlot.Gutter);
+        Assert.True(bar.TrayDriftRatio is > 0.0 and < 1.0);
+    }
+
+    [Theory]
+    [InlineData(1.00)]
+    [InlineData(1.25)]
+    [InlineData(1.50)]
+    [InlineData(2.00)]
+    public void Tray_Slots_Contain_Their_Icons_At_Every_Dpi(double scale)
+    {
+        BarMetrics bar = new(BarEdge.Bottom, Alignment.Start, scale);
+
+        Assert.True(bar.TraySlot.SatisfiesSlotContainment);
+        Assert.True(bar.TraySlot.Clearance > 0.0);
+    }
+
+    [Fact]
     public void Bottom_Is_The_Only_Edge_That_Contends_With_Explorer()
     {
         // §11.1: Explorer's taskbar is autohidden on its own edge, and pointer travel there

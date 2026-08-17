@@ -219,6 +219,44 @@ Two bugs surfaced while doing it, both of which produced plausible-looking outpu
 §11.2 Q10 is now answered for one real icon set: the automatic outlines are usable. They are not as
 clean as hand-authored glyphs would be, and busy artwork stays busy, but the banding is gone.
 
+## Step 7 — tray hosting: the interception works, the icons do not arrive
+
+**Unresolved on this machine.** Windows 11 25H2, build 26200, ManagedShell 0.0.370 (the newest
+published).
+
+What works, verified by enumerating windows while Umbra runs:
+
+| | |
+| :---- | :---- |
+| Umbra's `Shell_TrayWnd` | exists, `WS_EX_TOPMOST` set |
+| Explorer's `Shell_TrayWnd` | still there, topmost cleared |
+| `FindWindow("Shell_TrayWnd")` | returns Umbra's |
+| `NotificationArea` | initialised, `IsFailed` false, valid handle |
+
+So the Z-order interception shell-integration §2.2 describes does exactly what it claims. What does
+not happen is any icon arriving: `TrayIcons` stays at 0 across a 14 s startup, and stays at 0 after
+broadcasting `TaskbarCreated` by hand to force every running application to re-register.
+
+Ruled out along the way:
+
+- **Not a double-initialise.** `AutoStartTrayService` already initialises the area; calling
+  `Initialize()` again is harmless and changes neither the handle nor the count.
+- **Not a missing broadcast.** Broadcasting `TaskbarCreated` from outside the process produced no
+  icons either.
+- **Not a stale dependency.** 0.0.370 is the latest ManagedShell on nuget.org.
+- **Not a pinned/unpinned filter.** The unfiltered `TrayIcons` collection is empty, not just
+  `PinnedIcons`.
+
+Not ruled out: that Windows 11 25H2 delivers notification icons by a path other than the classic
+`Shell_TrayWnd` window we are intercepting, which would make this a compatibility problem rather
+than a bug in the wiring. That is the risk shell-integration §2.3 flagged as "dependence on
+undocumented behaviour" — `FindWindow` returning the topmost match is not contractual, and neither
+is squatting the class name.
+
+The rendering side is complete and untested against real data: tray icons bind to the notification
+area, draw at the trailing end through the tier system, forward mouse events back to the owning
+application, and report their host rectangle so flyouts anchor correctly.
+
 ## Still open
 
 - **§11.2 Q2 — do ManagedShell's 100 ms timers defeat display idle?** Not yet measured. Only the
