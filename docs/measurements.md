@@ -247,11 +247,32 @@ Ruled out along the way:
 - **Not a pinned/unpinned filter.** The unfiltered `TrayIcons` collection is empty, not just
   `PinnedIcons`.
 
-Not ruled out: that Windows 11 25H2 delivers notification icons by a path other than the classic
-`Shell_TrayWnd` window we are intercepting, which would make this a compatibility problem rather
-than a bug in the wiring. That is the risk shell-integration §2.3 flagged as "dependence on
-undocumented behaviour" — `FindWindow` returning the topmost match is not contractual, and neither
-is squatting the class name.
+**Now ruled in, by controlled experiment.** A throwaway program registered a notification icon the
+ordinary way (`Shell_NotifyIcon` via `NotifyIcon`) while Umbra was running, and the tray window
+ownership was sampled before, during and after:
+
+```
+before probe : FindWindow -> Umbra's window, topmost = True
+during probe : FindWindow -> Umbra's window, topmost = True
+still        : FindWindow -> Umbra's window, topmost = True
+icons received: 0
+```
+
+A brand-new registration, with Umbra demonstrably holding the window that `FindWindow` returns,
+delivers nothing. **Windows 11 25H2 does not route notification icons to whichever window claims
+`Shell_TrayWnd`.** The interception is not losing a race and the wiring is not wrong; the mechanism
+it depends on is no longer the one Windows uses.
+
+This is the risk shell-integration §2.3 named exactly — `FindWindow` returning the topmost match was
+never contractual, and neither was squatting the class name — arriving on schedule.
+
+Also ruled out: elevation. UIPI blocks messages travelling from lower to higher integrity, so
+running Umbra as administrator would place it *above* the ordinary applications whose icons it
+wants and could only reduce what reaches it.
+
+**Tray hosting is therefore off by default**, behind `--tray`. The code is kept rather than deleted:
+it may work on earlier Windows 11 builds, and the finding is specific to build 26200. Running it
+costs a permanent 100 ms timer, which is why it does not run for nothing.
 
 The rendering side is complete and untested against real data: tray icons bind to the notification
 area, draw at the trailing end through the tier system, forward mouse events back to the owning

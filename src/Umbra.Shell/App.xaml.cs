@@ -24,7 +24,9 @@ public partial class App : Application
 
         BringUpLog.Write("--- startup ---");
 
-        _host = new ShellHost();
+        // --tray opts into notification-area hosting. Off by default: it collects nothing on
+        // Windows 11 25H2 while still costing a permanent 100 ms timer (docs/measurements.md).
+        _host = new ShellHost(enableTray: e.Args.Contains("--tray", StringComparer.OrdinalIgnoreCase));
 
         if (_host.RecoveredFromUncleanExit)
             BringUpLog.Write("recovered Explorer taskbar state from a previous unclean exit");

@@ -17,7 +17,14 @@ internal sealed class ShellHost : IDisposable
     private readonly ExplorerStateGuard _explorerState;
     private bool _disposed;
 
-    public ShellHost()
+    /// <param name="enableTray">
+    /// Off by default. The tray interception works — Umbra holds the topmost <c>Shell_TrayWnd</c>
+    /// and <c>FindWindow</c> returns it — but Windows 11 25H2 (build 26200) does not deliver
+    /// notification icons that way, so it collects nothing while still costing a permanent 100 ms
+    /// timer. Kept switchable rather than deleted: it may well work on earlier builds, and a future
+    /// Windows update could restore it. See docs/measurements.md, step 7.
+    /// </param>
+    public ShellHost(bool enableTray = false)
     {
         ShellConfig config = new()
         {
@@ -36,8 +43,8 @@ internal sealed class ShellHost : IDisposable
             // timers shell-integration §2.3 describes — the first re-hides Explorer's taskbar, this
             // one re-asserts our tray window's Z-order. Both are outside our control and both bear
             // on §11.2 Q2, whether they prevent the display from ever idling.
-            EnableTrayService = true,
-            AutoStartTrayService = true,
+            EnableTrayService = enableTray,
+            AutoStartTrayService = enableTray,
 
             EnableWin11DpiWorkaround = false,
         };
@@ -54,19 +61,18 @@ internal sealed class ShellHost : IDisposable
 
         ShellManager.Tasks.Initialize();
 
-        Diagnostics.BringUpLog.Write(
-            $"tray before init: handle=0x{ShellManager.NotificationArea.Handle.ToInt64():X} " +
-            $"failed={ShellManager.NotificationArea.IsFailed} " +
-            $"icons={ShellManager.NotificationArea.TrayIcons.Count}");
+        if (enableTray)
+        {
+            // Claims the tray and broadcasts TaskbarCreated, which is what makes every running
+            // application re-add its notification icon. AutoStartTrayService has already done this;
+            // repeating it is harmless and makes the intent explicit.
+            ShellManager.NotificationArea.Initialize();
 
-        // Claims the tray and broadcasts TaskbarCreated, which is what makes every running
-        // application re-add its notification icon.
-        ShellManager.NotificationArea.Initialize();
-
-        Diagnostics.BringUpLog.Write(
-            $"tray after init: handle=0x{ShellManager.NotificationArea.Handle.ToInt64():X} " +
-            $"failed={ShellManager.NotificationArea.IsFailed} " +
-            $"icons={ShellManager.NotificationArea.TrayIcons.Count}");
+            Diagnostics.BringUpLog.Write(
+                $"tray: handle=0x{ShellManager.NotificationArea.Handle.ToInt64():X} " +
+                $"failed={ShellManager.NotificationArea.IsFailed} " +
+                $"icons={ShellManager.NotificationArea.TrayIcons.Count}");
+        }
     }
 
     public ShellManager ShellManager { get; }
