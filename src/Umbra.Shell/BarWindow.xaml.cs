@@ -3,8 +3,10 @@ using System.Windows;
 using System.Windows.Controls;
 using ManagedShell.AppBar;
 using Umbra.Core.Layout;
+using Umbra.Shell.Diagnostics;
 using Umbra.Shell.Shell;
 using Umbra.Shell.Tiers;
+using Umbra.Shell.Wear;
 using CoreBarEdge = Umbra.Core.Layout.BarEdge;
 
 namespace Umbra.Shell;
@@ -56,11 +58,47 @@ internal partial class BarWindow : AppBarWindow
             () => DpiScale <= 0 ? 1.0 : DpiScale);
 
         _proximity.LevelChanged += level => TierLevel = level;
-        Loaded += (_, _) => _proximity.Start();
-        Closed += (_, _) => _proximity.Dispose();
+
+        Loaded += OnLoaded;
+        Closed += (_, _) =>
+        {
+            _proximity.Dispose();
+            _wear?.Dispose();
+        };
     }
 
     private readonly ProximityDriver _proximity;
+    private WearSampler? _wear;
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        _proximity.Start();
+
+        // Built here rather than in the constructor because the accumulator is sized in physical
+        // pixels and the window has no size until it has been laid out.
+        double scale = DpiScale <= 0 ? 1.0 : DpiScale;
+        int width = Math.Max(1, (int)Math.Round(ActualWidth * scale));
+        int height = Math.Max(1, (int)Math.Round(ActualHeight * scale));
+
+        _wear = new WearSampler(
+            width,
+            height,
+            () => SceneReader.Read(ContentRoot, this),
+            () => DpiScale <= 0 ? 1.0 : DpiScale);
+
+        _wear.Start();
+
+        BringUpLog.Write($"wear accumulator: {width}x{height} physical px ({_wear.Accumulator.SizeInBytes / 1024} KB)");
+    }
+
+    private void OnHeatmapClick(object sender, RoutedEventArgs e)
+    {
+        if (_wear is null) return;
+
+        // Flush first, so what the window shows is what is on disk.
+        _wear.Persist();
+        new HeatmapWindow(_wear.Accumulator) { Owner = null }.Show();
+    }
 
     /// <summary>Geometry for this bar, straight from the spec model.</summary>
     public BarMetrics Metrics { get; }

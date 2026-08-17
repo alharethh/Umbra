@@ -1,0 +1,44 @@
+<Window x:Class="Umbra.Shell.Wear.HeatmapWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:ClassModifier="internal"
+        Title="Umbra — wear heatmap"
+        Width="1100" Height="460"
+        Background="#FF14140F"
+        Foreground="#FFB6B6AD"
+        TextOptions.TextRenderingMode="Grayscale"
+        WindowStartupLocation="CenterScreen">
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="Accumulated L^n · Δt per pixel over the reserved rectangle, normalised to the peak cell and rendered on a logarithmic scale."
+                   TextWrapping="Wrap"
+                   Opacity="0.75"
+                   Margin="0,0,0,12" />
+
+        <!--
+            The heatmap is one bar's worth of pixels stretched to the window, so nearest-neighbour
+            keeps a single hot pixel visible instead of averaging it into its neighbours. This is a
+            diagnostic, not a photograph.
+        -->
+        <Border Grid.Row="1" BorderBrush="#FF2E2E28" BorderThickness="1" Background="Black">
+            <Image x:Name="Heatmap"
+                   Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="NearestNeighbor" />
+        </Border>
+
+        <TextBlock Grid.Row="2"
+                   x:Name="Summary"
+                   FontFamily="Consolas"
+                   FontSize="12"
+                   Margin="0,12,0,0"
+                   Opacity="0.85" />
+    </Grid>
+
+</Window>

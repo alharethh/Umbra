@@ -50,6 +50,8 @@
 
         <Grid.ContextMenu>
             <ContextMenu>
+                <MenuItem Header="Wear heatmap…" Click="OnHeatmapClick" />
+                <Separator />
                 <MenuItem Header="Exit Umbra" Click="OnExitClick" />
             </ContextMenu>
         </Grid.ContextMenu>

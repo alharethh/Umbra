@@ -34,6 +34,27 @@ public sealed class WearAccumulator
         _cells = new double[checked(width * height)];
     }
 
+    /// <summary>
+    /// Rebuilds an accumulator from persisted data. The cells are taken as-is, so
+    /// <paramref name="cells"/> must have been produced at the same <paramref name="exponent"/>.
+    /// </summary>
+    public static WearAccumulator Restore(
+        int width, int height, double exponent, double elapsedSeconds, ReadOnlySpan<double> cells)
+    {
+        WearAccumulator accumulator = new(width, height, exponent);
+
+        if (cells.Length != accumulator._cells.Length)
+            throw new ArgumentException(
+                $"Expected {accumulator._cells.Length} cells for {width}×{height}, got {cells.Length}.",
+                nameof(cells));
+
+        ArgumentOutOfRangeException.ThrowIfNegative(elapsedSeconds);
+
+        cells.CopyTo(accumulator._cells);
+        accumulator.ElapsedSeconds = elapsedSeconds;
+        return accumulator;
+    }
+
     /// <summary>Width of the reserved rectangle, in pixels.</summary>
     public int Width { get; }
 

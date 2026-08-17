@@ -136,6 +136,33 @@ would have been a real bug. It was the test harness: **PowerShell is DPI-unaware
 "on the bar" cases were measuring Tier 2. Drive the cursor in DIP from a DPI-unaware process, or
 physical from an aware one, but do not mix them.
 
+## Step 4 — wear accumulator
+
+Instrumentation only. Nothing feeds back into layout, and nothing should until several weeks of
+real data have been looked at.
+
+| Quantity | Value |
+| :---- | :---- |
+| Accumulator over the reserved rect | 2560 × 70 physical px, **1400 KB** float64 |
+| Sample rate | 1 Hz, from the visual tree and its transforms |
+| Persist | every 5 min, plus session lock, suspend and exit; written to a temp file and swapped |
+| Lit area at Tier 0 | 3.59% of the reserved rectangle |
+
+The scene is read via `TransformToAncestor`, so the drift transform of step 5 will be folded in
+automatically rather than needing a second code path.
+
+**The accumulator is verified sensitive to sub-pixel motion**, which is the property §11.2 Q1
+depends on: micro-jitter moves content by fractions of a pixel (§6.1), so a compositor that snapped
+emitters to integer cells would report that the motion layer achieves nothing, and the answer would
+look entirely credible. Two tests hold the integer cell range fixed and vary only the fractional
+offset — one asserts the sampled pattern changes, the other that accumulating over a spread of
+fractional offsets yields a lower peak cell than the same exposure at one fixed position.
+
+Both were initially written with a half-pixel shift and **passed for the wrong reason**: a shift
+that large also moves the emitter onto new pixels, so they were detecting the changed clipping
+bounds rather than the sampling. A naive-rasteriser mutant passed against them. They now confine
+the shift to a single cell range, and the mutant fails four tests.
+
 ## Still open
 
 - **§11.2 Q2 — do ManagedShell's 100 ms timers defeat display idle?** Not yet measured. Only the
