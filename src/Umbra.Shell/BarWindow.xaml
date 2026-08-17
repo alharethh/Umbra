@@ -89,22 +89,29 @@
                     HorizontalAlignment="Center" VerticalAlignment="Center"
                     Margin="{Binding StartGlyphMargin}"
                     RenderTransform="{Binding ContentOffset}">
+                <!--
+                    Four 9 px squares with a 2 px gutter, spanning 20 of the 24 px box. The gutter
+                    is the feature that makes it read as the Windows logo rather than as a grid, so
+                    it is proportionally generous — about a tenth of the glyph, matching Windows 11.
+                    Corners are rounded very slightly, which is visible at 30 physical pixels and
+                    costs nothing.
+                -->
                 <Canvas.Resources>
                     <Style TargetType="Rectangle">
                         <Setter Property="Width" Value="9" />
                         <Setter Property="Height" Value="9" />
-                        <Setter Property="RadiusX" Value="1" />
-                        <Setter Property="RadiusY" Value="1" />
+                        <Setter Property="RadiusX" Value="1.2" />
+                        <Setter Property="RadiusY" Value="1.2" />
                         <Setter Property="Fill"
                                 Value="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window},
                                                 Converter={StaticResource StartBrush}}" />
                     </Style>
                 </Canvas.Resources>
 
-                <Rectangle Canvas.Left="2.5"  Canvas.Top="2.5" />
-                <Rectangle Canvas.Left="12.5" Canvas.Top="2.5" />
-                <Rectangle Canvas.Left="2.5"  Canvas.Top="12.5" />
-                <Rectangle Canvas.Left="12.5" Canvas.Top="12.5" />
+                <Rectangle Canvas.Left="2"  Canvas.Top="2" />
+                <Rectangle Canvas.Left="13" Canvas.Top="2" />
+                <Rectangle Canvas.Left="2"  Canvas.Top="13" />
+                <Rectangle Canvas.Left="13" Canvas.Top="13" />
             </Canvas>
         </Grid>
 
