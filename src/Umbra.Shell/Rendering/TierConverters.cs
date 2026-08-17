@@ -24,6 +24,9 @@ internal sealed class TierIconConverter : IMultiValueConverter
         double level = values[1] is double d ? d : 0.0;
         bool outline = values.Length > 2 && values[2] is true;
 
+        if (values.Length > 3 && values[3] is string title)
+            _pipeline.ReportOnce(title, source);
+
         return _pipeline.Render(source, Element, level, outline);
     }
 

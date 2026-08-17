@@ -49,6 +49,12 @@ internal sealed class IconPipeline
     /// <summary>Drops cached bitmaps. Call when the icon set changes materially.</summary>
     public void Clear() => _cache.Clear();
 
+    /// <summary>Runs the §5.1 step 6 diagnostic over an icon, once.</summary>
+    public void ReportOnce(string title, ImageSource? source)
+    {
+        if (source is BitmapSource bitmap) IconDiagnostics.Report(title, ToIconBitmap(bitmap));
+    }
+
     private static BitmapSource Build(BitmapSource source, BarElement element, double level, bool outline)
     {
         IconBitmap art = ToIconBitmap(source);

@@ -163,6 +163,45 @@ that large also moves the emitter onto new pixels, so they were detecting the ch
 bounds rather than the sampling. A naive-rasteriser mutant passed against them. They now confine
 the shift to a single cell range, and the mutant fails four tests.
 
+## Step 6 — outline mode, measured against a real icon set
+
+§5.3 justifies outline mode for "pin sets dominated by large solid-fill logos" and puts the saving
+at 70–85% of lit area. **On a real icon set that figure holds for one icon in nine.**
+
+| Icon | Opaque area | Energy | Outline saves |
+| :---- | ----: | ----: | ----: |
+| File Explorer | 57.8% | 633 | **72.9%** |
+| VS Code | 60.6% | 248 | 56.1% |
+| Discord | 88.4% | 479 | 35.2% |
+| Packaged app | 99.3% | 631 | 27.7% |
+| Ascent | 31.8% | 55 | 27.6% |
+| NVIDIA Broadcast | 100.0% | 120 | 13.7% |
+| Firefox | 71.2% | 373 | 9.9% |
+| Jagex Launcher | 97.5% | 271 | 1.0% |
+| RuneLite | 42.7% | 123 | 0.0% |
+
+Weighted across the row, outline mode removes **34.6%** of icon lit area — and two thirds of that
+comes from File Explorer and VS Code alone. The rest of the set is already mostly stroke and
+transparency, with no interior left to reclaim; two icons gain nothing at all.
+
+**This confirms §5.3's own instruction rather than contradicting it.** The spec says outline mode
+must stay "a per-icon opt-in, not a global default — it costs recognisability unevenly and users
+should be able to apply it to their worst offenders only". The data says the same thing
+quantitatively: worth it for two icons here, worthless for two others, and a recognisability cost
+everywhere. The global toggle currently in the context menu is therefore the wrong shape; the
+per-icon setting at build order step 9 is the right one.
+
+It also revises the premise. §5.3 assumes pin sets dominated by solid-fill logos; modern
+application icons largely are not that, so the headline 70–85% is a best case rather than a typical
+one. Worth saying plainly in the README alongside the §2.4 caveats.
+
+**Known quality problem.** Interiors look poor on gradient-heavy artwork. Internal edges are found
+by thresholding the luminance difference between neighbours, and a smooth gradient crosses that
+threshold repeatedly, producing banding and speckle rather than a clean line. Fixable with
+non-maximum suppression or a sharper gradient test — but not worth the work until per-icon opt-in
+exists and someone wants it on more than two icons. §11.2 Q10 stands: silhouettes read well,
+interiors do not.
+
 ## Still open
 
 - **§11.2 Q2 — do ManagedShell's 100 ms timers defeat display idle?** Not yet measured. Only the

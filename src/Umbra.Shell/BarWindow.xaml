@@ -118,6 +118,8 @@
                                     <Binding Path="Icon" />
                                     <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
                                     <Binding Path="OutlineMode" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                    <!-- Title is passed only so the §5.1 cost diagnostic can name the icon. -->
+                                    <Binding Path="Title" />
                                 </MultiBinding>
                             </Image.Source>
                         </Image>
