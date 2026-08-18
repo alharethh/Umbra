@@ -89,9 +89,14 @@ internal partial class BarWindow : AppBarWindow
         DataContext = this;
         InitializeComponent();
 
+        // Zero, not §3's 40 px: the bar engages when the pointer is on it, not when the pointer is
+        // near it. A 40 px band lights the bar up on the way past, which reads as the taskbar
+        // reacting to traffic rather than to the user. The Tier 0 → 1 ambient ramp is untouched —
+        // it is a near-invisible grey step and it is what §2.3's duty budget is built on.
         _proximity = new ProximityDriver(
             () => new System.Windows.Rect(Left, Top, Width, Height),
-            () => DpiScale <= 0 ? 1.0 : DpiScale);
+            () => DpiScale <= 0 ? 1.0 : DpiScale,
+            engagedBandPixels: 0.0);
 
         _proximity.LevelChanged += level => TierLevel = level;
 
@@ -491,9 +496,19 @@ internal partial class BarWindow : AppBarWindow
         : new Thickness(Metrics.RowInset, 0, 0, 0);
 
     /// <summary>Holds the tray off the trailing corner, mirroring the row inset (§6.3).</summary>
+    /// <summary>
+    /// Extra space between the clock and the screen edge, beyond the drift headroom.
+    /// </summary>
+    /// <remarks>
+    /// §6.3 insets the trailing end by the peak drift offset so the clock cannot clip at the
+    /// corner, which is a correctness floor rather than a layout choice — at that inset alone the
+    /// clock sits hard against the edge. This is the breathing room on top.
+    /// </remarks>
+    internal const double TrailingEdgePadding = 8.0;
+
     public Thickness TrayMargin => IsVertical
-        ? new Thickness(0, Metrics.RowInset, 0, 0)
-        : new Thickness(0, 0, Metrics.RowInset, 0);
+        ? new Thickness(0, Metrics.RowInset + TrailingEdgePadding, 0, 0)
+        : new Thickness(0, 0, Metrics.RowInset + TrailingEdgePadding, 0);
 
     /// <summary>Slot pitch — the hit target's extent along the bar's long axis. 44 DIP.</summary>
     public double SlotPitch => Metrics.Slot.Pitch;

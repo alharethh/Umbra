@@ -37,11 +37,16 @@ internal sealed class ProximityDriver : IDisposable
     private DateTime _lastLog = DateTime.MinValue;
     private double _lastLoggedLevel = double.NaN;
 
-    public ProximityDriver(Func<Rect> barRect, Func<double> dpiScale, double scale = 1.0)
+    /// <param name="engagedBandPixels">
+    /// How close the pointer must be for the bar to engage. Zero means "over the bar"; null takes
+    /// §3's 40 px band.
+    /// </param>
+    public ProximityDriver(Func<Rect> barRect, Func<double> dpiScale, double scale = 1.0,
+                           double? engagedBandPixels = null)
     {
         _barRect = barRect;
         _dpiScale = dpiScale;
-        _controller = new TierController(scale);
+        _controller = new TierController(scale, engagedBandPixels);
 
         _timer = new DispatcherTimer(DispatcherPriority.Render)
         {

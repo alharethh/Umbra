@@ -34,11 +34,28 @@ public sealed class TierController
     private double _dwell;
 
     /// <summary>Creates a controller for a monitor at the given DPI scale.</summary>
-    public TierController(double scale = 1.0)
+    /// <param name="scale">Per-monitor DPI scale.</param>
+    /// <param name="engagedBandPixels">
+    /// How close the pointer must come, at 100% scaling, before the bar engages. Null takes §3's
+    /// 40 px; <b>zero means the pointer must actually be over the bar</b>.
+    /// </param>
+    /// <remarks>
+    /// §3 triggers Tier 2 on "proximity within 40 px / over the bar", which in use reads as the bar
+    /// lighting up while the pointer is merely on its way somewhere else. Passing zero keeps the
+    /// Tier 0 → 1 ambient ramp exactly as specified — that is the near-invisible grey step the duty
+    /// budget in §2.3 is built on — and moves only the engaged state, the one with colour and full
+    /// size, onto the bar itself.
+    /// </remarks>
+    public TierController(double scale = 1.0, double? engagedBandPixels = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(scale);
+        ArgumentOutOfRangeException.ThrowIfNegative(engagedBandPixels ?? 0.0);
+
         Scale = scale;
+        _engagedBandPixels = engagedBandPixels;
     }
+
+    private readonly double? _engagedBandPixels;
 
     /// <summary>Per-monitor DPI scale: 1.0 is 100%.</summary>
     public double Scale { get; }
@@ -47,7 +64,7 @@ public sealed class TierController
     public double AmbientBand => TierPalette.AmbientBandPixels * Scale;
 
     /// <summary>Engaged band radius in scaled pixels.</summary>
-    public double EngagedBand => TierPalette.EngagedBandPixels * Scale;
+    public double EngagedBand => (_engagedBandPixels ?? TierPalette.EngagedBandPixels) * Scale;
 
     /// <summary>Current continuous level, 0..2.</summary>
     public double Level { get; private set; }

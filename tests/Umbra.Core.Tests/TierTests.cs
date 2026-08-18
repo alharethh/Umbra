@@ -283,4 +283,51 @@ public class TierTests
             Assert.True(Srgb.RelativeLuminance(rest.Colour) < badge);
         }
     }
+
+    /// <summary>
+    /// With the engaged band at zero the bar lights up only when the pointer is actually on it.
+    /// </summary>
+    /// <remarks>
+    /// §3 specifies a 40 px band, which in use reads as the bar reacting to traffic passing by
+    /// rather than to the user arriving. The project owner asked for engagement on contact. What
+    /// must survive that change is the Tier 0 → 1 ambient ramp: it is the near-invisible grey step
+    /// §2.3's duty budget is built on, and collapsing it would quietly move the whole bar between
+    /// two states instead of three.
+    /// </remarks>
+    [Fact]
+    public void A_Zero_Engaged_Band_Engages_Only_On_Contact()
+    {
+        TierController controller = new(engagedBandPixels: 0.0);
+
+        Assert.Equal(0.0, controller.EngagedBand);
+
+        // On the bar.
+        Approx.Equal(2.0, controller.TargetLevel(0.0), 1e-9, "over the bar");
+
+        // One pixel away is emphatically not engaged.
+        Assert.True(controller.TargetLevel(1.0) < 1.01,
+            "A pointer beside the bar must not reach the engaged state.");
+
+        // The ambient ramp is untouched: still zero at the band edge, still rising on approach.
+        Approx.Equal(0.0, controller.TargetLevel(TierPalette.AmbientBandPixels), 1e-9, "band edge");
+        Assert.True(controller.TargetLevel(60.0) > 0.0 && controller.TargetLevel(60.0) < 1.0,
+            "Mid-band must still be a partial ambient level.");
+
+        // And it is monotonic across the approach, so nothing snaps on the way in.
+        double previous = -1.0;
+        for (double d = TierPalette.AmbientBandPixels; d >= 1.0; d -= 1.0)
+        {
+            double level = controller.TargetLevel(d);
+            Assert.True(level >= previous, $"Level went backwards approaching at {d} px.");
+            previous = level;
+        }
+    }
+
+    [Fact]
+    public void The_Default_Engaged_Band_Is_Still_The_Spec_Figure()
+    {
+        // The override is opt-in; nothing else in the library changes behaviour.
+        Assert.Equal(TierPalette.EngagedBandPixels, new TierController().EngagedBand);
+    }
+
 }
