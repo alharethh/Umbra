@@ -109,6 +109,7 @@ internal partial class BarWindow : AppBarWindow
 
             bool justPressed = DateTime.UtcNow - _startPressedAt < StartPressGrace;
             StartActive = _startMenu.IsOpen || justPressed;
+            StartHighlighted = StartActive || StartButton.IsMouseOver;
 
             // Which slot owns the foreground window, for the running indicator.
             _tasks.UpdateForeground(GetForegroundWindow());
@@ -123,9 +124,24 @@ internal partial class BarWindow : AppBarWindow
         _clock = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _clock.Tick += OnClockTick;
 
+        // A class handler rather than per-menu wiring: the slot menus are created by a
+        // DataTemplate, so there is no single place to attach to, and a menu added later would
+        // silently miss out.
+        EventManager.RegisterClassHandler(
+            typeof(ContextMenu), ContextMenu.OpenedEvent,
+            new RoutedEventHandler((sender, _) =>
+            {
+                if (sender is ContextMenu menu) _menuDismisser.Watch(menu);
+            }));
+
+        EventManager.RegisterClassHandler(
+            typeof(ContextMenu), ContextMenu.ClosedEvent,
+            new RoutedEventHandler((_, _) => _menuDismisser.Release()));
+
         Loaded += OnLoaded;
         Closed += (_, _) =>
         {
+            _menuDismisser.Release();
             _clock.Stop();
             _proximity.Dispose();
             _motion?.Dispose();
@@ -160,6 +176,7 @@ internal partial class BarWindow : AppBarWindow
 
     // Hover preview state. The timer exists for the whole life of the window but only runs while a
     // pointer is resting on a slot.
+    private readonly ContextMenuDismisser _menuDismisser = new();
     private DispatcherTimer? _hoverTimer;
     private TaskbarSlot? _hoverSlot;
     private FrameworkElement? _hoverElement;
@@ -360,7 +377,7 @@ internal partial class BarWindow : AppBarWindow
     public void ApplyLiveSettings(Settings.UmbraSettings settings)
     {
         _dormantIconExtent = Math.Clamp(
-            settings.DormantIconSize * Metrics.Scale, 1.0, SlotMetrics.BaseIconExtent * Metrics.Scale);
+            settings.DormantIconSize * Metrics.Scale, 1.0, ActiveIconExtent * Metrics.Scale);
 
         OnPropertyChanged(nameof(IconExtent));
         OnPropertyChanged(nameof(HoverChipExtent));
@@ -510,7 +527,7 @@ internal partial class BarWindow : AppBarWindow
         get
         {
             double dormant = _dormantIconExtent > 0 ? _dormantIconExtent : Metrics.Slot.IconExtent;
-            double full = SlotMetrics.BaseIconExtent * Metrics.Scale;
+            double full = ActiveIconExtent * Metrics.Scale;
 
             return IconSizeRamp.Extent(dormant, full, SizeBlend);
         }
@@ -529,6 +546,18 @@ internal partial class BarWindow : AppBarWindow
     /// pins it across every icon size and tier level.
     /// </remarks>
     internal const double HoverChipMargin = 2.0;
+
+    /// <summary>
+    /// Icon extent once the bar is engaged — slightly above §7.1's 24 px.
+    /// </summary>
+    /// <remarks>
+    /// A deliberate deviation, asked for so the icon reads as lifting toward the pointer rather
+    /// than merely returning to normal. It stays inside P5 with room to spare: at 26 px the gutter
+    /// is 9 px, §6.2's amplitude falls to ±6.46 px, and the icon plus its hover chip reaches
+    /// 21.46 px against a 22 px half-slot. Anything much beyond this starts eating the chip's
+    /// margin, so <c>HoverChipTests</c> checks the pair rather than the icon alone.
+    /// </remarks>
+    internal const double ActiveIconExtent = 26.0;
 
     /// <summary>
     /// Extent of the hover chip drawn behind an icon the pointer is over.
@@ -659,6 +688,41 @@ internal partial class BarWindow : AppBarWindow
     {
         get => (bool)GetValue(StartActiveProperty);
         set => SetValue(StartActiveProperty, value);
+    }
+
+    /// <summary>
+    /// True when the Start glyph should be blue: the menu is open, or the pointer is on it.
+    /// </summary>
+    /// <remarks>
+    /// One flag for both reasons, because both want the same treatment. The glyph used to switch
+    /// colour outright, which reads as a glitch rather than a response — the blue is now a second
+    /// set of squares cross-fading over the grey, at §3.4's 120 ms attack and a shorter release
+    /// than the tier ramp uses, because a pointer leaving the Start button is unambiguous in a way
+    /// that a pointer drifting near the bar is not.
+    /// </remarks>
+    public static readonly DependencyProperty StartHighlightedProperty = DependencyProperty.Register(
+        nameof(StartHighlighted), typeof(bool), typeof(BarWindow), new PropertyMetadata(false));
+
+    /// <inheritdoc cref="StartHighlightedProperty"/>
+    public bool StartHighlighted
+    {
+        get => (bool)GetValue(StartHighlightedProperty);
+        set => SetValue(StartHighlightedProperty, value);
+    }
+
+    /// <summary>The Windows logo blue, capped to the Tier 2 luminance ceiling (§3.2).</summary>
+    public System.Windows.Media.Brush StartAccentBrush { get; } = CreateStartAccent();
+
+    private static System.Windows.Media.Brush CreateStartAccent()
+    {
+        Umbra.Core.Color.Rgb capped = Umbra.Core.Color.Srgb.CapLuminance(
+            Umbra.Core.Color.Rgb.FromHex("#4CC2FF"), TierPalette.Tier2LuminanceCap);
+
+        System.Windows.Media.SolidColorBrush brush = new(
+            System.Windows.Media.Color.FromRgb(capped.R, capped.G, capped.B));
+
+        brush.Freeze();
+        return brush;
     }
 
     /// <summary>Running-indicator pill geometry — it rotates with the bar (§7.3).</summary>

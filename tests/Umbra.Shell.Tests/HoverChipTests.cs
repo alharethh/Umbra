@@ -17,7 +17,9 @@ namespace Umbra.Shell.Tests;
 public class HoverChipTests
 {
     private const double Pitch = SlotMetrics.BasePitch;
-    private const double Full = SlotMetrics.BaseIconExtent;
+    // The engaged size, which is the tightest case: the largest icon has the least gutter to
+    // drift in, so it is where the chip's margin has the least room.
+    private const double Full = BarWindow.ActiveIconExtent;
 
     private static double ChipReach(double iconExtent)
     {

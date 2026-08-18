@@ -38,56 +38,6 @@ internal sealed class TierIconConverter : IMultiValueConverter
 }
 
 /// <summary>
-/// The Start glyph's brush: the usual tier grey, or the Windows blue while the Start menu is open.
-/// </summary>
-/// <remarks>
-/// <para>
-/// §8 draws the Start glyph neutral because it is "the most temporally invariant element on the
-/// entire screen" and four saturated squares is the worst case for something that never moves. That
-/// argument is about the resting state. While the menu is actually open the glyph is neither
-/// resting nor invariant: the user opened it deliberately, it lasts seconds, and it is the same
-/// bargain §3.2 strikes for Tier 2 chroma — full colour at a duty cycle low enough not to matter.
-/// </para>
-/// <para>
-/// Luminance is capped at <see cref="TierPalette.Tier2LuminanceCap"/> for exactly that reason, so
-/// the accent is as bright as any other Tier 2 colour and no brighter.
-/// </para>
-/// </remarks>
-internal sealed class StartGlyphBrushConverter : IMultiValueConverter
-{
-    private readonly TierBrushConverter _resting = new() { Element = BarElement.StartGlyph };
-
-    private SolidColorBrush? _accent;
-
-    /// <summary>The Windows logo blue, before capping.</summary>
-    public string Accent { get; set; } = "#4CC2FF";
-
-    public object? Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (values.Length < 2) return null;
-
-        // values[1] is StartActive (the menu is open, or the press grace is running); an optional
-        // values[2] is pointer-over. Hover colours the glyph for the same reason opening the menu
-        // does: it is a deliberate, brief, pointer-driven state, which is exactly the bargain §3.2
-        // strikes for Tier 2 chroma.
-        bool active = values[1] is true || (values.Length > 2 && values[2] is true);
-        if (!active) return _resting.Convert(values[0], targetType, parameter, culture);
-
-        return _accent ??= Build(Srgb.CapLuminance(Rgb.FromHex(Accent), TierPalette.Tier2LuminanceCap));
-    }
-
-    private static SolidColorBrush Build(Rgb colour)
-    {
-        SolidColorBrush brush = new(Color.FromRgb(colour.R, colour.G, colour.B));
-        brush.Freeze();
-        return brush;
-    }
-
-    public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
-}
-
-/// <summary>
 /// Binds the current tier level to the brush for a flat element — the running indicator, the clock,
 /// the Start glyph.
 /// </summary>

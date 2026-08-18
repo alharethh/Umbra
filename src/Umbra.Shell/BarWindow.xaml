@@ -45,7 +45,7 @@
         <render:TierIconConverter x:Key="TrayTierIcon" Element="TrayIcon" />
         <render:TierBrushConverter x:Key="IndicatorBrush" Element="RunningIndicator" />
         <render:TierBrushConverter x:Key="ClockBrush" Element="Clock" />
-        <render:StartGlyphBrushConverter x:Key="StartBrush" />
+        <render:TierBrushConverter x:Key="StartGlyphBrush" Element="StartGlyph" />
 
         <!-- A long pill for the foreground window, a short one for the rest, as Windows 11 does. -->
         <render:IndicatorWidthConverter x:Key="PillAlong" AlongBar="True" />
@@ -176,15 +176,8 @@
                     <Style TargetType="Rectangle">
                         <Setter Property="Width" Value="10.7" />
                         <Setter Property="Height" Value="10.7" />
-                        <Setter Property="Fill">
-                            <Setter.Value>
-                                <MultiBinding Converter="{StaticResource StartBrush}">
-                                    <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                    <Binding Path="StartActive" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                    <Binding ElementName="StartButton" Path="IsMouseOver" />
-                                </MultiBinding>
-                            </Setter.Value>
-                        </Setter>
+                        <Setter Property="Fill"
+                                Value="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource StartGlyphBrush}}" />
                     </Style>
                 </Canvas.Resources>
 
@@ -192,6 +185,63 @@
                 <Rectangle Canvas.Left="12.4" Canvas.Top="0.9" />
                 <Rectangle Canvas.Left="0.9"  Canvas.Top="12.4" />
                 <Rectangle Canvas.Left="12.4" Canvas.Top="12.4" />
+
+                <!--
+                    The blue layer. Drawn over the grey glyph and faded in rather than swapped for
+                    it, because a brush that changes colour outright reads as a glitch. Sharing the
+                    parent Canvas means it inherits the drift and the press animation for free.
+                -->
+                <Canvas x:Name="StartBlue" Width="24" Height="24"
+                        Canvas.Left="0" Canvas.Top="0"
+                        IsHitTestVisible="False">
+                    <Canvas.Style>
+                        <Style TargetType="Canvas">
+                            <Setter Property="Opacity" Value="0" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StartHighlighted, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                    <DataTrigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                 To="1" Duration="0:0:0.13">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.EnterActions>
+                                    <DataTrigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                 To="0" Duration="0:0:0.22">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseIn" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.ExitActions>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Canvas.Style>
+
+                    <Canvas.Resources>
+                        <Style TargetType="Rectangle">
+                            <Setter Property="Width" Value="10.7" />
+                            <Setter Property="Height" Value="10.7" />
+                            <Setter Property="Fill"
+                                    Value="{Binding StartAccentBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                        </Style>
+                    </Canvas.Resources>
+
+                    <Rectangle Canvas.Left="0.9"  Canvas.Top="0.9" />
+                    <Rectangle Canvas.Left="12.4" Canvas.Top="0.9" />
+                    <Rectangle Canvas.Left="0.9"  Canvas.Top="12.4" />
+                    <Rectangle Canvas.Left="12.4" Canvas.Top="12.4" />
+                </Canvas>
             </Canvas>
         </Grid>
 
@@ -221,7 +271,6 @@
                         where the user sees the icon.
                     -->
                     <Grid Background="Transparent"
-                          ToolTip="{Binding Title}"
                           MouseEnter="OnSlotMouseEnter"
                           MouseLeave="OnSlotMouseLeave"
                           MouseLeftButtonDown="OnSlotMouseDown"
@@ -231,6 +280,23 @@
                           ContextMenuOpening="OnSlotContextMenuOpening"
                           Width="{Binding SlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                           Height="{Binding SlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+
+                        <!--
+                            No tooltip while the application is running: hovering already raises a
+                            preview whose header carries the window title, and a tooltip repeating
+                            it is a second label for the same fact. A pinned application that is not
+                            running has no preview, so there it is the only thing naming the icon.
+                        -->
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="ToolTip" Value="{Binding Title}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                        <Setter Property="ToolTip" Value="{x:Null}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
 
                         <Grid.Triggers>
                             <EventTrigger RoutedEvent="Grid.MouseEnter">

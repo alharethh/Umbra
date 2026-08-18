@@ -270,10 +270,10 @@ internal sealed partial class WindowPicker : Window
             column.Thumbnail?.Dispose();
             column.Thumbnail = null;
 
-            // A minimised window has no composited surface, so DWM would give us an empty
-            // rectangle. The icon placeholder built in Build() stays visible instead.
-            if (column.Window.IsMinimized) continue;
-
+            // Minimised windows are registered too. DWM usually still holds the last composed
+            // frame for one, so it previews its actual contents rather than its icon -- which is
+            // what the Windows taskbar shows and what makes a preview worth having. Skipping them
+            // on IsMinimized meant every minimised window previewed as a grey app icon.
             DwmThumbnail? thumbnail = DwmThumbnail.Register(_handle, column.Window.Handle);
             if (thumbnail is null || !thumbnail.HasContent)
             {
