@@ -97,6 +97,11 @@ internal sealed class MotionDriver : IDisposable
     /// <summary>Ceiling on <see cref="TimeScale"/>. At this the 20-minute drift period runs in 0.6 s.</summary>
     public const double MaxTimeScale = 2000.0;
 
+    /// <summary>
+    /// How much of the short-axis amplitude the clock uses, against everything else's full share.
+    /// </summary>
+    public const double ClockShortAxisScale = 0.5;
+
     private double _timeScale = 1.0;
     private bool _enabled = true;
 
@@ -206,6 +211,20 @@ internal sealed class MotionDriver : IDisposable
         // The clock drifts with everything else but jitters on its own frequencies (§6.4).
         MotionOffset clock = MotionModel.Clock(
             _clock.PhaseSeconds, metrics.Slot, metrics.ShortAxisDriftAmplitude);
+
+        // Halved across the bar's short axis, and only for the clock. §6.2's formula yields
+        // ±6.75 px there, which on a 48 px bar is ~17 physical pixels of vertical travel — small
+        // in the middle of a row of icons, conspicuous on a line of text sitting next to the
+        // screen edge, which is a fixed reference to measure it against.
+        //
+        // <b>It costs nothing that was working.</b> A 24 px icon body is already never uncovered on
+        // this axis, so the drift buys it nothing to lose (§6.0). The whole cost falls on features
+        // thinner than the travel — glyph strokes and antialiased edges — where halving the
+        // amplitude doubles peak duty: measured 0.162 → 0.324 for a 1.5 px stroke. And it lands on
+        // horizontal strokes only, because vertical stems are protected by the long-axis drift,
+        // which is untouched. Against §2.4's 86–191× gap to ordinary screen content, that is a
+        // rounding error on a rounding error, and the project owner judged the trade worth it.
+        clock = clock with { Across = clock.Across * ClockShortAxisScale };
 
         (double cdx, double cdy) = clock.ToScreen(metrics.Edge);
         ClockOffsetChanged?.Invoke(cdx, cdy);
