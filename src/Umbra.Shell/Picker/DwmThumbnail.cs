@@ -80,6 +80,27 @@ internal sealed class DwmThumbnail : IDisposable
         return new DwmThumbnail(handle, size);
     }
 
+    /// <summary>Current opacity, 0–255. Kept so <see cref="SetOpacity"/> can re-place cheaply.</summary>
+    private byte _opacity = 255;
+    private NativeRect _destination;
+
+    /// <summary>
+    /// Fades the thumbnail, which is the only way to animate one.
+    /// </summary>
+    /// <remarks>
+    /// A WPF <c>RenderTransform</c> does nothing to a thumbnail: DWM composites it into a rectangle
+    /// of its own, over our content, so scaling the element underneath scales an invisible box and
+    /// leaves the picture where it was. Opacity is a property DWM itself understands, so it is the
+    /// press feedback the picker uses.
+    /// </remarks>
+    public void SetOpacity(byte opacity)
+    {
+        if (_handle == IntPtr.Zero) return;
+
+        _opacity = opacity;
+        Apply(visible: true);
+    }
+
     /// <summary>
     /// Places the thumbnail. <paramref name="destination"/> is in <b>physical pixels</b> relative
     /// to the destination window's client area — see the type remarks.
@@ -88,11 +109,17 @@ internal sealed class DwmThumbnail : IDisposable
     {
         if (_handle == IntPtr.Zero) return;
 
+        _destination = new NativeRect { Left = left, Top = top, Right = right, Bottom = bottom };
+        Apply(visible);
+    }
+
+    private void Apply(bool visible)
+    {
         var properties = new ThumbnailProperties
         {
             Flags = FlagDestination | FlagVisible | FlagOpacity | FlagSourceClientAreaOnly,
-            Destination = new NativeRect { Left = left, Top = top, Right = right, Bottom = bottom },
-            Opacity = 255,
+            Destination = _destination,
+            Opacity = _opacity,
             Visible = visible,
 
             // The client area only, so the source window's title bar and border are not reproduced

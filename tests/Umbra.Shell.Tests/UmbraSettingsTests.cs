@@ -29,10 +29,15 @@ public class UmbraSettingsTests : IDisposable
     {
         UmbraSettings settings = new();
 
-        // §7.1: bottom edge, left-aligned row, 24 px icons.
+        // §7.1: bottom edge, left-aligned row.
         Assert.Equal(BarEdge.Bottom, settings.Edge);
         Assert.Equal(Alignment.Start, settings.Alignment);
-        Assert.Equal(SlotMetrics.BaseIconExtent, settings.DormantIconSize);
+
+        // A deliberate deviation from §7.1's 24 px: the bar ships with idle icons shrunk, and 16 is
+        // the smallest size that still reads as a taskbar while actually cooling the hottest pixel.
+        Assert.Equal(16.0, settings.DormantIconSize);
+        Assert.True(settings.DormantIconSize < SlotMetrics.BaseIconExtent,
+            "The dormant size must be below the full size, or nothing shrinks.");
         Assert.True(settings.Motion);
 
         // Collects nothing on Windows 11 25H2 and costs a timer, so it is off until asked for.
@@ -104,7 +109,7 @@ public class UmbraSettingsTests : IDisposable
     [InlineData("dormantIconSize = 500")]
     public void An_Unusable_Icon_Size_Keeps_The_Default(string line)
     {
-        Assert.Equal(SlotMetrics.BaseIconExtent, Written(line).DormantIconSize);
+        Assert.Equal(new UmbraSettings().DormantIconSize, Written(line).DormantIconSize);
     }
 
     [Fact]

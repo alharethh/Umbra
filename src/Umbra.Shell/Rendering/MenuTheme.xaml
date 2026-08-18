@@ -1,0 +1,141 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Dark context menus.
+
+        WPF's stock ContextMenu draws light chrome and ignores Background, exactly as its ComboBox
+        does — the settings window already carries a full template for the same reason. Against a
+        pure black bar the default menu is a white slab, which is both wrong-looking and, briefly,
+        the brightest thing on the panel.
+
+        Everything here is a full ControlTemplate rather than a set of Setters, because the parts
+        that need changing (the popup border, the item highlight, the separator, the check mark)
+        all live inside templates that Setters cannot reach.
+    -->
+
+    <SolidColorBrush x:Key="MenuSurface"    Color="#F21C1C18" />
+    <SolidColorBrush x:Key="MenuBorder"     Color="#FF3A3A33" />
+    <SolidColorBrush x:Key="MenuText"       Color="#FFE2E2DA" />
+    <SolidColorBrush x:Key="MenuTextDim"    Color="#FF6E6E66" />
+    <SolidColorBrush x:Key="MenuHighlight"  Color="#FF33332B" />
+    <SolidColorBrush x:Key="MenuSeparator"  Color="#FF34342D" />
+    <SolidColorBrush x:Key="MenuAccent"     Color="#FF4CC2FF" />
+
+    <Style TargetType="Separator" x:Key="MenuSeparatorStyle">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Margin" Value="10,5,10,5" />
+        <Setter Property="Background" Value="{StaticResource MenuSeparator}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Background="{TemplateBinding Background}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem" x:Key="DarkMenuItem">
+        <Setter Property="Foreground" Value="{StaticResource MenuText}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="Chrome"
+                            Background="Transparent"
+                            CornerRadius="4"
+                            Margin="4,1,4,1"
+                            SnapsToDevicePixels="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <!--
+                                The check mark for IsCheckable items. Drawn as a path rather than a
+                                glyph font so it renders identically wherever the bar runs.
+                            -->
+                            <Path x:Name="Check"
+                                  Grid.Column="0"
+                                  Visibility="Collapsed"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Stroke="{StaticResource MenuAccent}"
+                                  StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  Data="M 0,4 L 3.2,7.4 L 9,0.6" />
+
+                            <ContentPresenter Grid.Column="1"
+                                              ContentSource="Header"
+                                              VerticalAlignment="Center"
+                                              Margin="2,0,16,0"
+                                              RecognizesAccessKey="True" />
+
+                            <TextBlock Grid.Column="2"
+                                       Text="{TemplateBinding InputGestureText}"
+                                       Foreground="{StaticResource MenuTextDim}"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,12,0" />
+                        </Grid>
+                    </Border>
+
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{StaticResource MenuHighlight}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{StaticResource MenuTextDim}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem" BasedOn="{StaticResource DarkMenuItem}" />
+    <Style TargetType="Separator" BasedOn="{StaticResource MenuSeparatorStyle}" />
+
+    <Style TargetType="ContextMenu" x:Key="DarkContextMenu">
+        <Setter Property="Foreground" Value="{StaticResource MenuText}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="HasDropShadow" Value="False" />
+
+        <!--
+            No ItemContainerStyle. It is applied to every child including Separator, and a style
+            declared TargetType="MenuItem" throws "cannot be applied to type 'Separator'" as soon as
+            the menu is built, which takes the whole application down because it surfaces on the
+            dispatcher rather than at parse time. Each item carries its style explicitly instead.
+        -->
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <!--
+                        The outer margin is the drop shadow's room. Without it the shadow is
+                        clipped by the popup and reads as a hard grey edge on two sides.
+                    -->
+                    <Border Margin="6" Background="Transparent">
+                        <Border Background="{StaticResource MenuSurface}"
+                                BorderBrush="{StaticResource MenuBorder}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="0,5,0,5"
+                                SnapsToDevicePixels="True">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270"
+                                                  Opacity="0.55" Color="#FF000000" />
+                            </Border.Effect>
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                        </Border>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

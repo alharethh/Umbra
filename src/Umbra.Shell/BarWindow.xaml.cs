@@ -158,6 +158,12 @@ internal partial class BarWindow : AppBarWindow
     private MotionDriver? _motion;
     private WindowPicker? _picker;
 
+    // Hover preview state. The timer exists for the whole life of the window but only runs while a
+    // pointer is resting on a slot.
+    private DispatcherTimer? _hoverTimer;
+    private TaskbarSlot? _hoverSlot;
+    private FrameworkElement? _hoverElement;
+
     /// <summary>Dormant icon extent in DIP; 0 means "whatever the metrics were built with".</summary>
     private double _dormantIconExtent;
 
@@ -178,11 +184,33 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     public TranslateTransform ContentOffset { get; } = new();
 
+    /// <summary>
+    /// How long the pointer must rest on an icon before its preview appears, in milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// Long enough that sweeping the row on the way to somewhere else spawns nothing, short enough
+    /// that deliberately pointing at an icon feels answered rather than delayed. The Windows
+    /// taskbar sits in the same region.
+    /// </remarks>
+    private const int HoverPreviewDelayMilliseconds = 450;
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        _hoverTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(HoverPreviewDelayMilliseconds),
+        };
+
+        _hoverTimer.Tick += (_, _) =>
+        {
+            _hoverTimer!.Stop();
+            if (_hoverSlot is not null && _hoverElement is not null) ShowPreview(_hoverSlot, _hoverElement);
+        };
+
         _proximity.Start();
         _clock.Start();
         SuppressActivation();
+        LogWindowInventoryOnce();
 
         // Built here rather than in the constructor because the accumulator is sized in physical
         // pixels and the window has no size until it has been laid out.
@@ -240,6 +268,48 @@ internal partial class BarWindow : AppBarWindow
     }
 
     /// <summary>
+    /// Logs every window the bar believes it owns, with its class, once at startup.
+    /// </summary>
+    /// <remarks>
+    /// This exists because of the File Explorer close crash. The close path itself is ordinary —
+    /// a <c>WM_CLOSE</c> to a window handle — so the only thing that can make it catastrophic is
+    /// the handle being a shell window rather than a browser window. That is not something to
+    /// reason about from the outside: <c>explorer.exe</c> owns the desktop, the taskbar and every
+    /// File Explorer window, and they all group into one slot under
+    /// <see cref="AppIdentity"/>. Printing the classes answers it directly, and costs one pass
+    /// over a handful of windows at startup.
+    /// </remarks>
+    private void LogWindowInventoryOnce()
+    {
+        // Deferred: the tasks service is still enumerating when the bar first loads, so an
+        // immediate pass would report a list that is not the one the user will click on.
+        DispatcherTimer timer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(8) };
+
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+
+            BringUpLog.Write("--- window inventory ---");
+
+            foreach (TaskbarSlot slot in _tasks.Slots)
+            {
+                BringUpLog.Write($"slot {slot.Key} | {slot.Windows.Count} window(s)");
+
+                foreach (ApplicationWindow window in slot.Windows)
+                {
+                    bool closeable = WindowSafety.CanClose(window.Handle);
+                    BringUpLog.Write(
+                        $"    {(closeable ? "ok     " : "REFUSED")} {WindowSafety.Describe(window.Handle)}");
+                }
+            }
+
+            BringUpLog.Write("--- end inventory ---");
+        };
+
+        timer.Start();
+    }
+
+    /// <summary>
     /// Opens the settings window, which is now the home for everything that used to be a
     /// command-line flag.
     /// </summary>
@@ -293,6 +363,7 @@ internal partial class BarWindow : AppBarWindow
             settings.DormantIconSize * Metrics.Scale, 1.0, SlotMetrics.BaseIconExtent * Metrics.Scale);
 
         OnPropertyChanged(nameof(IconExtent));
+        OnPropertyChanged(nameof(HoverChipExtent));
         _motion?.SetEnabled(settings.Motion);
         _motion?.Reemit();
 
@@ -445,6 +516,30 @@ internal partial class BarWindow : AppBarWindow
         }
     }
 
+    /// <summary>
+    /// Margin between the drawn icon and the hover chip behind it, per side.
+    /// </summary>
+    /// <remarks>
+    /// <b>2 px is not a taste decision, it is the largest value that keeps P5.</b> The chip is
+    /// concentric with the icon and drifts with it, so its outer edge sits at
+    /// <c>e/2 + margin + peakOffset</c> from the slot centre. §6.2 already holds back 5% of the
+    /// pitch — 2.2 px at a 44 px pitch — as a safety margin inside the gutter, and that is exactly
+    /// the room this borrows. Any larger and the chip leaves the slot at the drift extremes, which
+    /// P5 forbids and which would be visible only occasionally. <c>HoverChipStaysInItsSlot</c>
+    /// pins it across every icon size and tier level.
+    /// </remarks>
+    internal const double HoverChipMargin = 2.0;
+
+    /// <summary>
+    /// Extent of the hover chip drawn behind an icon the pointer is over.
+    /// </summary>
+    /// <remarks>
+    /// Tracks <see cref="IconExtent"/>, so it shrinks and grows with the icon rather than being a
+    /// fixed cell. A fixed chip would reveal the drift — the icon would sit visibly off-centre
+    /// inside it at the extremes — which is precisely what P6 asks the motion layer not to do.
+    /// </remarks>
+    public double HoverChipExtent => IconExtent + 2 * HoverChipMargin;
+
     /// <summary>How far along the dormant → full-size ramp the icon currently is, 0 to 1.</summary>
     private double SizeBlend =>
         TierPalette.Resolve(BarElement.RunningIcon, TierLevel).ChromaBlend;
@@ -538,6 +633,7 @@ internal partial class BarWindow : AppBarWindow
         // tick, or the icon would briefly be drawn large while still carrying a dormant-sized
         // offset -- outside its own slot, which is exactly what P5 forbids.
         bar.OnPropertyChanged(nameof(IconExtent));
+        bar.OnPropertyChanged(nameof(HoverChipExtent));
         bar._motion?.Reemit();
 
         // Rebuild the string immediately rather than waiting up to a second for the next tick,
@@ -750,8 +846,54 @@ internal partial class BarWindow : AppBarWindow
                     close.Visibility = slot.Windows.Count > 1 ? Visibility.Collapsed : Visibility.Visible;
                     close.Header = "Close window";
                     break;
+
+                // Hiding the close item on its own would leave the rule that separated it dangling
+                // at the bottom of the menu.
+                case Separator { Name: "SlotMenuSeparator" } rule:
+                    rule.Visibility = slot.Windows.Count > 1 ? Visibility.Collapsed : Visibility.Visible;
+                    break;
             }
         }
+    }
+
+    /// <summary>Starts the hover-preview countdown for the icon under the pointer.</summary>
+    /// <remarks>
+    /// Moving from one icon to another while a preview is already up switches immediately rather
+    /// than waiting again: the user is demonstrably in preview mode, and re-imposing the delay
+    /// makes the row feel sticky.
+    /// </remarks>
+    private void OnSlotMouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot } element) return;
+
+        _hoverSlot = slot;
+        _hoverElement = element;
+        _hoverTimer?.Stop();
+
+        if (!slot.IsRunning || _dragging) return;
+
+        if (_picker is not null)
+        {
+            if (!AppIdentity.Same(_picker.SlotKey, slot.Key)) ShowPreview(slot, element);
+            return;
+        }
+
+        _hoverTimer?.Start();
+    }
+
+    /// <summary>
+    /// Cancels a pending preview when the pointer leaves.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately does not dismiss a preview that is already up. The pointer has to cross the gap
+    /// between the bar and the picker to reach a thumbnail, and dismissing on leave would close it
+    /// mid-journey. The picker watches the cursor itself and closes once it is away from both.
+    /// </remarks>
+    private void OnSlotMouseLeave(object sender, MouseEventArgs e)
+    {
+        _hoverTimer?.Stop();
+        _hoverSlot = null;
+        _hoverElement = null;
     }
 
     /// <summary>
@@ -921,6 +1063,10 @@ internal partial class BarWindow : AppBarWindow
         // Already looking at it: minimise, as the Windows taskbar does.
         if (!active.IsMinimized) active.Minimize();
         else active.BringToFront();
+
+        // The preview was of the window just acted on, so it has nothing left to show.
+        _picker?.Dismiss();
+        _picker = null;
     }
 
     /// <summary>
@@ -939,11 +1085,33 @@ internal partial class BarWindow : AppBarWindow
         if (_picker is not null)
         {
             bool sameSlot = AppIdentity.Same(_picker.SlotKey, slot.Key);
+
+            // Already showing this application, most likely because hovering raised it. Leave it
+            // up: the user's next click belongs to a thumbnail, not to the icon underneath.
+            if (sameSlot) return;
+        }
+
+        ShowPreview(slot, element);
+    }
+
+    /// <summary>
+    /// Raises the preview for a slot, replacing whatever was showing.
+    /// </summary>
+    /// <remarks>
+    /// The same window serves the hover preview and the click-through picker, because they are the
+    /// same thing: live thumbnails of everything this application has open. Splitting them would
+    /// mean two DWM registration paths and two dismissal policies to keep in agreement.
+    /// </remarks>
+    private void ShowPreview(TaskbarSlot slot, FrameworkElement element)
+    {
+        if (!slot.IsRunning) return;
+        if (_dragging) return;
+
+        if (_picker is not null)
+        {
+            if (AppIdentity.Same(_picker.SlotKey, slot.Key)) return;
             _picker.Dismiss();
             _picker = null;
-
-            // A second click on the same application closes the picker rather than reopening it.
-            if (sameSlot) return;
         }
 
         Point inWindow = element.TransformToAncestor(this).Transform(new Point(0, 0));
@@ -1085,7 +1253,10 @@ internal partial class BarWindow : AppBarWindow
 
         // Closing a group closes all of it, which is what the Windows taskbar does. Iterating a
         // copy: closing a window removes it from the slot's list as we go.
-        foreach (ApplicationWindow window in slot.Windows.ToArray()) window.Close();
+        //
+        // Through WindowSafety, never ApplicationWindow.Close: an explorer.exe slot can hold
+        // windows whose closure ends the shell, and this path closes every window in the slot.
+        foreach (ApplicationWindow window in slot.Windows.ToArray()) WindowSafety.TryClose(window);
     }
 
     /// <summary>

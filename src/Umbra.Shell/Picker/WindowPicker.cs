@@ -49,6 +49,12 @@ internal sealed partial class WindowPicker : Window
     /// <summary>Beyond this the picker would be wider than most screens and stops being a picker.</summary>
     private const int MaxColumns = 8;
 
+    /// <summary>Border plus padding the hover frame adds around each column, both sides.</summary>
+    private const double FrameChrome = 8.0;
+
+    /// <summary>How long the press is shown before the picker acts, in milliseconds.</summary>
+    private const int PressHoldMilliseconds = 110;
+
     private readonly List<Column> _columns = [];
     private readonly TaskbarSlot _slot;
     private readonly WpfRect _barScreenDip;
@@ -105,6 +111,18 @@ internal sealed partial class WindowPicker : Window
                 Cursor = Cursors.Hand,
             };
 
+            // The hover frame sits in the padding around the thumbnail, which is the only part of
+            // the column DWM does not draw over. A background fill would be almost entirely hidden
+            // behind the composited picture, so the feedback is a border and a brighter title.
+            var frame = new Border
+            {
+                BorderThickness = new Thickness(1),
+                BorderBrush = Brushes.Transparent,
+                CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(3),
+                Background = Brushes.Transparent,
+            };
+
             // The fallback for a minimised window, which DWM has no live surface for. Replaced by
             // the thumbnail when there is one.
             host.Child = new Image
@@ -130,15 +148,7 @@ internal sealed partial class WindowPicker : Window
             var close = new Button
             {
                 Content = "✕",
-                Width = 18,
-                Height = 18,
-                Padding = new Thickness(0),
-                FontSize = 10,
-                Focusable = false,
-                Cursor = Cursors.Hand,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66)),
+                Style = (Style)FindResource("PickerCloseButton"),
                 ToolTip = "Close this window",
             };
 
@@ -150,12 +160,20 @@ internal sealed partial class WindowPicker : Window
             header.Children.Add(title);
             header.Children.Add(close);
 
-            var column = new StackPanel { Width = ColumnWidth };
-            column.Children.Add(header);
-            column.Children.Add(host);
+            var inner = new StackPanel();
+            inner.Children.Add(header);
+            inner.Children.Add(host);
+            frame.Child = inner;
 
-            var entry = new Column(window, host, column);
+            var column = new StackPanel { Width = ColumnWidth + FrameChrome };
+            column.Children.Add(frame);
 
+            var entry = new Column(window, host, column) { Frame = frame, Title = title };
+
+            frame.MouseEnter += (_, _) => SetHover(entry, true);
+            frame.MouseLeave += (_, _) => { SetHover(entry, false); SetPressed(entry, false); };
+
+            host.MouseLeftButtonDown += (_, e) => { e.Handled = true; SetPressed(entry, true); };
             host.MouseLeftButtonUp += (_, e) => { e.Handled = true; Choose(entry); };
             close.Click += (_, e) => { e.Handled = true; CloseWindow(entry); };
 
@@ -164,7 +182,7 @@ internal sealed partial class WindowPicker : Window
         }
 
         Relayout();
-        Height = OuterPadding * 2 + HeaderHeight + ThumbnailHeight + 2;
+        Height = OuterPadding * 2 + HeaderHeight + ThumbnailHeight + FrameChrome + 2;
     }
 
     /// <summary>
@@ -185,7 +203,8 @@ internal sealed partial class WindowPicker : Window
         }
 
         int count = _columns.Count;
-        Width = OuterPadding * 2 + count * ColumnWidth + Math.Max(0, count - 1) * ColumnGap + 2;
+        Width = OuterPadding * 2 + count * (ColumnWidth + FrameChrome)
+              + Math.Max(0, count - 1) * ColumnGap + 2;
 
         // Layout has to settle before a thumbnail can be placed against its new position, so this
         // waits a beat rather than measuring the arrangement it is in the middle of replacing.
@@ -292,15 +311,76 @@ internal sealed partial class WindowPicker : Window
         if (column.Host.Child is Image image) image.Visibility = Visibility.Collapsed;
     }
 
+    /// <summary>Lights the frame and title of the column under the pointer.</summary>
+    private static void SetHover(Column column, bool hovered)
+    {
+        if (column.Frame is { } frame)
+        {
+            frame.BorderBrush = hovered
+                ? new SolidColorBrush(Color.FromRgb(0x4D, 0x4D, 0x4D))
+                : Brushes.Transparent;
+        }
+
+        if (column.Title is { } title)
+        {
+            title.Foreground = new SolidColorBrush(hovered
+                ? Color.FromRgb(0xB3, 0xB3, 0xB3)
+                : Color.FromRgb(0x66, 0x66, 0x66));
+        }
+    }
+
+    /// <summary>
+    /// Press feedback: the thumbnail dips in opacity while the button is held.
+    /// </summary>
+    /// <remarks>
+    /// Scaling the element would do nothing — DWM draws the thumbnail into a rectangle of its own,
+    /// over our content, so a <c>RenderTransform</c> moves an invisible box. Opacity is a property
+    /// DWM understands, so that is what the press animates.
+    /// </remarks>
+    private static void SetPressed(Column column, bool pressed)
+    {
+        column.Thumbnail?.SetOpacity(pressed ? (byte)150 : (byte)255);
+
+        if (column.Frame is { } frame)
+        {
+            frame.BorderBrush = new SolidColorBrush(pressed
+                ? Color.FromRgb(0x80, 0x80, 0x80)
+                : Color.FromRgb(0x4D, 0x4D, 0x4D));
+        }
+    }
+
+    /// <summary>
+    /// Activates the chosen window, after letting the press register visually.
+    /// </summary>
+    /// <remarks>
+    /// The picker would otherwise vanish on the same frame as the click, so the feedback would
+    /// never be seen. <see cref="PressHoldMilliseconds"/> is short enough to read as immediate and
+    /// long enough to be a response rather than a flicker.
+    /// </remarks>
     private void Choose(Column column)
     {
-        column.Window.BringToFront();
-        Dismiss();
+        SetPressed(column, true);
+
+        DispatcherTimer settle = new(DispatcherPriority.Normal)
+        {
+            Interval = TimeSpan.FromMilliseconds(PressHoldMilliseconds),
+        };
+
+        settle.Tick += (_, _) =>
+        {
+            settle.Stop();
+            column.Window.BringToFront();
+            Dismiss();
+        };
+
+        settle.Start();
     }
 
     private void CloseWindow(Column column)
     {
-        column.Window.Close();
+        // Through WindowSafety rather than ApplicationWindow.Close, so a shell window in an
+        // explorer.exe group is refused rather than closed. See WindowSafety's remarks.
+        if (!Umbra.Shell.Tasks.WindowSafety.TryClose(column.Window)) return;
 
         column.Thumbnail?.Dispose();
         column.Thumbnail = null;
@@ -415,6 +495,12 @@ internal sealed partial class WindowPicker : Window
         public Border Host { get; } = host;
         public StackPanel Panel { get; } = panel;
         public DwmThumbnail? Thumbnail { get; set; }
+
+        /// <summary>The hover frame around this column.</summary>
+        public Border? Frame { get; init; }
+
+        /// <summary>The title, brightened on hover.</summary>
+        public TextBlock? Title { get; init; }
     }
 
     private const int GwlExStyle = -20;

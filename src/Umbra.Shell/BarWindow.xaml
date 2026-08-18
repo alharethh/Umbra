@@ -36,6 +36,11 @@
     -->
 
     <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Rendering/MenuTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
         <render:TierIconConverter x:Key="TierIcon" Element="RunningIcon" />
         <render:TierIconConverter x:Key="TrayTierIcon" Element="TrayIcon" />
         <render:TierBrushConverter x:Key="IndicatorBrush" Element="RunningIndicator" />
@@ -45,6 +50,7 @@
         <!-- A long pill for the foreground window, a short one for the rest, as Windows 11 does. -->
         <render:IndicatorWidthConverter x:Key="PillAlong" AlongBar="True" />
         <render:IndicatorWidthConverter x:Key="PillAcross" AlongBar="False" />
+        </ResourceDictionary>
     </Window.Resources>
 
     <!--
@@ -56,13 +62,13 @@
     <Grid x:Name="ContentRoot" Background="Transparent">
 
         <Grid.ContextMenu>
-            <ContextMenu>
-                <MenuItem Header="Settings…" Click="OnSettingsClick" />
-                <Separator />
-                <MenuItem Header="Wear heatmap…" Click="OnHeatmapClick" />
-                <MenuItem Header="Motion speed…" Click="OnMotionSpeedClick" />
-                <Separator />
-                <MenuItem Header="Exit Umbra" Click="OnExitClick" />
+            <ContextMenu Style="{StaticResource DarkContextMenu}">
+                <MenuItem Header="Settings" Click="OnSettingsClick" Style="{StaticResource DarkMenuItem}" />
+                <Separator Style="{StaticResource MenuSeparatorStyle}" />
+                <MenuItem Header="Wear heatmap" Click="OnHeatmapClick" Style="{StaticResource DarkMenuItem}" />
+                <MenuItem Header="Motion speed" Click="OnMotionSpeedClick" Style="{StaticResource DarkMenuItem}" />
+                <Separator Style="{StaticResource MenuSeparatorStyle}" />
+                <MenuItem Header="Exit Umbra" Click="OnExitClick" Style="{StaticResource DarkMenuItem}" />
             </ContextMenu>
         </Grid.ContextMenu>
 
@@ -87,6 +93,53 @@
               VerticalAlignment="{Binding StartVerticalAlignment}"
               Width="{Binding StartHitWidth}"
               Height="{Binding StartHitHeight}">
+
+            <Grid.Triggers>
+                <EventTrigger RoutedEvent="Grid.MouseEnter">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetName="StartChip"
+                                             Storyboard.TargetProperty="Opacity"
+                                             To="1" Duration="0:0:0.12">
+                                <DoubleAnimation.EasingFunction>
+                                    <QuadraticEase EasingMode="EaseOut" />
+                                </DoubleAnimation.EasingFunction>
+                            </DoubleAnimation>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+                <EventTrigger RoutedEvent="Grid.MouseLeave">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetName="StartChip"
+                                             Storyboard.TargetProperty="Opacity"
+                                             To="0" Duration="0:0:0.4">
+                                <DoubleAnimation.EasingFunction>
+                                    <QuadraticEase EasingMode="EaseIn" />
+                                </DoubleAnimation.EasingFunction>
+                            </DoubleAnimation>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+            </Grid.Triggers>
+
+            <!--
+                The same hover chip the application icons get, centred on the glyph rather than on
+                the hit rect — §6.5 deliberately extends the Start hit area to the screen corner, and
+                a chip that filled it would be a large lit rectangle advertising invisible geometry.
+            -->
+            <Rectangle x:Name="StartChip"
+                       Width="28" Height="28"
+                       RadiusX="5" RadiusY="5"
+                       Fill="#FF1F1F1A"
+                       Opacity="0"
+                       IsHitTestVisible="False"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Margin="{Binding StartGlyphMargin}">
+                <Rectangle.RenderTransform>
+                    <TranslateTransform X="{Binding ContentOffset.X}" Y="{Binding ContentOffset.Y}" />
+                </Rectangle.RenderTransform>
+            </Rectangle>
 
             <Canvas Width="24" Height="24"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -128,6 +181,7 @@
                                 <MultiBinding Converter="{StaticResource StartBrush}">
                                     <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
                                     <Binding Path="StartActive" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                    <Binding ElementName="StartButton" Path="IsMouseOver" />
                                 </MultiBinding>
                             </Setter.Value>
                         </Setter>
@@ -168,6 +222,8 @@
                     -->
                     <Grid Background="Transparent"
                           ToolTip="{Binding Title}"
+                          MouseEnter="OnSlotMouseEnter"
+                          MouseLeave="OnSlotMouseLeave"
                           MouseLeftButtonDown="OnSlotMouseDown"
                           MouseMove="OnSlotMouseMove"
                           MouseLeftButtonUp="OnSlotClick"
@@ -176,14 +232,66 @@
                           Width="{Binding SlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                           Height="{Binding SlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
+                        <Grid.Triggers>
+                            <EventTrigger RoutedEvent="Grid.MouseEnter">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="HoverChip"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="1" Duration="0:0:0.12">
+                                            <DoubleAnimation.EasingFunction>
+                                                <QuadraticEase EasingMode="EaseOut" />
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="Grid.MouseLeave">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="HoverChip"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="0" Duration="0:0:0.4">
+                                            <DoubleAnimation.EasingFunction>
+                                                <QuadraticEase EasingMode="EaseIn" />
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Grid.Triggers>
+
                         <Grid.ContextMenu>
-                            <ContextMenu>
+                            <ContextMenu Style="{StaticResource DarkContextMenu}">
                                 <!-- Headers and enabled state are set as the menu opens. -->
-                                <MenuItem x:Name="SlotPinItem" Header="Pin to bar" Click="OnSlotPinClick" />
-                                <Separator />
-                                <MenuItem x:Name="SlotCloseItem" Header="Close window" Click="OnSlotClose" />
+                                <MenuItem x:Name="SlotPinItem" Header="Pin to bar" Click="OnSlotPinClick" Style="{StaticResource DarkMenuItem}" />
+                                <Separator x:Name="SlotMenuSeparator" Style="{StaticResource MenuSeparatorStyle}" />
+                                <MenuItem x:Name="SlotCloseItem" Header="Close window" Click="OnSlotClose" Style="{StaticResource DarkMenuItem}" />
                             </ContextMenu>
                         </Grid.ContextMenu>
+
+                        <!--
+                            Hover affordance. Drawn behind the icon and drifting with it, so the
+                            two stay concentric and the chip never advertises the drift (P6).
+
+                            It costs light only while the pointer is on the bar, which is Tier 2 at
+                            ~0.1% duty (§3.2), and #1F1F1A is L = 1.2% — about a thousandth of the
+                            wear of a white hover. The fade timings are §3.4's: 120 ms attack so it
+                            feels immediate, 400 ms release so crossing the row does not strobe.
+                        -->
+                        <Rectangle x:Name="HoverChip"
+                                   RadiusX="5" RadiusY="5"
+                                   Fill="#FF1F1F1A"
+                                   Opacity="0"
+                                   IsHitTestVisible="False"
+                                   Width="{Binding HoverChipExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                                   Height="{Binding HoverChipExtent, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <Rectangle.RenderTransform>
+                                <TranslateTransform
+                                    X="{Binding ContentOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Y="{Binding ContentOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
+                            </Rectangle.RenderTransform>
+                        </Rectangle>
 
                         <!--
                             The icon is rebuilt for the current tier level: monochrome and

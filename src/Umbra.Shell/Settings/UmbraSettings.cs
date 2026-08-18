@@ -16,9 +16,9 @@ namespace Umbra.Shell.Settings;
 /// small and rewriting it whole keeps the reader trivial.
 /// </para>
 /// <para>
-/// <b>Defaults are the spec's, not the platform's.</b> §7.1 makes bottom edge with a left-aligned
-/// row the shipping default, and the icon extent defaults to §7.1's 24 px so a fresh install
-/// behaves exactly as the design describes.
+/// <b>Defaults are the spec's, with one deliberate exception.</b> §7.1 makes bottom edge with a
+/// left-aligned row the shipping default. The dormant icon extent does <i>not</i> default to
+/// §7.1's 24 px — see <see cref="DormantIconSize"/> for why the bar ships with idle icons shrunk.
 /// </para>
 /// <para>
 /// Command-line flags override the file where both are given. The flags exist for experiments
@@ -40,15 +40,28 @@ internal sealed class UmbraSettings
     /// <summary>Where the icon row sits along the long axis (§7.1 default: start).</summary>
     public Alignment Alignment { get; set; } = Alignment.Start;
 
+    /// <summary>Full icon extent, and the size drawn once the bar is engaged (§7.1).</summary>
+    public const double FullIconSize = SlotMetrics.BaseIconExtent;
+
     /// <summary>
     /// Icon extent while the bar is dormant, at 100% scaling. Grows to §7.1's 24 px on hover.
     /// </summary>
     /// <remarks>
-    /// See <see cref="IconSizeRamp"/> for why this buys far less than the geometry suggests: the
-    /// permanently-lit core vanishes at 19.29 px and buys nothing there, and 16 px is the first
-    /// size where the wear actually moves.
+    /// <para>
+    /// <b>Defaults to 16, not to §7.1's 24.</b> This is a deliberate deviation, taken by the
+    /// project owner: the bar ships with idle icons shrunk and growing back on approach, rather
+    /// than shipping at full size and leaving the shrink as something to find. The fidelity cost is
+    /// paid only while the bar is dormant and the pointer is elsewhere, and the icon is at the
+    /// Windows 11 size for the whole of the time anyone is actually looking at it.
+    /// </para>
+    /// <para>
+    /// 16 rather than a smaller number because <see cref="IconSizeRamp"/> shows the payoff curve is
+    /// brutal: the permanently-lit core vanishes at 19.29 px and buys <i>nothing</i> there, 16 px is
+    /// the first size where the hottest pixel actually cools (1.25×), and going further trades
+    /// legibility fast — 12 px reaches 2.32× but no longer reads as a taskbar.
+    /// </para>
     /// </remarks>
-    public double DormantIconSize { get; set; } = SlotMetrics.BaseIconExtent;
+    public double DormantIconSize { get; set; } = 16.0;
 
     /// <summary>Whether the motion layer runs (§6).</summary>
     public bool Motion { get; set; } = true;

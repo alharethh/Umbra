@@ -66,7 +66,11 @@ internal sealed class StartGlyphBrushConverter : IMultiValueConverter
     {
         if (values.Length < 2) return null;
 
-        bool active = values[1] is true;
+        // values[1] is StartActive (the menu is open, or the press grace is running); an optional
+        // values[2] is pointer-over. Hover colours the glyph for the same reason opening the menu
+        // does: it is a deliberate, brief, pointer-driven state, which is exactly the bargain §3.2
+        // strikes for Tier 2 chroma.
+        bool active = values[1] is true || (values.Length > 2 && values[2] is true);
         if (!active) return _resting.Convert(values[0], targetType, parameter, culture);
 
         return _accent ??= Build(Srgb.CapLuminance(Rgb.FromHex(Accent), TierPalette.Tier2LuminanceCap));
