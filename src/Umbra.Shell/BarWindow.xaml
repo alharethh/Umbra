@@ -57,6 +57,8 @@
 
         <Grid.ContextMenu>
             <ContextMenu>
+                <MenuItem Header="Settings…" Click="OnSettingsClick" />
+                <Separator />
                 <MenuItem Header="Wear heatmap…" Click="OnHeatmapClick" />
                 <MenuItem Header="Motion speed…" Click="OnMotionSpeedClick" />
                 <Separator />

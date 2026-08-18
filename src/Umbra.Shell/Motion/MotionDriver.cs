@@ -98,6 +98,7 @@ internal sealed class MotionDriver : IDisposable
     public const double MaxTimeScale = 2000.0;
 
     private double _timeScale = 1.0;
+    private bool _enabled = true;
 
     /// <summary>Raised when the offset changes, in device-independent pixels.</summary>
     public event Action<double, double>? OffsetChanged;
@@ -108,7 +109,38 @@ internal sealed class MotionDriver : IDisposable
     /// <summary>Whether motion is currently running, and why not if it is not.</summary>
     public MotionSuppression Suppression => _clock.Suppression;
 
-    public void Start() => _timer.Start();
+    public void Start()
+    {
+        if (_enabled) _timer.Start();
+    }
+
+    /// <summary>
+    /// Turns motion on or off at runtime, for the settings window and for the §11.2 Q1 comparison.
+    /// </summary>
+    /// <remarks>
+    /// Disabling parks the content at its undrifted position rather than leaving it wherever the
+    /// drift had reached, so "motion off" looks the same however it was arrived at. Re-enabling
+    /// resets the tick clock first: the wall-clock gap while paused is not motion time, and
+    /// crediting it would jump the phase forward by however long the setting was off.
+    /// </remarks>
+    public void SetEnabled(bool enabled)
+    {
+        if (enabled == _enabled) return;
+        _enabled = enabled;
+
+        if (enabled)
+        {
+            _lastTick = DateTime.UtcNow;
+            _timer.Start();
+            Reemit();
+        }
+        else
+        {
+            _timer.Stop();
+            OffsetChanged?.Invoke(0, 0);
+            ClockOffsetChanged?.Invoke(0, 0);
+        }
+    }
 
     public void Dispose()
     {

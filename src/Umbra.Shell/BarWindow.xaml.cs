@@ -53,12 +53,16 @@ internal partial class BarWindow : AppBarWindow
     /// </summary>
     public bool MotionEnabled { get; init; } = true;
 
-    public BarWindow(ShellHost host, BarMetrics metrics)
+    /// <param name="screen">
+    /// Which monitor to occupy. Fixed for the window's lifetime: it is part of the space-reserving
+    /// AppBar registration, and §6.3 forbids re-registering that in steady state.
+    /// </param>
+    public BarWindow(ShellHost host, BarMetrics metrics, AppBarScreen? screen = null)
         : base(
             host.ShellManager.AppBarManager,
             host.ShellManager.ExplorerHelper,
             host.ShellManager.FullScreenHelper,
-            AppBarScreen.FromPrimaryScreen(),
+            screen ?? AppBarScreen.FromPrimaryScreen(),
             ToAppBarEdge(metrics.Edge),
 
             // Never AppBarMode.AutoHide. Windows allows one autohide AppBar per screen edge and
@@ -154,6 +158,9 @@ internal partial class BarWindow : AppBarWindow
     private MotionDriver? _motion;
     private WindowPicker? _picker;
 
+    /// <summary>Dormant icon extent in DIP; 0 means "whatever the metrics were built with".</summary>
+    private double _dormantIconExtent;
+
     // Drag-reorder state. Null slot means no press is being tracked.
     private TaskbarSlot? _pressedSlot;
     private FrameworkElement? _pressedElement;
@@ -222,7 +229,7 @@ internal partial class BarWindow : AppBarWindow
         }
         else
         {
-            BringUpLog.Write("motion disabled by --no-motion");
+            BringUpLog.Write("motion disabled by settings (or --no-motion)");
         }
 
         BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
@@ -230,6 +237,17 @@ internal partial class BarWindow : AppBarWindow
             $"+/-{Metrics.ShortAxisDriftAmplitude:F2} px short axis, " +
             $"micro +/-{Metrics.Slot.MicroAmplitude:F2} px at {MotionModel.MicroUpdateRateHz} Hz, " +
             $"peak {Metrics.Slot.PeakOffset:F2} px against a {Metrics.Slot.Gutter:F2} px gutter"));
+    }
+
+    /// <summary>
+    /// Opens the settings window, which is now the home for everything that used to be a
+    /// command-line flag.
+    /// </summary>
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        if (Application.Current is not App app) return;
+
+        new Settings.SettingsWindow(app.Settings, ApplyLiveSettings, app.Restart).Show();
     }
 
     /// <summary>
@@ -258,6 +276,28 @@ internal partial class BarWindow : AppBarWindow
         // Flush first, so what the window shows is what is on disk.
         _wear.Persist();
         new HeatmapWindow(_wear.Accumulator) { Owner = null }.Show();
+    }
+
+    /// <summary>
+    /// Applies the settings that can change without rebuilding the window.
+    /// </summary>
+    /// <remarks>
+    /// The resting icon size and the motion layer are properties of what is drawn, so they take
+    /// effect immediately. The edge, the alignment and the monitor are not here: they are fixed by
+    /// the AppBar registration and need a restart, which <see cref="Settings.SettingsWindow"/> says
+    /// plainly rather than appearing to apply them.
+    /// </remarks>
+    public void ApplyLiveSettings(Settings.UmbraSettings settings)
+    {
+        _dormantIconExtent = Math.Clamp(
+            settings.DormantIconSize * Metrics.Scale, 1.0, SlotMetrics.BaseIconExtent * Metrics.Scale);
+
+        OnPropertyChanged(nameof(IconExtent));
+        _motion?.SetEnabled(settings.Motion);
+        _motion?.Reemit();
+
+        BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
+            $"settings applied live: dormant icon {_dormantIconExtent:F0} px, motion {settings.Motion}"));
     }
 
     /// <summary>Geometry for this bar, straight from the spec model.</summary>
@@ -398,7 +438,7 @@ internal partial class BarWindow : AppBarWindow
     {
         get
         {
-            double dormant = Metrics.Slot.IconExtent;
+            double dormant = _dormantIconExtent > 0 ? _dormantIconExtent : Metrics.Slot.IconExtent;
             double full = SlotMetrics.BaseIconExtent * Metrics.Scale;
 
             return IconSizeRamp.Extent(dormant, full, SizeBlend);

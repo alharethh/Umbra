@@ -666,7 +666,7 @@ Ordered by how much they affect the build.
 6. ~~Outline mode.~~ Built, measured, and **removed in v4** — see §5.3. The step is kept numbered because steps 7–9 are referenced by number throughout the docs.
 7. Tray hosting via ManagedShell.
 8. Start button and menu invocation, `TaskbarAl` handling.
-9. Pinning, drag-reorder, per-monitor config, settings UI.
+9. Pinning, drag-reorder, per-monitor config, settings UI. **Done apart from running a bar on every monitor at once** — which monitor the bar occupies is configurable, but one bar per monitor needs §11.2 Q12 settled first, since a non-OLED secondary may want no OLED treatment at all. The window picker replaced cycle-on-click (`docs/measurements.md`, step 9).
 
 Steps 1–5 produce something you can evaluate the entire thesis against. If the design is wrong, it is wrong before any shell plumbing is written.
 

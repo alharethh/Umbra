@@ -291,6 +291,61 @@ The rendering side is complete and untested against real data: tray icons bind t
 area, draw at the trailing end through the tier system, forward mouse events back to the owning
 application, and report their host rectangle so flyouts anchor correctly.
 
+## Step 9 — window picker, drag-reorder, settings, monitor selection
+
+Driven against the running bar rather than reasoned about, because none of it is testable from the
+core library. Reference machine as above, plus a secondary `\\.\DISPLAY1` at 1920 × 1080, 100%.
+
+**Window picker.** Opened on a File Explorer slot holding four windows:
+
+| Observable | Measured |
+| :---- | :---- |
+| Thumbnails registered | 4 of 4, source size 1618 × 982 px each |
+| Picker geometry | 850 × 164 DIP, clamped to the work area at the screen's left edge |
+| Close one window | 4 → 3 windows, picker relaid out 850 → 642 DIP |
+| Click a thumbnail | foreground went to that specific window |
+| Pointer leaves | dismissed after the 600 ms grace |
+
+The cursor conversion was checked directly rather than assumed: the watcher logged raw `206,1410`
+resolving to `165,1128` DIP at 1.25 scale, which is the bar, so the picker correctly stayed open.
+
+**Drag-reorder.** Three drags on a three-pin test set, each verified against `pinned-apps.txt`:
+`Firefox, Explorer, NVIDIA` → `Explorer, NVIDIA, Firefox` → `NVIDIA, Firefox, Explorer` →
+`Explorer, NVIDIA, Firefox`. Each drop logged exactly one reorder, which is the check that matters:
+before the fix, releasing capture before clearing state re-entered `EndDrag` and persisted twice.
+
+A drag suppresses the click that ends it — verified by the absence of a `slot click` line — and a
+plain click afterwards still activates normally.
+
+**Settings.** Every field round-trips. The live-applied ones were confirmed against the bar's own
+log: dragging the resting-size slider from 24 to 16 produced eight `settings applied live` lines,
+one per step, and unticking motion produced `motion False` and stopped the ticks.
+
+**Monitor selection.** Choosing `\\.\DISPLAY1` and restarting moved the bar to
+`x=2560 y=1223 w=1920 h=48` at `dpiScale=1.00`, and the wear accumulator resized to 1920 × 60. The
+restart handshake worked: `restarting` → `clean shutdown` → `startup`, with the new instance waiting
+on the old process id before touching Explorer's state.
+
+### Two instruments that were lying, and are now not
+
+- **`expected rect` was computed against the primary screen.** On a secondary monitor it disagreed
+  with `actual rect` on every run — `expected x=0 y=1104 w=2048` against `actual x=2560 y=1223
+  w=1920` — while nothing was wrong. A comparison that always fails is as useless as one that can
+  never fail. It now takes its origin and extent from the screen actually in use, and the two lines
+  agree exactly.
+- **`motion disabled by --no-motion`** was logged whenever motion was off, including when it was off
+  because of a stored setting. Now says so.
+
+### A harness note, since it cost three false readings
+
+PowerShell 5.1 is DPI-unaware, so `SetCursorPos` and `GetWindowRect` both work in DIP there, while
+**UI Automation reports physical pixels regardless** and `PrintWindow` needs physical. Mixing them
+put clicks a quarter of the screen away. Separately, three "failures" during this step were the
+harness rather than the product: `$script:` variables in PowerShell functions persist across calls,
+so a counter and a window-handle lookup both returned stale values, and a window that is behind
+another cannot be screenshotted with `CopyFromScreen` — `PrintWindow` with `PW_RENDERFULLCONTENT`
+captures it regardless of Z-order. Verify the instrument before believing the result.
+
 ## Still open
 
 - **§11.2 Q2 — do ManagedShell's 100 ms timers defeat display idle?** Not yet measured. Only the

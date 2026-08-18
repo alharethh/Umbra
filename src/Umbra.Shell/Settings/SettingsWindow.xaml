@@ -1,0 +1,194 @@
+<Window x:Class="Umbra.Shell.Settings.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:ClassModifier="internal"
+        Title="Umbra — settings"
+        Width="520" SizeToContent="Height"
+        ResizeMode="NoResize"
+        Background="#FF14140F"
+        Foreground="#FFB6B6AD"
+        TextOptions.TextRenderingMode="Grayscale"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFB6B6AD" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FF8A8A82" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,2,0,10" />
+        </Style>
+        <Style TargetType="Label">
+            <Setter Property="Foreground" Value="#FFB6B6AD" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#FFB6B6AD" />
+        </Style>
+
+        <!--
+            A full template, not just Background and Foreground setters. The window sets a light
+            Foreground which inherits into the combo boxes, and WPF's stock ComboBox template draws
+            its own light chrome regardless of Background — so the setters alone leave light-grey
+            text on near-white, which is the least readable combination available. Verified by
+            screenshotting the window rather than by assuming.
+        -->
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="#FFE0E0D8" />
+            <Setter Property="Padding" Value="7,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Chrome" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#FF33332B" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Foreground" Value="#FFE0E0D8" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="Toggle"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Face"
+                                                Background="#FF23231E"
+                                                BorderBrush="#FF3A3A33"
+                                                BorderThickness="1"
+                                                CornerRadius="2">
+                                            <Path HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                  Margin="0,0,9,0" Fill="#FF9A9A90"
+                                                  Data="M 0 0 L 7 0 L 3.5 4.5 Z" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Face" Property="Background" Value="#FF2C2C25" />
+                                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF4A4A42" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <ContentPresenter Margin="8,0,26,0"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+
+                            <Popup x:Name="Popup"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   AllowsTransparency="True"
+                                   PopupAnimation="None"
+                                   Focusable="False">
+                                <Border Background="#FF1B1B16"
+                                        BorderBrush="#FF3A3A33"
+                                        BorderThickness="1"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="18">
+
+        <TextBlock Text="Placement" FontWeight="SemiBold" Margin="0,0,0,6" />
+
+        <Grid Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Screen edge" />
+            <ComboBox Grid.Column="1" x:Name="EdgeBox" />
+        </Grid>
+
+        <Grid Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Icon row" />
+            <ComboBox Grid.Column="1" x:Name="AlignmentBox" />
+        </Grid>
+
+        <Grid Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Monitor" />
+            <ComboBox Grid.Column="1" x:Name="MonitorBox" />
+        </Grid>
+
+        <TextBlock Style="{StaticResource Hint}"
+                   Text="Changing the edge, the row alignment or the monitor needs Umbra restarted — they are fixed when the space-reserving AppBar is registered." />
+
+        <TextBlock Text="Wear" FontWeight="SemiBold" Margin="0,8,0,6" />
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Resting icon size" />
+            <Slider Grid.Column="1" x:Name="IconSize"
+                    Minimum="12" Maximum="24" TickFrequency="1"
+                    IsSnapToTickEnabled="True"
+                    ValueChanged="OnIconSizeChanged" />
+            <TextBlock Grid.Column="2" x:Name="IconSizeReadout"
+                       MinWidth="112" TextAlignment="Right" FontFamily="Consolas" FontSize="11" />
+        </Grid>
+
+        <TextBlock Style="{StaticResource Hint}"
+                   Text="Icons shrink while the bar is resting and grow back to 24 px when you point at it, so the smaller size is only ever seen out of the corner of your eye. Applies immediately." />
+
+        <CheckBox x:Name="MotionBox" Content="Drift and micro-jitter" Margin="0,0,0,2" />
+        <TextBlock Style="{StaticResource Hint}"
+                   Text="Moves the bar's contents within their own slots, far too slowly to see. Applies immediately." />
+
+        <CheckBox x:Name="TrayBox" Content="Host the notification area" Margin="0,0,0,2" />
+        <TextBlock Style="{StaticResource Hint}"
+                   Text="Collects nothing on Windows 11 25H2 — Windows no longer routes notification icons this way — and costs a permanent 100 ms timer. Off unless you are testing it." />
+
+        <Border Height="1" Background="#FF2E2E28" Margin="0,6,0,12" />
+
+        <Grid>
+            <TextBlock x:Name="RestartNote" HorizontalAlignment="Left"
+                       FontSize="11" Foreground="#FFC8B48A" TextWrapping="Wrap" MaxWidth="290" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Restart Umbra" x:Name="RestartButton" Padding="12,5" Margin="0,0,8,0" Click="OnRestartClick" />
+                <Button Content="Close" Padding="16,5" Click="OnCloseClick" />
+            </StackPanel>
+        </Grid>
+
+    </StackPanel>
+
+</Window>

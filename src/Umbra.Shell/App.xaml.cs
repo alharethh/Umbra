@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Threading;
+using ManagedShell.AppBar;
 using Umbra.Core.Layout;
 using Umbra.Shell.Diagnostics;
+using Umbra.Shell.Settings;
 using Umbra.Shell.Shell;
 
 namespace Umbra.Shell;
@@ -11,6 +13,7 @@ public partial class App : Application
 {
     private ShellHost? _host;
     private BarWindow? _bar;
+    private string[] _args = [];
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -22,11 +25,20 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
         AppDomain.CurrentDomain.ProcessExit += (_, _) => _host?.RestoreExplorer();
 
+        _args = e.Args;
         BringUpLog.Write("--- startup ---");
 
-        // --tray opts into notification-area hosting. Off by default: it collects nothing on
-        // Windows 11 25H2 while still costing a permanent 100 ms timer (docs/measurements.md).
-        _host = new ShellHost(enableTray: e.Args.Contains("--tray", StringComparer.OrdinalIgnoreCase));
+        // A restart from the settings window hands us the outgoing process to wait on. Without
+        // this the new bar can capture Explorer's taskbar state while the old one still has it
+        // suppressed, then faithfully restore the user's taskbar to hidden on its own exit.
+        WaitForPreviousInstance(e.Args);
+
+        Settings = UmbraSettings.Load();
+        ApplyCommandLineOverrides(Settings, e.Args);
+
+        // Tray hosting collects nothing on Windows 11 25H2 while still costing a permanent 100 ms
+        // timer (docs/measurements.md step 7), so it stays off unless asked for.
+        _host = new ShellHost(enableTray: Settings.Tray);
 
         if (_host.RecoveredFromUncleanExit)
             BringUpLog.Write("recovered Explorer taskbar state from a previous unclean exit");
@@ -35,21 +47,17 @@ public partial class App : Application
         // autohidden taskbar (shell-integration §2.5). Left is the control: it is the one edge
         // where none of that contention exists, so running the two back to back is what makes the
         // contention attributable rather than merely observed.
-        BarEdge edge = ParseEdge(e.Args);
+        BarMetrics metrics = new(Settings.Edge, Settings.Alignment, scale: 1.0,
+                                 baseIconExtent: Settings.DormantIconSize);
 
-        // --icon-size draws the icon smaller inside an unchanged 44 px slot, which widens the
-        // gutter and so widens the drift (§6.2). Clicking is untouched: the hit slot is the pitch,
-        // not the icon. An experiment switch, like --no-motion — the default is the §7.1 figure.
-        BarMetrics metrics = new(edge, Alignment.Start, scale: 1.0,
-                                 baseIconExtent: ParseIconSize(e.Args));
-
-        bool motion = !e.Args.Contains("--no-motion", StringComparer.OrdinalIgnoreCase);
-
-        _bar = new BarWindow(_host, metrics) { MotionEnabled = motion };
+        _bar = new BarWindow(_host, metrics, ResolveScreen(Settings.Monitor))
+        {
+            MotionEnabled = Settings.Motion,
+        };
         _bar.Closed += (_, _) => Shutdown();
         _bar.Show();
 
-        LogGeometry(metrics, _bar);
+        LogGeometry(metrics, _bar, ResolveScreen(Settings.Monitor));
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -60,6 +68,116 @@ public partial class App : Application
         _host = null;
 
         base.OnExit(e);
+    }
+
+    /// <summary>The live settings, shared with the settings window.</summary>
+    /// <remarks><c>App</c> is public because WPF requires it; the settings themselves are not.</remarks>
+    internal UmbraSettings Settings { get; private set; } = new();
+
+    /// <summary>
+    /// Restarts Umbra so that edge, alignment, monitor or tray changes take effect.
+    /// </summary>
+    /// <remarks>
+    /// The replacement is told to wait for this process to exit before it touches Explorer's
+    /// taskbar state, because both instances briefly existing is exactly the race that leaves the
+    /// user's taskbar hidden — see <c>ExplorerStateGuard</c>.
+    /// </remarks>
+    public void Restart()
+    {
+        string? exe = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exe))
+        {
+            BringUpLog.Write("restart requested but the process path is unknown");
+            return;
+        }
+
+        // Carry the original flags through, minus any previous wait token.
+        List<string> args = ["--wait-for", Environment.ProcessId.ToString(CultureInfo.InvariantCulture)];
+        for (int i = 0; i < _args.Length; i++)
+        {
+            if (string.Equals(_args[i], "--wait-for", StringComparison.OrdinalIgnoreCase)) { i++; continue; }
+            args.Add(_args[i]);
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe)
+            {
+                UseShellExecute = false,
+                Arguments = string.Join(' ', args.Select(a => a.Contains(' ') ? $"\"{a}\"" : a)),
+            });
+
+            BringUpLog.Write("restarting");
+            Shutdown();
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            BringUpLog.Write(ex, "restart failed");
+        }
+    }
+
+    /// <summary>Blocks until the process named by <c>--wait-for</c> has exited.</summary>
+    private static void WaitForPreviousInstance(string[] args)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (!string.Equals(args[i], "--wait-for", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!int.TryParse(args[i + 1], out int processId)) continue;
+
+            try
+            {
+                using System.Diagnostics.Process previous = System.Diagnostics.Process.GetProcessById(processId);
+
+                // Bounded: a hung predecessor must not leave the user with no taskbar at all.
+                if (previous.WaitForExit(10_000)) BringUpLog.Write($"previous instance {processId} exited");
+                else BringUpLog.Write($"previous instance {processId} did not exit within 10s; continuing");
+            }
+            catch (ArgumentException)
+            {
+                // Already gone, which is the outcome we wanted.
+            }
+
+            return;
+        }
+    }
+
+    /// <summary>
+    /// Finds the configured monitor, falling back to the primary when it is no longer attached.
+    /// </summary>
+    private static AppBarScreen? ResolveScreen(string deviceName)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName)) return null;
+
+        try
+        {
+            foreach (AppBarScreen screen in AppBarScreen.FromAllScreens())
+                if (string.Equals(screen.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase))
+                    return screen;
+
+            BringUpLog.Write($"configured monitor '{deviceName}' is not attached; using the primary");
+        }
+        catch (Exception e) when (e is InvalidOperationException or PlatformNotSupportedException)
+        {
+            BringUpLog.Write(e, "could not enumerate monitors; using the primary");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Lets command-line flags win over the stored settings.
+    /// </summary>
+    /// <remarks>
+    /// The flags exist for experiments — <c>--no-motion</c> is there so the §11.2 Q1 comparison
+    /// needs no rebuild — and an experiment silently losing to a stored setting would be worse than
+    /// having no flag at all.
+    /// </remarks>
+    private static void ApplyCommandLineOverrides(UmbraSettings settings, string[] args)
+    {
+        if (ParseEdgeOverride(args) is { } edge) settings.Edge = edge;
+        if (ParseIconSize(args) is { } size) settings.DormantIconSize = size;
+        if (args.Contains("--no-motion", StringComparer.OrdinalIgnoreCase)) settings.Motion = false;
+        if (args.Contains("--tray", StringComparer.OrdinalIgnoreCase)) settings.Tray = true;
     }
 
     /// <summary>
@@ -92,24 +210,40 @@ public partial class App : Application
     /// <summary>
     /// <c>--edge left|top|right|bottom</c>. Defaults to bottom, the shipping default (§7.1).
     /// </summary>
-    private static BarEdge ParseEdge(string[] args)
+    private static BarEdge? ParseEdgeOverride(string[] args)
     {
         for (int i = 0; i < args.Length - 1; i++)
         {
             if (!string.Equals(args[i], "--edge", StringComparison.OrdinalIgnoreCase)) continue;
             if (Enum.TryParse(args[i + 1], ignoreCase: true, out BarEdge parsed)) return parsed;
 
-            BringUpLog.Write($"unrecognised --edge value '{args[i + 1]}', falling back to Bottom");
+            BringUpLog.Write($"unrecognised --edge value '{args[i + 1]}', keeping the stored edge");
         }
 
-        return BarEdge.Bottom;
+        return null;
     }
 
-    private static void LogGeometry(BarMetrics metrics, BarWindow bar)
+    /// <summary>
+    /// Logs what the spec model computed against what the AppBar actually got.
+    /// </summary>
+    /// <remarks>
+    /// The expected rectangle is computed against <paramref name="screen"/>, not the primary.
+    /// Taking it from <c>SystemParameters.PrimaryScreen*</c> made this comparison disagree with
+    /// itself on every run that placed the bar on a secondary monitor — an instrument that always
+    /// reports a mismatch is as useless as one that can never report a pass.
+    /// </remarks>
+    private static void LogGeometry(BarMetrics metrics, BarWindow bar, AppBarScreen? screen)
     {
-        Umbra.Core.Layout.Rect reserved = metrics.ReservedRect(
-            SystemParameters.PrimaryScreenWidth,
-            SystemParameters.PrimaryScreenHeight);
+        // AppBarScreen reports physical pixels; the model works in DIP, which is what the bar's
+        // own Left/Top/Width/Height are in.
+        double scale = bar.DpiScale <= 0 ? 1.0 : bar.DpiScale;
+
+        double width = screen is null ? SystemParameters.PrimaryScreenWidth : screen.Bounds.Width / scale;
+        double height = screen is null ? SystemParameters.PrimaryScreenHeight : screen.Bounds.Height / scale;
+        double originX = screen is null ? 0 : screen.Bounds.X / scale;
+        double originY = screen is null ? 0 : screen.Bounds.Y / scale;
+
+        Umbra.Core.Layout.Rect reserved = metrics.ReservedRect(width, height);
 
         BringUpLog.Write(string.Create(
             CultureInfo.InvariantCulture,
@@ -125,7 +259,8 @@ public partial class App : Application
         // own tests.
         BringUpLog.Write(string.Create(
             CultureInfo.InvariantCulture,
-            $"expected rect  x={reserved.X} y={reserved.Y} w={reserved.Width} h={reserved.Height}"));
+            $"expected rect  x={reserved.X + originX} y={reserved.Y + originY} " +
+            $"w={reserved.Width} h={reserved.Height}"));
 
         BringUpLog.Write(string.Create(
             CultureInfo.InvariantCulture,
