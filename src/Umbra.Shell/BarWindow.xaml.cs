@@ -904,17 +904,21 @@ internal partial class BarWindow : AppBarWindow
                     break;
 
                 case MenuItem { Name: "SlotCloseItem" } close:
-                    // Closing individual windows belongs to the picker now, so this item is only
-                    // meaningful when there is exactly one window to close.
-                    close.IsEnabled = slot.Windows.Count == 1;
-                    close.Visibility = slot.Windows.Count > 1 ? Visibility.Collapsed : Visibility.Visible;
-                    close.Header = "Close window";
+                    // Per-window close lives in the picker; this is the group action. Naming the
+                    // count matters — "Close" on an application with six windows open is a much
+                    // bigger action than it looks, and the menu should say so before the click
+                    // rather than after it.
+                    close.IsEnabled = slot.IsRunning;
+                    close.Visibility = slot.IsRunning ? Visibility.Visible : Visibility.Collapsed;
+                    close.Header = slot.Windows.Count > 1
+                        ? $"Close all {slot.Windows.Count} windows"
+                        : "Close window";
                     break;
 
                 // Hiding the close item on its own would leave the rule that separated it dangling
                 // at the bottom of the menu.
                 case Separator { Name: "SlotMenuSeparator" } rule:
-                    rule.Visibility = slot.Windows.Count > 1 ? Visibility.Collapsed : Visibility.Visible;
+                    rule.Visibility = slot.IsRunning ? Visibility.Visible : Visibility.Collapsed;
                     break;
             }
         }
@@ -1318,9 +1322,23 @@ internal partial class BarWindow : AppBarWindow
         // Closing a group closes all of it, which is what the Windows taskbar does. Iterating a
         // copy: closing a window removes it from the slot's list as we go.
         //
-        // Through WindowSafety, never ApplicationWindow.Close: an explorer.exe slot can hold
-        // windows whose closure ends the shell, and this path closes every window in the slot.
-        foreach (ApplicationWindow window in slot.Windows.ToArray()) WindowSafety.TryClose(window);
+        // Through WindowSafety, never ApplicationWindow.Close. This matters most here: a group
+        // close is the one path that hands the shell process several windows at once, and anything
+        // in an explorer.exe slot that is not a browser window is refused rather than closed.
+        int asked = 0;
+        int refused = 0;
+
+        foreach (ApplicationWindow window in slot.Windows.ToArray())
+        {
+            if (WindowSafety.TryClose(window)) asked++;
+            else refused++;
+        }
+
+        BringUpLog.Write($"group close: {slot.Key} | asked {asked}, refused {refused}");
+
+        // The preview was of the windows just closed, so it has nothing left to show.
+        _picker?.Dismiss();
+        _picker = null;
     }
 
     /// <summary>
