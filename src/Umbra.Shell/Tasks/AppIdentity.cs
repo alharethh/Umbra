@@ -12,8 +12,8 @@ namespace Umbra.Shell.Tasks;
 /// path is the fallback.
 /// </para>
 /// <para>
-/// The window title is deliberately never used: it changes as the user works, so a pin or an
-/// outline setting keyed on it would evaporate the moment someone opened a different document.
+/// The window title is deliberately never used: it changes as the user works, so a pin keyed on it
+/// would evaporate the moment someone opened a different document.
 /// </para>
 /// </remarks>
 internal static class AppIdentity

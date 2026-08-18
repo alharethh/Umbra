@@ -36,16 +36,16 @@ public partial class App : Application
         // where none of that contention exists, so running the two back to back is what makes the
         // contention attributable rather than merely observed.
         BarEdge edge = ParseEdge(e.Args);
-        BarMetrics metrics = new(edge, Alignment.Start, scale: 1.0);
+
+        // --icon-size draws the icon smaller inside an unchanged 44 px slot, which widens the
+        // gutter and so widens the drift (§6.2). Clicking is untouched: the hit slot is the pitch,
+        // not the icon. An experiment switch, like --no-motion — the default is the §7.1 figure.
+        BarMetrics metrics = new(edge, Alignment.Start, scale: 1.0,
+                                 baseIconExtent: ParseIconSize(e.Args));
 
         bool motion = !e.Args.Contains("--no-motion", StringComparer.OrdinalIgnoreCase);
 
-        // --outline turns it on for every icon at startup. The real control is per-icon, from each
-        // icon's own context menu; this exists so the rendering can be captured deterministically
-        // without driving menus.
-        bool outlineAll = e.Args.Contains("--outline", StringComparer.OrdinalIgnoreCase);
-
-        _bar = new BarWindow(_host, metrics) { MotionEnabled = motion, OutlineAll = outlineAll };
+        _bar = new BarWindow(_host, metrics) { MotionEnabled = motion };
         _bar.Closed += (_, _) => Shutdown();
         _bar.Show();
 
@@ -60,6 +60,33 @@ public partial class App : Application
         _host = null;
 
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// <c>--icon-size N</c>, in pixels at 100% scaling. Null keeps the §7.1 default of 24.
+    /// </summary>
+    /// <remarks>
+    /// Clamped to the slot: an icon wider than its pitch would throw, and one at the pitch leaves
+    /// no gutter for drift at all.
+    /// </remarks>
+    private static double? ParseIconSize(string[] args)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (!string.Equals(args[i], "--icon-size", StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture,
+                                out double parsed)
+                && parsed > 0 && parsed <= Umbra.Core.Layout.SlotMetrics.BasePitch)
+            {
+                BringUpLog.Write($"icon size overridden to {parsed} px (default is 24)");
+                return parsed;
+            }
+
+            BringUpLog.Write($"unusable --icon-size value '{args[i + 1]}', keeping the default");
+        }
+
+        return null;
     }
 
     /// <summary>

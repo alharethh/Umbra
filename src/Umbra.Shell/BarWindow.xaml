@@ -58,6 +58,7 @@
         <Grid.ContextMenu>
             <ContextMenu>
                 <MenuItem Header="Wear heatmap…" Click="OnHeatmapClick" />
+                <MenuItem Header="Motion speed…" Click="OnMotionSpeedClick" />
                 <Separator />
                 <MenuItem Header="Exit Umbra" Click="OnExitClick" />
             </ContextMenu>
@@ -174,11 +175,6 @@
                             <ContextMenu>
                                 <!-- Headers and enabled state are set as the menu opens. -->
                                 <MenuItem x:Name="SlotPinItem" Header="Pin to bar" Click="OnSlotPinClick" />
-                                <!-- §5.3: a per-icon opt-in, applied to the worst offenders only. -->
-                                <MenuItem x:Name="SlotOutlineItem"
-                                          Header="Outline this icon"
-                                          IsCheckable="True"
-                                          Click="OnSlotOutlineClick" />
                                 <Separator />
                                 <MenuItem x:Name="SlotCloseItem" Header="Close window" Click="OnSlotClose" />
                             </ContextMenu>
@@ -218,9 +214,7 @@
                                 <MultiBinding Converter="{StaticResource TierIcon}">
                                     <Binding Path="Icon" />
                                     <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                    <!-- Never read; present so a settings change invalidates every icon. -->
-                                    <Binding Path="OutlineRevision" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                    <!-- The slot, so the converter can look up its application's setting. -->
+                                    <!-- The slot, so the converter can report its icon's cost once. -->
                                     <Binding />
                                 </MultiBinding>
                             </Image.Source>
@@ -313,7 +307,6 @@
                                 <MultiBinding Converter="{StaticResource TrayTierIcon}">
                                     <Binding Path="Icon" />
                                     <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                    <Binding Path="OutlineRevision" RelativeSource="{RelativeSource AncestorType=Window}" />
                                 </MultiBinding>
                             </Image.Source>
                         </Image>

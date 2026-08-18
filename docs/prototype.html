@@ -98,7 +98,6 @@ input[type=range] { flex:1.5; accent-color:#7f77dd; height:16px; }
   <h3>Options</h3>
   <label class="chk"><input type="checkbox" id="cap" checked> Tier 2 luminance cap (L ≤ 0.45)</label>
   <label class="chk"><input type="checkbox" id="slots"> Show hit slots (P5 check)</label>
-  <label class="chk"><input type="checkbox" id="outline"> Outline mode</label>
   <label class="chk"><input type="checkbox" id="micro" checked> Micro-jitter</label>
   <div class="row"><label>Tier 0 floor</label>
     <input type="range" id="t0" min="0" max="100" step="1" value="0"><output id="t0o"></output></div>
@@ -148,11 +147,11 @@ const APPS=[
 ];
 
 let edge='bottom', dmode='light', driftMode='v2', showSlots=false, useCap=true,
-    useOutline=false, useMicro=true, t0floor=0, tmul=100, tier=0, tierF=0, px=-9999, py=-9999,
+    useMicro=true, t0floor=0, tmul=100, tier=0, tierF=0, px=-9999, py=-9999,
     align='start', INSET=8;
 let ROW=[START,...APPS];
 
-function shapeSVG(sh,mono,cap,outline,blend){
+function shapeSVG(sh,mono,cap,blend){
   const col=c=>{
     const full=cap?capLum(c,0.4508):c;
     if(!mono) return full;
@@ -163,13 +162,11 @@ function shapeSVG(sh,mono,cap,outline,blend){
   return sh.map(s=>{
     if(s[0]==='circ'){
       const c=col(s[4]);
-      return outline?`<circle cx="${s[1]}" cy="${s[2]}" r="${s[3]}" fill="none" stroke="${c}" stroke-width="1.5"/>`
-                    :`<circle cx="${s[1]}" cy="${s[2]}" r="${s[3]}" fill="${c}"/>`;
+      return `<circle cx="${s[1]}" cy="${s[2]}" r="${s[3]}" fill="${c}"/>`;
     }
     const w=s[3],h=s[4],c=col(s[5]);
     const x=w<0?s[1]+w:s[1], y=h<0?s[2]+h:s[2];
-    return outline?`<rect x="${x}" y="${y}" width="${Math.abs(w)}" height="${Math.abs(h)}" fill="none" stroke="${c}" stroke-width="1.5" rx="1"/>`
-                  :`<rect x="${x}" y="${y}" width="${Math.abs(w)}" height="${Math.abs(h)}" fill="${c}" rx="1"/>`;
+    return `<rect x="${x}" y="${y}" width="${Math.abs(w)}" height="${Math.abs(h)}" fill="${c}" rx="1"/>`;
   }).join('');
 }
 
@@ -240,7 +237,7 @@ function paint(){
     if(hi>=2){ mono=floorHex(T[1][key]); blend=f; }
     else mono=floorHex(mix(T[lo][key],T[hi][key]));
     const el=content.querySelector(`.ico[data-i="${i}"] svg`);
-    if(el) el.innerHTML=shapeSVG(a.sh,mono,useCap,useOutline,blend);
+    if(el) el.innerHTML=shapeSVG(a.sh,mono,useCap,blend);
     const p=content.querySelector(`.pill[data-p="${i}"]`);
     if(p){ const c=mix(T[lo].pill,T[hi].pill); p.style.background=c?floorHex(c):'transparent'; }
   });
@@ -369,7 +366,6 @@ $('#inset').oninput=e=>{INSET=+e.target.value;$('#inseto').textContent=INSET+' p
 $('#tmul').oninput=e=>{tmul=Math.round(Math.pow(10,+e.target.value));$('#tmulo').textContent=tmul+'×';};
 $('#t0').oninput=e=>{t0floor=+e.target.value;$('#t0o').textContent=t0floor+'%';};
 $('#cap').onchange=e=>useCap=e.target.checked;
-$('#outline').onchange=e=>useOutline=e.target.checked;
 $('#micro').onchange=e=>useMicro=e.target.checked;
 $('#slots').onchange=e=>{showSlots=e.target.checked;content.parentElement.classList.toggle('showslots',showSlots);};
 

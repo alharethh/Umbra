@@ -39,13 +39,19 @@ internal sealed class MotionDriver : IDisposable
     /// launches looking like the layout says it should.
     /// </remarks>
     private readonly MotionClock _clock = new(MotionModel.DriftPeriodSeconds * 0.25);
-    private readonly BarMetrics _metrics;
+    private readonly Func<BarMetrics> _metricsNow;
     private DateTime _lastTick = DateTime.UtcNow;
     private int _loggedTicks;
 
-    public MotionDriver(BarMetrics metrics)
+    /// <param name="metricsNow">
+    /// The metrics <i>as they stand right now</i>, not a snapshot. The drawn icon grows toward full
+    /// size as the tier ramps up, which narrows the gutter, and §6.2 derives amplitude from the
+    /// gutter — so the amplitude has to be re-read every tick or a grown icon would still be
+    /// carrying a dormant icon's offset and would escape its slot, breaking P5.
+    /// </param>
+    public MotionDriver(Func<BarMetrics> metricsNow)
     {
-        _metrics = metrics;
+        _metricsNow = metricsNow;
 
         _timer = new DispatcherTimer(DispatcherPriority.Render)
         {
@@ -59,6 +65,39 @@ internal sealed class MotionDriver : IDisposable
         if (!SystemParameters.ClientAreaAnimation)
             _clock.Suppress(MotionSuppression.AnimationsDisabled);
     }
+
+    /// <summary>
+    /// Multiplier on the passage of motion time. 1.0 is real time; higher makes the drift visible.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A diagnostic, not a setting. Real drift runs at 0.018 px/s, which P6 requires be
+    /// imperceptible — so at 1× there is by design nothing to see, and the only way to check the
+    /// mechanism with your eyes rather than with a log is to wind time forward.
+    /// <c>docs/prototype.html</c> has the same control for the same reason.
+    /// </para>
+    /// <para>
+    /// Above 1× the tick rate goes to 60 Hz, because §6.1's 2 Hz would show the sped-up drift as
+    /// visible steps rather than as motion. That is a deliberate breach of §6.1 for as long as the
+    /// simulation runs, which is also why wear sampling is paused while it does — see
+    /// <c>BarWindow.OnMotionSpeedClick</c>. Nothing about the 1× path changes.
+    /// </para>
+    /// </remarks>
+    public double TimeScale
+    {
+        get => _timeScale;
+        set
+        {
+            _timeScale = Math.Clamp(value, 1.0, MaxTimeScale);
+            _timer.Interval = TimeSpan.FromSeconds(
+                _timeScale > 1.0 ? 1.0 / 60.0 : 1.0 / MotionModel.MicroUpdateRateHz);
+        }
+    }
+
+    /// <summary>Ceiling on <see cref="TimeScale"/>. At this the 20-minute drift period runs in 0.6 s.</summary>
+    public const double MaxTimeScale = 2000.0;
+
+    private double _timeScale = 1.0;
 
     /// <summary>Raised when the offset changes, in device-independent pixels.</summary>
     public event Action<double, double>? OffsetChanged;
@@ -90,20 +129,9 @@ internal sealed class MotionDriver : IDisposable
 
         if (!_clock.IsRunning) return;
 
-        _clock.Advance(elapsed);
+        _clock.Advance(elapsed * _timeScale);
 
-        MotionOffset offset = MotionModel.IconRow(
-            _clock.PhaseSeconds, _metrics.Slot, _metrics.ShortAxisDriftAmplitude);
-
-        (double dx, double dy) = offset.ToScreen(_metrics.Edge);
-        OffsetChanged?.Invoke(dx, dy);
-
-        // The clock drifts with everything else but jitters on its own frequencies (§6.4).
-        MotionOffset clock = MotionModel.Clock(
-            _clock.PhaseSeconds, _metrics.Slot, _metrics.ShortAxisDriftAmplitude);
-
-        (double cdx, double cdy) = clock.ToScreen(_metrics.Edge);
-        ClockOffsetChanged?.Invoke(cdx, cdy);
+        (double dx, double dy, MotionOffset offset) = Emit();
 
         // The first few ticks only. Motion is imperceptible by design (P6), so a log is the only
         // practical way to confirm it is running and that the offsets are fractional rather than
@@ -111,11 +139,46 @@ internal sealed class MotionDriver : IDisposable
         if (_loggedTicks < 12)
         {
             _loggedTicks++;
+            BarMetrics m = _metricsNow();
             Diagnostics.BringUpLog.Write(System.String.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
                 $"motion tick {_loggedTicks}: phase={_clock.PhaseSeconds:F2}s " +
+                $"icon={m.Slot.IconExtent:F2} amp={m.Slot.PeakOffset:F2} " +
                 $"along={offset.Along:F4} across={offset.Across:F4} dx={dx:F4} dy={dy:F4}"));
         }
+    }
+
+    /// <summary>
+    /// Recomputes and republishes the offsets from the stored phase, without advancing the clock.
+    /// </summary>
+    /// <remarks>
+    /// Called when the drawn icon size changes between ticks. The amplitude moves with the size, so
+    /// leaving the old offset in place until the next 2 Hz tick would let a grown icon sit outside
+    /// the amplitude its new extent allows — briefly, but visibly, and in breach of P5.
+    /// </remarks>
+    public void Reemit()
+    {
+        if (_clock.IsRunning) Emit();
+    }
+
+    private (double Dx, double Dy, MotionOffset Offset) Emit()
+    {
+        BarMetrics metrics = _metricsNow();
+
+        MotionOffset offset = MotionModel.IconRow(
+            _clock.PhaseSeconds, metrics.Slot, metrics.ShortAxisDriftAmplitude);
+
+        (double dx, double dy) = offset.ToScreen(metrics.Edge);
+        OffsetChanged?.Invoke(dx, dy);
+
+        // The clock drifts with everything else but jitters on its own frequencies (§6.4).
+        MotionOffset clock = MotionModel.Clock(
+            _clock.PhaseSeconds, metrics.Slot, metrics.ShortAxisDriftAmplitude);
+
+        (double cdx, double cdy) = clock.ToScreen(metrics.Edge);
+        ClockOffsetChanged?.Invoke(cdx, cdy);
+
+        return (dx, dy, offset);
     }
 
     private void UpdateIdleSuppression()

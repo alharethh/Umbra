@@ -97,11 +97,11 @@ public class IconNormalizerTests
     [Fact]
     public void P90_Does_Not_Equalise_Emitted_Energy()
     {
-        // The withdrawn v1 claim, kept as a test because it is the reason outline mode exists.
+        // The withdrawn v1 claim, kept as a test because it is why the §5.1 cost diagnostic exists.
         // A solid-fill logo and a thin-stroke logo normalise to identical P90 and still differ by
         // several times in lit area — and therefore in wear.
         IconBitmap solid = Uniform(16, 16, 0x80);
-        IconBitmap stroke = Outline(16, 16, 0x80);
+        IconBitmap stroke = Stroke(16, 16, 0x80);
 
         const double target = 0.0331048;
         IconBitmap normalisedSolid = IconNormalizer.Normalise(solid, target);
@@ -121,21 +121,6 @@ public class IconNormalizerTests
     }
 
     [Fact]
-    public void Outline_Mode_Cuts_Lit_Area_Substantially()
-    {
-        // §5.3: edge-detect, render as a stroke, discard the fill — roughly 70–85% less lit area,
-        // which is a reduction in the interior-wear problem rather than a redistribution of it.
-        // This measures the ratio the mode has to hit; generating the outline is the shell's job.
-        IconBitmap solid = Uniform(16, 16, 0x80);
-        IconBitmap outlined = Outline(16, 16, 0x80);
-
-        double reduction = 1.0 - IconNormalizer.IntegratedLuminance(outlined)
-                                 / IconNormalizer.IntegratedLuminance(solid);
-
-        Assert.InRange(reduction, 0.70, 0.85);
-    }
-
-    [Fact]
     public void Diagnostic_Flags_An_Icon_That_Costs_More_Than_Twice_The_Row_Median()
     {
         // §5.1 step 6, shipped as a diagnostic first: surface "this icon costs 4× the row median"
@@ -143,9 +128,9 @@ public class IconNormalizerTests
         // a rendering bug.
         IconBitmap[] row =
         [
-            Outline(16, 16, 0x80),
-            Outline(16, 16, 0x80),
-            Outline(16, 16, 0x80),
+            Stroke(16, 16, 0x80),
+            Stroke(16, 16, 0x80),
+            Stroke(16, 16, 0x80),
             Uniform(16, 16, 0x80),
         ];
 
@@ -284,120 +269,6 @@ public class IconNormalizerTests
     }
 
     [Fact]
-    public void Outline_Mode_Hits_The_Published_Lit_Area_Reduction()
-    {
-        // §5.3 puts the saving at "roughly 70–85%" of lit area for a solid-fill logo. That is the
-        // number the mode exists for, so it is the number asserted.
-        IconBitmap solid = Uniform(16, 16, 0x80);
-        IconBitmap outlined = IconNormalizer.ToOutline(solid);
-
-        double reduction = 1.0 - IconNormalizer.IntegratedLuminance(outlined)
-                                 / IconNormalizer.IntegratedLuminance(solid);
-
-        Assert.InRange(reduction, 0.70, 0.85);
-    }
-
-    [Fact]
-    public void Outline_Mode_Keeps_The_Silhouette_And_Drops_The_Fill()
-    {
-        IconBitmap solid = Uniform(8, 8, 0x80);
-        IconBitmap outlined = IconNormalizer.ToOutline(solid);
-
-        // Border survives.
-        Assert.Equal(0x80, outlined[0, 0].R);
-        Assert.Equal(255, outlined[0, 0].A);
-        Assert.Equal(255, outlined[7, 3].A);
-
-        // Interior is gone.
-        Assert.Equal(0, outlined[3, 3].A);
-        Assert.Equal(0, outlined[4, 4].A);
-    }
-
-    [Fact]
-    public void Outline_Mode_Does_Not_Band_A_Smooth_Gradient()
-    {
-        // The failure that made the first implementation unusable. A smooth ramp crosses any
-        // neighbour-difference threshold at every step, so the naive detector reported the whole
-        // ramp as edge and the icon came back as bands and speckle. A gradient has no ridge, so
-        // non-maximum suppression should find almost nothing in its interior.
-        IconBitmap ramp = new(24, 24);
-        for (int y = 0; y < 24; y++)
-            for (int x = 0; x < 24; x++)
-            {
-                byte level = (byte)(20 + x * 9);
-                ramp[x, y] = new Rgba(level, level, level, 255);
-            }
-
-        IconBitmap outlined = IconNormalizer.ToOutline(ramp);
-
-        // Only the silhouette ring should survive: 24×24 minus the 22×22 interior = 92 pixels.
-        int kept = 0;
-        foreach (Rgba pixel in outlined.Pixels) if (pixel.A > 0) kept++;
-
-        Assert.InRange(kept, 80, 140);
-    }
-
-    [Fact]
-    public void Outline_Mode_Finds_Internal_Luminance_Edges_Too()
-    {
-        // §5.3 detects "the alpha silhouette plus internal luminance edges", so a logo with shapes
-        // inside it keeps those shapes rather than collapsing to a bare rectangle.
-        IconBitmap art = Uniform(12, 12, 0x30);
-        for (int y = 4; y < 8; y++)
-            for (int x = 4; x < 8; x++)
-                art[x, y] = new Rgba(0xF0, 0xF0, 0xF0, 255);
-
-        IconBitmap outlined = IconNormalizer.ToOutline(art);
-
-        // The boundary of the inner square is kept...
-        Assert.Equal(255, outlined[4, 4].A);
-        Assert.Equal(255, outlined[7, 7].A);
-
-        // ...while the flat dark field between the two boundaries is dropped.
-        Assert.Equal(0, outlined[2, 6].A);
-    }
-
-    [Fact]
-    public void Outline_Mode_Barely_Changes_An_Icon_That_Is_Already_Strokes()
-    {
-        // Nothing to remove: a thin-stroke logo is essentially all edge already. This is why the
-        // mode is a per-icon opt-in — applying it globally would spend effort where there is no
-        // interior to reclaim.
-        IconBitmap strokes = Outline(16, 16, 0x80);
-        IconBitmap outlined = IconNormalizer.ToOutline(strokes);
-
-        Approx.Relative(
-            IconNormalizer.IntegratedLuminance(strokes),
-            IconNormalizer.IntegratedLuminance(outlined),
-            0.05,
-            "a stroke icon is unchanged by outlining");
-    }
-
-    [Fact]
-    public void Outline_Mode_Composes_With_Tier_Normalisation()
-    {
-        // The two operations are independent: outline removes area, normalisation sets brightness.
-        // Running both must still land P90 on the tier target.
-        IconBitmap solid = Uniform(16, 16, 0x80);
-        const double target = 0.0331048;
-
-        IconBitmap prepared = IconNormalizer.Prepare(
-            IconNormalizer.ToOutline(solid), target, monochrome: true);
-
-        Approx.Relative(target, IconNormalizer.PercentileLuminance(prepared), 0.02,
-            "P90 after outlining and normalising");
-    }
-
-    [Fact]
-    public void Outline_Mode_Survives_A_Fully_Transparent_Icon()
-    {
-        IconBitmap empty = new(8, 8);
-        IconBitmap outlined = IconNormalizer.ToOutline(empty);
-
-        Assert.Equal(0.0, IconNormalizer.IntegratedLuminance(outlined));
-    }
-
-    [Fact]
     public void Median_Handles_Even_And_Odd_Counts()
     {
         Assert.Equal(2.0, IconNormalizer.Median([1.0, 2.0, 3.0]));
@@ -432,7 +303,7 @@ public class IconNormalizerTests
     }
 
     /// <summary>A hollow square: a 1 px stroke around the border, transparent inside.</summary>
-    private static IconBitmap Outline(int width, int height, byte level)
+    private static IconBitmap Stroke(int width, int height, byte level)
     {
         IconBitmap icon = new(width, height);
         for (int y = 0; y < height; y++)

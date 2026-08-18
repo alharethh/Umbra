@@ -16,9 +16,6 @@ internal sealed class TierIconConverter : IMultiValueConverter
     /// <summary>Which row of the §3.1 table this icon follows.</summary>
     public BarElement Element { get; set; } = BarElement.RunningIcon;
 
-    /// <summary>Which applications are outlined. Assigned by the window after it loads its XAML.</summary>
-    public OutlineSettings? Settings { get; set; }
-
     public object? Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
     {
         if (values.Length < 2) return null;
@@ -26,15 +23,14 @@ internal sealed class TierIconConverter : IMultiValueConverter
 
         double level = values[1] is double d ? d : 0.0;
 
-        // values[2] is the revision counter. Its value is never read — it is in the binding purely
-        // so that toggling any application's setting invalidates every icon's binding at once.
+        // The application slot, present on the icon row and absent on the tray. Only the row runs
+        // the §5.1 cost diagnostic, which needs a title to report against.
         Umbra.Shell.Tasks.TaskbarSlot? slot =
-            values.Length > 3 ? values[3] as Umbra.Shell.Tasks.TaskbarSlot : null;
+            values.Length > 2 ? values[2] as Umbra.Shell.Tasks.TaskbarSlot : null;
 
         if (slot is not null) _pipeline.ReportOnce(slot.Title, source);
 
-        bool outline = Settings?.IsEnabled(slot?.Key) ?? false;
-        return _pipeline.Render(source, Element, level, outline);
+        return _pipeline.Render(source, Element, level);
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture) =>

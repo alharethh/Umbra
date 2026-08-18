@@ -165,6 +165,11 @@ the shift to a single cell range, and the mutant fails four tests.
 
 ## Step 6 — outline mode, measured against a real icon set
 
+> **Outline mode was removed from the product in spec v4.** This measurement is the reason, so it is
+> kept in full rather than deleted — the numbers below are what the decision was made on. Nothing
+> here is retracted; the feature it describes no longer exists. See design-spec §5.3 and the v3 → v4
+> change log.
+
 §5.3 justifies outline mode for "pin sets dominated by large solid-fill logos" and puts the saving
 at 70–85% of lit area. **On a real icon set that figure holds for one icon in nine.**
 
@@ -184,16 +189,22 @@ Weighted across the row, outline mode removes **34.6%** of icon lit area — and
 comes from File Explorer and VS Code alone. The rest of the set is already mostly stroke and
 transparency, with no interior left to reclaim; two icons gain nothing at all.
 
-**This confirms §5.3's own instruction rather than contradicting it.** The spec says outline mode
+**This confirmed §5.3's own instruction rather than contradicting it.** The spec said outline mode
 must stay "a per-icon opt-in, not a global default — it costs recognisability unevenly and users
-should be able to apply it to their worst offenders only". The data says the same thing
+should be able to apply it to their worst offenders only". The data said the same thing
 quantitatively: worth it for two icons here, worthless for two others, and a recognisability cost
-everywhere. The global toggle currently in the context menu is therefore the wrong shape; the
-per-icon setting at build order step 9 is the right one.
+everywhere.
 
-It also revises the premise. §5.3 assumes pin sets dominated by solid-fill logos; modern
-application icons largely are not that, so the headline 70–85% is a best case rather than a typical
-one. Worth saying plainly in the README alongside the §2.4 caveats.
+**And that is what ended it.** A feature worth enabling on two icons in nine needs a per-icon
+settings surface to be usable at all, which is a real cost in UI and in explanation. Weighed against
+34.6% of the lit area of a bar that §2.4 already places 86–191× below light-mode desktop content,
+the project owner judged the complexity not worth it and removed the mode in v4. Recorded here
+because the measurement is sound and the judgement built on it is a separate thing that a later
+reader may want to revisit.
+
+It also revised the premise. §5.3 assumed pin sets dominated by solid-fill logos; modern
+application icons largely are not that, so the headline 70–85% was a best case rather than a typical
+one. That gap between assumed and measured is the single most useful thing this step produced.
 
 **Interior quality — fixed.** The first implementation flagged a pixel whenever a neighbour differed
 by more than a threshold. That works on flat-shaded artwork and falls apart on gradients: a smooth
@@ -216,8 +227,10 @@ Two bugs surfaced while doing it, both of which produced plausible-looking outpu
   the suppression was added to remove. Strict inequality on one side thins a plateau to its leading
   edge.
 
-§11.2 Q10 is now answered for one real icon set: the automatic outlines are usable. They are not as
-clean as hand-authored glyphs would be, and busy artwork stays busy, but the banding is gone.
+§11.2 Q10 was answered for one real icon set: the automatic outlines were usable. Not as clean as
+hand-authored glyphs would have been, and busy artwork stayed busy, but the banding was gone. The
+question is withdrawn in v4 along with the feature — the outlines were good enough, and it was not
+enough to save them.
 
 ## Step 7 — tray hosting: the interception works, the icons do not arrive
 

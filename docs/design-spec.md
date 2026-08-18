@@ -1,9 +1,11 @@
 # OLED-Optimised Taskbar — Design Specification
 
-**Version:** 3 · supersedes v2 and v1
+**Version:** 4 · supersedes v3, v2 and v1
 **Target:** Windows 11 · WOLED (WRGB) desktop panels · four-edge placement
 **Default configuration:** bottom edge, left-aligned icons
 **Status:** Pre-implementation design. Numbers here are targets to build against and tune, not measured results. An interactive prototype of §3 and §6 exists (`oled-taskbar-prototype.html`) and should be kept in sync with this document.
+
+> **What changed in v4.** §5.3 outline mode is **removed from the design**, not merely deprioritised. v2 promoted it to the primary defence for icon interiors; measuring it against a real icon set (`docs/measurements.md`, step 6) found it removes 34.6% of lit area across the row rather than the 70–85% §5.3 assumed, with two thirds of that coming from two icons and two icons gaining nothing at all. Against a recognisability cost on every icon and a per-icon settings surface to manage it, the project owner judged it not worth its complexity. **The consequence is stated plainly in §6.0: nothing now defends icon interiors except the Tier 0 luminance floor, and that is accepted.** §11.2 Q10 is withdrawn with it. Full list in §12.
 
 > **What changed in v3.** Shell integration research closed v2's §11 Q1 and Q2. The Start menu **cannot** be repositioned without DLL injection, and the decision is to accept it and ship all four edges — so §10's non-goal stands and no launcher is built. The default configuration is now **bottom edge with left-aligned icons**, which as it happens makes the Start menu land correctly by default (§7.1). Start moves to the *bottom* of vertical bars so the button sits near where the menu will appear. Left-alignment introduced a new geometry constraint — the row must be inset so drift cannot push content off-screen at the corner (§6.3). Tray hosting is solved and its mechanism is documented (§11.1), along with two constraints it imposes: never register an autohide AppBar, and ManagedShell's polling defeats the assumption behind §6.6. Full list in §12.
 
@@ -218,7 +220,7 @@ Naive desaturation fails badly across a real pin set: a dark logo vanishes, a wh
 
 What P90 delivers is uniform perceived brightness across the row, which is worth having on its own merits. If per-slot wear parity is wanted, it needs a second pass:
 
-6. *(Optional, off by default)* Compute integrated linear luminance over the slot. If it exceeds the row median by more than 2×, scale the icon down until it does — or prompt the user to apply outline mode (§5.3) to that icon instead, which addresses the cause rather than the symptom.
+6. *(Optional, off by default)* Compute integrated linear luminance over the slot. If it exceeds the row median by more than 2×, scale the icon down until it does. Since v4 removed outline mode there is no second remedy to offer, so this stays what §5.1 already said it should be — a **diagnostic**, surfaced to the user, acted on by the user.
 
 Ship step 6 as a diagnostic first: surface "this icon costs 4× the row median" in settings and let the user decide. Automatic dimming of specific logos will look like a rendering bug.
 
@@ -234,15 +236,19 @@ In WPF, three settings are required and v1 named only the first. They are listed
 - `TextOptions.TextFormattingMode="Ideal"`. The default in many WPF configurations is `Display`, which snaps glyphs to the pixel grid — that quantises the fractional micro-jitter §6.1 depends on into integer steps, producing exactly the discrete accumulating states §6.1 exists to avoid. This failure is invisible in testing; the bar will appear to jitter correctly while doing nothing.
 - `UseLayoutRounding="False"` and `SnapsToDevicePixels="False"` on the drifting content group, for the same reason.
 
-### 5.3 Outline mode — promoted
+### 5.3 Outline mode — removed in v4
 
-**Under P5, outline mode is the primary defence for icon interiors.** See §6.0 for why drift no longer covers them.
+**Outline mode is not part of the design.** v2 promoted it to the primary defence for icon interiors; v4 removes it. This section is kept rather than deleted because §6.0 depends on knowing what used to fill that role and no longer does.
 
-For pin sets dominated by large solid-fill logos, offer an outline mode: edge-detect the alpha silhouette plus internal luminance edges, render as a 1.5 px stroke, discard the fill. Cuts lit area by roughly 70–85%, which is a direct reduction in the interior-wear problem rather than a redistribution of it.
+What it was: edge-detect the alpha silhouette plus internal luminance edges, render as a 1.5 px stroke, discard the fill. v2 put the saving at 70–85% of lit area for "pin sets dominated by large solid-fill logos".
 
-Still a **per-icon opt-in, not a global default** — it costs recognisability unevenly and users should be able to apply it to their worst offenders only. But the settings UI should now *recommend* it for icons flagged by §5.1 step 6, and the README should present it as the answer for dark-mode users per §2.4, not as a curiosity.
+**Why it is gone.** It was built (build order step 6), it worked, and it was measured against a real nine-icon set — `docs/measurements.md` records the run. Weighted across the row it removed **34.6%** of icon lit area, not 70–85%. Two thirds of that came from two icons; two icons gained nothing whatever. The premise was the problem: §5.3 assumed pin sets dominated by solid fills, and modern application icons are largely small shapes on transparent backgrounds with no interior left to reclaim.
 
-Open question on quality remains (§11.2 Q10).
+Set against a recognisability cost on every icon it is applied to, and a per-icon settings surface needed to manage that unevenness, the project owner judged the return did not justify the complexity. **The decision is a product judgement, not a measurement dispute** — the measurement is not in doubt and is recorded above.
+
+**What this costs, stated plainly.** Icon interiors now have no defence at all. §6.0's table is updated to say so. The mitigation that remains is the Tier 0 luminance floor: at rest an interior sits at L = 3.3%, which §2.4 puts 86–191× below light-mode desktop content and ~5.8× *above* a dark-mode application surface. For a light-mode user this changes nothing that mattered. For a dark-mode user — the user §2.4 identifies as the one this project is actually for — it gives up the only mechanism the design had for the interiors. That is the accepted cost.
+
+§11.2 Q10, which asked whether auto-generated outlines looked acceptable, is withdrawn. It had been answered affirmatively for one icon set before the removal; the answer is now moot.
 
 ---
 
@@ -271,10 +277,12 @@ So the motion layer's honest job description is narrower than v1's:
 | :---- | :---- |
 | Edge gradients, glyph strokes, thin features | Micro-jitter (§6.1) — fractional offsets vary the AA gradient continuously |
 | The outer ~8 px ring of each icon | Slot-bounded drift (§6.2) |
-| **Icon interiors** | **Not motion. Outline mode (§5.3), plus the Tier 0 luminance floor.** |
+| **Icon interiors** | **Nothing.** Not motion, and since v4 not outline mode either (§5.3). The Tier 0 luminance floor alone. Accepted — see below |
 | Clock digit positions and the colon | Drift + independent frequency (§6.4) |
 
-This is a real reduction in scope from v1 and should not be papered over. The compensating argument is §2.4: at Tier 0 the interiors sit at L = 3.3%, which is 86–191× below light-mode desktop content. Interiors are a genuine concern only for dark-mode users, and for them the direct answer is to remove the interior (outline mode) rather than to smear it.
+This is a real reduction in scope from v1 and should not be papered over. The compensating argument is §2.4: at Tier 0 the interiors sit at L = 3.3%, which is 86–191× below light-mode desktop content. Interiors are a genuine concern only for dark-mode users.
+
+**And since v4 there is no answer for them.** v2 assigned that job to outline mode; §5.3 records why it was removed. The row above now reads "nothing" honestly rather than naming a mechanism that no longer exists. §11.2 Q11 — the intra-icon luminance ramp — is the only remaining idea that would address interiors without removing them, and it is speculative.
 
 ### 6.1 Micro-jitter — protects edges and strokes
 
@@ -549,7 +557,7 @@ Since §7.1 makes bottom the shipping default, **this must be solved rather than
 
 Ordered by how much they affect the build.
 
-1. **Is the motion layer worth shipping at all?** §6.0 concedes that slot-bounded drift does nothing for icon interiors, and §2.4 shows the bar is 86–191× below light-mode desktop content — though it is 5.8× *above* a dark-mode surface, which is the case that keeps the question open. The honest possibility is that under P5 the motion layer's remaining benefit — edge and stroke protection — does not justify its complexity, and that pure black plus a dark Tier 0 plus outline mode is the whole product. **Build the drift layer early, run the wear accumulator with drift on and off for a week each, and let §9's heatmap decide.** This is now the most important experiment in the project.
+1. **Is the motion layer worth shipping at all?** §6.0 concedes that slot-bounded drift does nothing for icon interiors, and §2.4 shows the bar is 86–191× below light-mode desktop content — though it is 5.8× *above* a dark-mode surface, which is the case that keeps the question open. The honest possibility is that under P5 the motion layer's remaining benefit — edge and stroke protection — does not justify its complexity, and that pure black plus a dark Tier 0 is the whole product. (v4 removed outline mode from that list on the same kind of reasoning, one step ahead of this question — see §5.3.) **Build the drift layer early, run the wear accumulator with drift on and off for a week each, and let §9's heatmap decide.** This is now the most important experiment in the project.
 
 2. **Does ManagedShell's polling defeat display idle?** Two 100 ms timers run regardless of our render loop (§11.1). If they alone keep the display awake, §6.6's whole argument — pause motion so the panel can run its compensation cycles — collapses, and with it a meaningful part of the wear case. Measure before relying on it. Remedies if it fails: patch ManagedShell to back its timers off when idle, or accept it and delete the claim.
 
@@ -567,7 +575,7 @@ Ordered by how much they affect the build.
 
 9. **Unspecified surfaces.** Thumbnail previews, jump lists, right-click context menus, and drag-onto-taskbar targets are all Windows 11 fidelity requirements and all large bright transients. They are almost certainly fine under P3, but they are currently absent from the tier model and should be placed in it explicitly rather than by omission.
 
-10. **Outline mode quality.** Whether auto-generated outlines look acceptable across a real pin set, or whether it needs hand-authored glyphs for common apps. Higher stakes since v2, since §5.3 is now the primary interior defence rather than an optional extra.
+10. **~~Outline mode quality.~~ Withdrawn in v4.** Asked whether auto-generated outlines looked acceptable across a real pin set. It was built and measured, and the answer was yes for one real set — but outline mode itself is gone (§5.3), so the question no longer bears on anything. Kept numbered so Q11 and Q12 keep their references.
 
 11. **Intra-icon luminance ramp.** A very slow, low-amplitude spatial luminance gradient sweeping across an icon would redistribute interior wear *without moving anything*, sidestepping P5 entirely. Roughly ±15% over ~20 minutes should be imperceptible on a dim monochrome icon. Speculative, possibly ugly, but it is the only mechanism identified that addresses interiors without removing them. Prototype after Q1 resolves.
 
@@ -628,6 +636,24 @@ Ordered by how much they affect the build.
 - **Bottom-edge autohide contention identified** (§11.1) and, because bottom is now the default, promoted from "avoid it" to a release blocker (§11.2 Q3).
 - **Build order revised** — bring up on the left edge first to isolate our bar from Explorer's autohide reveal, then move to bottom immediately.
 
+### v3 → v4
+
+**One change, and it is a removal.**
+
+| Location | v3 | v4 |
+| :---- | :---- | :---- |
+| §5.3 | Outline mode, promoted to the **primary defence for icon interiors** | **Removed from the design.** Built, measured against a real icon set, and judged not worth its complexity |
+| §6.0 | Icon interiors covered by "outline mode, plus the Tier 0 luminance floor" | Icon interiors covered by **nothing** but the Tier 0 floor. Accepted, and said plainly |
+| §5.1 step 6 | Flagged icons could be dimmed *or* offered outline mode | Diagnostic only. There is no second remedy left to offer |
+| §11.2 Q10 | Open — do auto-generated outlines look acceptable? | Withdrawn. Moot |
+| Build order 6 | Outline mode, "now load-bearing" | Struck. Numbering preserved so steps 7–9 keep their references |
+
+**The evidence.** `docs/measurements.md` step 6 measured the built implementation across nine real icons: **34.6%** of lit area removed row-wide against §5.3's claimed 70–85%, two thirds of it from two icons, two icons unchanged. §5.3's premise — "pin sets dominated by large solid-fill logos" — does not describe modern icon sets.
+
+**What it costs.** The design no longer has any mechanism for icon interiors. Under P5 drift cannot reach them by construction (§6.0), and outline mode was the only other thing proposed. §2.4 is what makes this survivable rather than fatal: a Tier 0 interior at L = 3.3% is 86–191× below light-mode desktop content, so for most users this was already a rounding error. For the dark-mode user §2.4 identifies as the project's real audience, it is a genuine give-up. §11.2 Q11's intra-icon luminance ramp remains the only untried idea that would address interiors without removing them.
+
+**What survives it.** The §5.1 integrated-luminance diagnostic stays — it never depended on outline mode, and "this icon costs 4× the row median" is still worth telling the user. The ridge-detection work is in the git history if it is ever wanted back.
+
 ---
 
 ## Appendix — build order
@@ -637,7 +663,7 @@ Ordered by how much they affect the build.
 3. Black background, monochrome normalisation, tier system, hover proximity. Left-aligned layout with the row inset (§6.3).
 4. Wear accumulator and heatmap, instrumentation only. **Ahead of the motion layer** — §11.2 Q1 cannot be answered without it.
 5. Motion layer — micro-jitter then slot-bounded drift. **Run a week with drift on and a week with it off, and compare heatmaps.** If the difference does not justify the code, delete it and ship without.
-6. Outline mode, per §5.3 now load-bearing.
+6. ~~Outline mode.~~ Built, measured, and **removed in v4** — see §5.3. The step is kept numbered because steps 7–9 are referenced by number throughout the docs.
 7. Tray hosting via ManagedShell.
 8. Start button and menu invocation, `TaskbarAl` handling.
 9. Pinning, drag-reorder, per-monitor config, settings UI.

@@ -86,6 +86,26 @@ internal sealed class WearSampler : IDisposable
     /// <summary>The accumulated data, for the heatmap view.</summary>
     public WearAccumulator Accumulator => _accumulator;
 
+    /// <summary>
+    /// Stops wear being credited while still advancing the clock, exactly as a session lock does.
+    /// </summary>
+    /// <remarks>
+    /// Set while the motion speed multiplier is above 1×. Simulated drift moves content hundreds of
+    /// times faster than reality, so anything sampled during it would be a fiction written into a
+    /// dataset whose whole purpose is to answer §11.2 Q1 from real evidence. Better a gap in the
+    /// record than an invented stretch of it.
+    /// </remarks>
+    public bool Suspended
+    {
+        get => _suspended;
+        set
+        {
+            if (_suspended == value) return;
+            _suspended = value;
+            if (value) Persist();
+        }
+    }
+
     public void Start()
     {
         _lastSample = DateTime.UtcNow;

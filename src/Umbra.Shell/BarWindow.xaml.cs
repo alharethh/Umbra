@@ -13,6 +13,7 @@ using ManagedShell.WindowsTasks;
 using ManagedShell.WindowsTray;
 using Umbra.Core.Layout;
 using Umbra.Core.Motion;
+using Umbra.Core.Tiers;
 using Umbra.Shell.Diagnostics;
 using Umbra.Shell.Motion;
 using Umbra.Shell.Rendering;
@@ -82,11 +83,6 @@ internal partial class BarWindow : AppBarWindow
 
         DataContext = this;
         InitializeComponent();
-
-        Outlines.Changed += () => OutlineRevision++;
-
-        // The converter lives in XAML resources, so its dependency is handed to it here.
-        if (Resources["TierIcon"] is TierIconConverter converter) converter.Settings = Outlines;
 
         _proximity = new ProximityDriver(
             () => new System.Windows.Rect(Left, Top, Width, Height),
@@ -192,7 +188,7 @@ internal partial class BarWindow : AppBarWindow
 
         if (MotionEnabled)
         {
-            _motion = new MotionDriver(Metrics);
+            _motion = new MotionDriver(() => CurrentMetrics);
             double trayRatio = Metrics.TrayDriftRatio;
 
             _motion.OffsetChanged += (dx, dy) =>
@@ -221,6 +217,25 @@ internal partial class BarWindow : AppBarWindow
             $"+/-{Metrics.ShortAxisDriftAmplitude:F2} px short axis, " +
             $"micro +/-{Metrics.Slot.MicroAmplitude:F2} px at {MotionModel.MicroUpdateRateHz} Hz, " +
             $"peak {Metrics.Slot.PeakOffset:F2} px against a {Metrics.Slot.Gutter:F2} px gutter"));
+    }
+
+    /// <summary>
+    /// Opens the drift speed simulator. Motion is imperceptible at 1× by design (P6), so this is
+    /// the only way to confirm with your eyes that it is running and that it stays inside its slot.
+    /// </summary>
+    private void OnMotionSpeedClick(object sender, RoutedEventArgs e)
+    {
+        if (_motion is null)
+        {
+            MessageBox.Show("Motion is switched off (--no-motion), so there is nothing to speed up.",
+                            "Umbra", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        new MotionSpeedWindow(_motion, CurrentMetrics, suspended =>
+        {
+            if (_wear is not null) _wear.Suspended = suspended;
+        }).Show();
     }
 
     private void OnHeatmapClick(object sender, RoutedEventArgs e)
@@ -342,8 +357,61 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>Slot pitch — the hit target's extent along the bar's long axis. 44 DIP.</summary>
     public double SlotPitch => Metrics.Slot.Pitch;
 
-    /// <summary>Drawn icon extent. 24 DIP.</summary>
-    public double IconExtent => Metrics.Slot.IconExtent;
+    /// <summary>
+    /// Drawn icon extent at the current tier: the dormant size while the bar is monochrome, full
+    /// size once it is in colour.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The shrink exists to widen the gutter, because §6.2 derives drift amplitude from the gutter
+    /// — a smaller icon travels further and so each screen pixel beneath it rests more. Paying for
+    /// that with a permanently smaller icon is a poor trade, and it is not necessary: the wear that
+    /// matters accrues at Tier 0 and Tier 1, which together run ~100% duty (P3), while Tier 2 is
+    /// ~0.1%. Shrinking only while dormant keeps essentially the whole benefit and gives back the
+    /// whole visual cost.
+    /// </para>
+    /// <para>
+    /// The size rides <see cref="TierRender.ChromaBlend"/>, the same Tier 1 → 2 ramp the colour
+    /// uses, so the icon reaches full size exactly as it reaches full chroma. Below Tier 1 the
+    /// blend is zero and the icon sits at its dormant size.
+    /// </para>
+    /// <para>
+    /// <b>The hit slot never changes.</b> Only the drawn extent moves, so clicking is unaffected at
+    /// any size and P5 holds throughout — see <see cref="CurrentMetrics"/> for the amplitude side
+    /// of that.
+    /// </para>
+    /// </remarks>
+    public double IconExtent
+    {
+        get
+        {
+            double dormant = Metrics.Slot.IconExtent;
+            double full = SlotMetrics.BaseIconExtent * Metrics.Scale;
+
+            return IconSizeRamp.Extent(dormant, full, SizeBlend);
+        }
+    }
+
+    /// <summary>How far along the dormant → full-size ramp the icon currently is, 0 to 1.</summary>
+    private double SizeBlend =>
+        TierPalette.Resolve(BarElement.RunningIcon, TierLevel).ChromaBlend;
+
+    /// <summary>
+    /// Metrics for the extent actually being drawn right now, which is what the motion layer must
+    /// derive its amplitude from.
+    /// </summary>
+    /// <remarks>
+    /// A grown icon has a narrower gutter and therefore a smaller permitted amplitude. Deriving
+    /// from the dormant extent and then drawing a bigger icon would push it out of its slot at the
+    /// extremes of the drift, which P5 forbids outright. Recomputing is cheap —
+    /// <see cref="BarMetrics"/> is a readonly record struct and every figure on it is derived.
+    /// </remarks>
+    public BarMetrics CurrentMetrics => new(
+        Metrics.Edge,
+        Metrics.Alignment,
+        Metrics.Scale,
+        Metrics.MeasuredWindows11RowInset,
+        IconExtent / Metrics.Scale);
 
     /// <summary>Content band across the bar's short axis. 56 DIP vertical, 48 horizontal.</summary>
     public double ContentBand => Metrics.ContentBand;
@@ -412,6 +480,13 @@ internal partial class BarWindow : AppBarWindow
         bar.OnPropertyChanged(nameof(ShowsDate));
         bar.OnPropertyChanged(nameof(ShowsSeconds));
 
+        // The icon grows with the tier, and its permitted drift amplitude shrinks as it does.
+        // Republish the offset now rather than waiting up to half a second for the next motion
+        // tick, or the icon would briefly be drawn large while still carrying a dormant-sized
+        // offset -- outside its own slot, which is exactly what P5 forbids.
+        bar.OnPropertyChanged(nameof(IconExtent));
+        bar._motion?.Reemit();
+
         // Rebuild the string immediately rather than waiting up to a second for the next tick,
         // so seconds appear as the bar lights rather than after it.
         bar.OnClockTick(null, EventArgs.Empty);
@@ -422,24 +497,6 @@ internal partial class BarWindow : AppBarWindow
     {
         get => (double)GetValue(TierLevelProperty);
         set => SetValue(TierLevelProperty, value);
-    }
-
-    /// <summary>
-    /// Bumped whenever any application's outline setting changes.
-    /// </summary>
-    /// <remarks>
-    /// The icon bindings include this, so changing one application's setting re-evaluates every
-    /// icon. Cheaper than making each icon observe the settings object individually, and the row is
-    /// a handful of items.
-    /// </remarks>
-    public static readonly DependencyProperty OutlineRevisionProperty = DependencyProperty.Register(
-        nameof(OutlineRevision), typeof(int), typeof(BarWindow), new PropertyMetadata(0));
-
-    /// <inheritdoc cref="OutlineRevisionProperty"/>
-    public int OutlineRevision
-    {
-        get => (int)GetValue(OutlineRevisionProperty);
-        set => SetValue(OutlineRevisionProperty, value);
     }
 
     /// <summary>
@@ -454,22 +511,6 @@ internal partial class BarWindow : AppBarWindow
         get => (bool)GetValue(StartActiveProperty);
         set => SetValue(StartActiveProperty, value);
     }
-
-    /// <summary>Turns outline mode on for every icon at startup — a testing convenience.</summary>
-    /// <remarks>
-    /// Writes straight through to <see cref="Outlines"/> rather than being stored and copied in the
-    /// constructor. Object initializers run <i>after</i> the constructor body, so a constructor that
-    /// read this property would always see <see langword="false"/> and the flag would silently do
-    /// nothing.
-    /// </remarks>
-    public bool OutlineAll
-    {
-        get => Outlines.ApplyToAll;
-        init => Outlines.ApplyToAll = value;
-    }
-
-    /// <summary>Per-application outline choices (§5.3).</summary>
-    public OutlineSettings Outlines { get; } = new();
 
     /// <summary>Running-indicator pill geometry — it rotates with the bar (§7.3).</summary>
     public double PillWidth => IsVertical ? 3 : 16;
@@ -630,13 +671,6 @@ internal partial class BarWindow : AppBarWindow
                              $"| {icon.Title} | {icon.Path}");
     }
 
-    /// <summary>Per-icon outline toggle, from that icon's own context menu (§5.3).</summary>
-    private void OnSlotOutlineClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: TaskbarSlot slot })
-            Outlines.Toggle(slot.Key);
-    }
-
     /// <summary>
     /// Brings the menu into line with the slot as it opens. Set here rather than bound, because a
     /// ContextMenu lives in its own popup tree and a RelativeSource binding up to the window
@@ -651,10 +685,6 @@ internal partial class BarWindow : AppBarWindow
         {
             switch (child)
             {
-                case MenuItem { Name: "SlotOutlineItem" } outline:
-                    outline.IsChecked = Outlines.IsEnabled(slot.Key);
-                    break;
-
                 case MenuItem { Name: "SlotPinItem" } pin:
                     pin.Header = slot.IsPinned ? "Unpin from bar" : "Pin to bar";
                     pin.IsEnabled = slot.IsPinned || slot.IsRunning;

@@ -12,8 +12,9 @@ namespace Umbra.Core.Layout;
 /// <para>
 /// The honest consequence, stated in §6.0: slot-bounded drift provides <b>no</b> peak-wear
 /// reduction for icon interiors. Meaningful interior reduction needs amplitude greater than the
-/// icon's own width, which is nearly three times the whole gutter. Interiors are outline mode's
-/// job (§5.3), not motion's.
+/// icon's own width, which is nearly three times the whole gutter. <b>Nothing covers interiors</b>
+/// — §5.3's outline mode was the designated defence and has been removed, so what protects them
+/// is the Tier 0 luminance floor alone. Accepted, and recorded in §6.0.
 /// </para>
 /// </remarks>
 public readonly record struct SlotMetrics

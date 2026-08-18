@@ -31,18 +31,18 @@ internal sealed class IconPipeline
     /// </summary>
     private const int LevelSteps = 64;
 
-    private readonly Dictionary<(ImageSource Source, int Level, bool Outline), BitmapSource> _cache = [];
+    private readonly Dictionary<(ImageSource Source, int Level), BitmapSource> _cache = [];
 
     /// <summary>Renders <paramref name="source"/> as it should appear at a continuous tier level.</summary>
-    public BitmapSource? Render(ImageSource? source, BarElement element, double level, bool outline = false)
+    public BitmapSource? Render(ImageSource? source, BarElement element, double level)
     {
         if (source is not BitmapSource bitmap) return null;
 
         int quantised = (int)Math.Round(Math.Clamp(level, 0.0, 2.0) / 2.0 * LevelSteps);
-        if (_cache.TryGetValue((source, quantised, outline), out BitmapSource? cached)) return cached;
+        if (_cache.TryGetValue((source, quantised), out BitmapSource? cached)) return cached;
 
-        BitmapSource rendered = Build(bitmap, element, quantised / (double)LevelSteps * 2.0, outline);
-        _cache[(source, quantised, outline)] = rendered;
+        BitmapSource rendered = Build(bitmap, element, quantised / (double)LevelSteps * 2.0);
+        _cache[(source, quantised)] = rendered;
         return rendered;
     }
 
@@ -55,20 +55,9 @@ internal sealed class IconPipeline
         if (source is BitmapSource bitmap) IconDiagnostics.Report(title, ToIconBitmap(bitmap));
     }
 
-    private static BitmapSource Build(BitmapSource source, BarElement element, double level, bool outline)
+    private static BitmapSource Build(BitmapSource source, BarElement element, double level)
     {
         IconBitmap art = ToIconBitmap(source);
-
-        // Outline before normalisation: it changes how much of the icon is lit, and normalisation
-        // then sets how bright what remains should be. The other order would normalise the fill and
-        // then throw most of it away, landing the stroke below the tier target.
-        //
-        // Edges are found on the source artwork and the renderer scales the result down, which
-        // leaves the lines soft. Detecting them at the drawn size instead was tried and reverted:
-        // it was crisper, but it concentrated the same light into fewer pixels and drove the
-        // brightest of them to 0.72 — above the Tier 2 ceiling — cutting the saving from 71% to
-        // 58% for an improvement the project owner judged not worth it.
-        if (outline) art = IconNormalizer.ToOutline(art);
 
         TierRender appearance = TierPalette.Resolve(element, level);
 

@@ -61,18 +61,46 @@ public readonly record struct BarMetrics
     public const double ShortAxisDriftFraction = 0.50;
 
     /// <summary>Creates bar metrics for an edge, alignment and DPI scale.</summary>
+    /// <param name="edge">Which screen edge the bar occupies.</param>
+    /// <param name="alignment">Where the icon row sits along the long axis.</param>
+    /// <param name="scale">Per-monitor DPI scale: 1.0 is 100%.</param>
+    /// <param name="measuredWindows11RowInset">Windows 11's own padding before the first icon.</param>
+    /// <param name="baseIconExtent">
+    /// Drawn icon extent at 100% scaling. Defaults to <see cref="SlotMetrics.BaseIconExtent"/>,
+    /// which is the §7.1 figure and what every published number in
+    /// <c>docs/verified-numbers.md</c> is computed against.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>Why the icon extent is a parameter.</b> Shrinking the drawn icon inside an unchanged slot
+    /// widens the gutter, and §6.2 derives drift amplitude from the gutter — so a smaller icon
+    /// drifts further and each screen pixel under it rests more. The pitch is deliberately not
+    /// touched, so the hit slot, the row spacing and P5 are all exactly as before; only the drawn
+    /// extent moves.
+    /// </para>
+    /// <para>
+    /// <b>The payoff is far worse than the geometry suggests.</b> The always-lit core vanishes at
+    /// 19.29 px in a 44 px slot, and at that size the hottest pixel is still covered 99.8% of the
+    /// time — a 1.00× improvement. Measured against the real motion model: 18 px buys 1.04×,
+    /// 16 px buys 1.25×, 14 px 1.63×, 12 px 2.32×. The core disappearing is a geometric milestone
+    /// that does not track wear, and it should not be quoted as though it does.
+    /// </para>
+    /// </remarks>
     public BarMetrics(
         BarEdge edge = BarEdge.Bottom,
         Alignment alignment = Alignment.Start,
         double scale = 1.0,
-        double? measuredWindows11RowInset = null)
+        double? measuredWindows11RowInset = null,
+        double? baseIconExtent = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(scale);
 
         Edge = edge;
         Alignment = alignment;
         Scale = scale;
-        Slot = SlotMetrics.ForScale(scale);
+        Slot = baseIconExtent is null
+            ? SlotMetrics.ForScale(scale)
+            : new SlotMetrics(SlotMetrics.BasePitch * scale, baseIconExtent.Value * scale);
         MeasuredWindows11RowInset = measuredWindows11RowInset ?? BaseWindows11RowInset * scale;
     }
 
