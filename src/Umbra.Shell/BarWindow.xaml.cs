@@ -1271,17 +1271,34 @@ internal partial class BarWindow : AppBarWindow
     {
         string? path = slot.Pin?.Path;
 
+        // Logged before the attempt, and on both branches, because "clicking a pinned application
+        // does nothing" currently produces no evidence at all: the catch below only handles two
+        // exception types, and nothing reaches the log, so it is not yet known whether the launch
+        // is failing or never being asked for.
+        BringUpLog.Write($"launch: key={slot.Key} path='{path}' " +
+                         $"exists={(!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))}");
+
         try
         {
             // A path is a plain executable; anything else is an app user model ID, which is how
             // packaged applications are started and cannot be run as a file.
             if (!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))
-                ManagedShell.Common.Helpers.ShellHelper.StartProcess(path, string.Empty, string.Empty, string.Empty);
+            {
+                bool started = ManagedShell.Common.Helpers.ShellHelper.StartProcess(
+                    path, string.Empty, string.Empty, string.Empty);
+
+                BringUpLog.Write($"launch: StartProcess returned {started}");
+            }
             else
+            {
                 ManagedShell.Common.Helpers.ShellHelper.ActivateApplication(slot.Key, string.Empty);
+                BringUpLog.Write("launch: went via ActivateApplication");
+            }
         }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception ex)
         {
+            // Deliberately every exception, not the two that were listed. A launch that throws
+            // anything else was previously silent, which is exactly the state this bug is in.
             BringUpLog.Write(ex, $"failed to launch {slot.Key}");
         }
     }
