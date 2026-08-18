@@ -1,0 +1,34 @@
+<Window x:Class="Umbra.Shell.Picker.WindowPicker"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:ClassModifier="internal"
+        Title="Umbra window picker"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        SizeToContent="Manual"
+
+        Background="#FF000000"
+
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Grayscale"
+        UseLayoutRounding="False"
+        SnapsToDevicePixels="False">
+
+    <!--
+        AllowsTransparency is deliberately absent. Setting it makes the window layered, and DWM
+        will not composite a thumbnail onto a layered window — the picker would lay out perfectly
+        and show nothing but empty rectangles. See DwmThumbnail's remarks.
+
+        The 1 px edge is the one place §4's "no border" rule does not apply: this is a transient
+        surface floating over arbitrary application content rather than a permanent strip against
+        the screen edge, and without it the picker has no boundary at all over a dark window. It
+        costs one pixel of #1A1A1A at Tier 2 duty.
+    -->
+    <Border BorderBrush="#FF1A1A1A" BorderThickness="1" Background="#FF000000">
+        <StackPanel x:Name="Columns" Orientation="Horizontal" Margin="12" />
+    </Border>
+
+</Window>

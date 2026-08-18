@@ -166,7 +166,10 @@
                     -->
                     <Grid Background="Transparent"
                           ToolTip="{Binding Title}"
+                          MouseLeftButtonDown="OnSlotMouseDown"
+                          MouseMove="OnSlotMouseMove"
                           MouseLeftButtonUp="OnSlotClick"
+                          LostMouseCapture="OnSlotLostCapture"
                           ContextMenuOpening="OnSlotContextMenuOpening"
                           Width="{Binding SlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                           Height="{Binding SlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">

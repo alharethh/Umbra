@@ -16,6 +16,7 @@ using Umbra.Core.Motion;
 using Umbra.Core.Tiers;
 using Umbra.Shell.Diagnostics;
 using Umbra.Shell.Motion;
+using Umbra.Shell.Picker;
 using Umbra.Shell.Rendering;
 using Umbra.Shell.Shell;
 using Umbra.Shell.Tasks;
@@ -125,6 +126,11 @@ internal partial class BarWindow : AppBarWindow
             _proximity.Dispose();
             _motion?.Dispose();
             _wear?.Dispose();
+
+            // A picker outlives the bar otherwise: it is a separate top-level window, and its DWM
+            // thumbnail registrations would leak with it.
+            _picker?.Dismiss();
+            _picker = null;
         };
     }
 
@@ -146,6 +152,13 @@ internal partial class BarWindow : AppBarWindow
 
     private DateTime _startPressedAt = DateTime.MinValue;
     private MotionDriver? _motion;
+    private WindowPicker? _picker;
+
+    // Drag-reorder state. Null slot means no press is being tracked.
+    private TaskbarSlot? _pressedSlot;
+    private FrameworkElement? _pressedElement;
+    private Point _pressedAt;
+    private bool _dragging;
     private WearSampler? _wear;
 
     /// <summary>
@@ -691,11 +704,129 @@ internal partial class BarWindow : AppBarWindow
                     break;
 
                 case MenuItem { Name: "SlotCloseItem" } close:
-                    close.IsEnabled = slot.IsRunning;
-                    close.Header = slot.Windows.Count > 1 ? $"Close {slot.Windows.Count} windows" : "Close window";
+                    // Closing individual windows belongs to the picker now, so this item is only
+                    // meaningful when there is exactly one window to close.
+                    close.IsEnabled = slot.Windows.Count == 1;
+                    close.Visibility = slot.Windows.Count > 1 ? Visibility.Collapsed : Visibility.Visible;
+                    close.Header = "Close window";
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// Records a press, so a later move can tell a drag from a click.
+    /// </summary>
+    /// <remarks>
+    /// Only pinned applications reorder. The row is pinned applications in their pinned order
+    /// followed by whatever else happens to be running (see <see cref="TaskbarModel"/>), and the
+    /// running tail has no stored order to rewrite — dragging within it would appear to work and
+    /// be undone by the next rebuild.
+    /// </remarks>
+    private void OnSlotMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot } element) return;
+
+        if (!slot.IsPinned || Pins.Pins.Count < 2) return;
+
+        _pressedSlot = slot;
+        _pressedElement = element;
+        _pressedAt = e.GetPosition(WindowList);
+        _dragging = false;
+    }
+
+    /// <summary>
+    /// Turns a press plus movement along the bar into a live reorder.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The pointer has to travel the system drag threshold before this commits to a drag, so an
+    /// ordinary click with a shaky hand still activates the application rather than silently
+    /// rearranging the user's taskbar.
+    /// </para>
+    /// <para>
+    /// Reordering goes through <see cref="PinSettings"/> rather than moving items in the collection
+    /// directly. The model rebuilds itself from the pin order, so a direct collection move would be
+    /// reverted the next time any window anywhere opened or closed — visibly, and only sometimes,
+    /// which is the worst kind of bug to be handed.
+    /// </para>
+    /// </remarks>
+    private void OnSlotMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_pressedSlot is null || e.LeftButton != MouseButtonState.Pressed) return;
+
+        Point now = e.GetPosition(WindowList);
+
+        if (!_dragging)
+        {
+            double moved = IsVertical
+                ? Math.Abs(now.Y - _pressedAt.Y)
+                : Math.Abs(now.X - _pressedAt.X);
+
+            double threshold = IsVertical
+                ? SystemParameters.MinimumVerticalDragDistance
+                : SystemParameters.MinimumHorizontalDragDistance;
+
+            if (moved < threshold) return;
+
+            _dragging = true;
+            _pressedElement?.CaptureMouse();
+            SetDragFeedback(_pressedElement, dragging: true);
+        }
+
+        // Which slot position the pointer is over, in the undrifted layout (P5: hit geometry does
+        // not move, so this needs no drift correction).
+        double along = IsVertical ? now.Y : now.X;
+        int target = (int)Math.Floor(along / Metrics.Slot.Pitch);
+        target = Math.Clamp(target, 0, Pins.Pins.Count - 1);
+
+        Pins.Move(_pressedSlot.Key, target, persist: false);
+    }
+
+    /// <summary>
+    /// Cleans up if capture is taken away mid-drag, so the icon cannot be left dimmed and the
+    /// order the user had reached is still written.
+    /// </summary>
+    private void OnSlotLostCapture(object sender, MouseEventArgs e)
+    {
+        if (_pressedSlot is not null) EndDrag();
+    }
+
+    /// <summary>Ends a drag, writing the order the user settled on.</summary>
+    /// <remarks>
+    /// State is cleared <b>before</b> capture is released. <c>ReleaseMouseCapture</c> raises
+    /// <c>LostMouseCapture</c> synchronously, which calls straight back into here — so releasing
+    /// first would run this whole method twice, persisting and logging the reorder twice on every
+    /// drop. It resolved correctly by accident, which is a worse failure than not working.
+    /// </remarks>
+    private void EndDrag()
+    {
+        FrameworkElement? element = _pressedElement;
+        bool dragged = _dragging;
+
+        _pressedSlot = null;
+        _pressedElement = null;
+        _dragging = false;
+
+        if (element is not null)
+        {
+            element.ReleaseMouseCapture();
+            SetDragFeedback(element, dragging: false);
+        }
+
+        if (!dragged) return;
+
+        Pins.Persist();
+        BringUpLog.Write($"reordered pins: {string.Join(", ", Pins.Pins.Select(p => p.Name))}");
+    }
+
+    /// <summary>Dims the icon being dragged, so it reads as picked up rather than stuck.</summary>
+    private static void SetDragFeedback(FrameworkElement? slotElement, bool dragging)
+    {
+        if (slotElement is null) return;
+        if (FindDescendant<Image>(slotElement) is not { } icon) return;
+
+        icon.Opacity = dragging ? 0.45 : 1.0;
     }
 
     /// <summary>
@@ -707,12 +838,30 @@ internal partial class BarWindow : AppBarWindow
         if (sender is not FrameworkElement { DataContext: TaskbarSlot slot } element) return;
 
         e.Handled = true;
+
+        // The mouse-up that ends a drag is delivered here, to the element that held capture.
+        // Letting it fall through would activate whatever the icon was dropped on.
+        bool wasDragging = _dragging;
+        EndDrag();
+        if (wasDragging) return;
+
+        BringUpLog.Write($"slot click: index {_tasks.Slots.IndexOf(slot)} | {slot.Key} | " +
+                         $"{slot.Windows.Count} windows | running={slot.IsRunning}");
         PlayIconPress(element);
 
         // Nothing running: this is a pinned application, so start it.
         if (!slot.IsRunning)
         {
             Launch(slot);
+            return;
+        }
+
+        // Several windows: show them rather than guessing which one was meant. This replaces the
+        // cycle-to-next this handler used to do, which gave no way to reach a particular window
+        // except by clicking until it came up.
+        if (slot.Windows.Count > 1)
+        {
+            TogglePicker(slot, element);
             return;
         }
 
@@ -729,20 +878,50 @@ internal partial class BarWindow : AppBarWindow
             return;
         }
 
-        // Already looking at it. One window minimises, as the Windows taskbar does; several cycle
-        // to the next, which is the more useful thing to do with a group.
-        if (slot.Windows.Count == 1)
+        // Already looking at it: minimise, as the Windows taskbar does.
+        if (!active.IsMinimized) active.Minimize();
+        else active.BringToFront();
+    }
+
+    /// <summary>
+    /// Opens the window picker for a slot, or closes it if that slot's picker is already up.
+    /// </summary>
+    /// <remarks>
+    /// Everything here is in DIP. <c>Visual.PointToScreen</c> would have been the obvious way to
+    /// find the slot on screen and it returns <i>physical</i> pixels, while <see cref="Window.Left"/>
+    /// and <see cref="Window.Top"/> are logical — mixing the two puts the picker a quarter of the
+    /// screen away at 125% and dead centre at 100%, so it looks correct on the machine it was
+    /// written on. Offsetting within the window and adding the window's own logical position keeps
+    /// one unit system throughout.
+    /// </remarks>
+    private void TogglePicker(TaskbarSlot slot, FrameworkElement element)
+    {
+        if (_picker is not null)
         {
-            if (!active.IsMinimized) active.Minimize();
-            else active.BringToFront();
-            return;
+            bool sameSlot = AppIdentity.Same(_picker.SlotKey, slot.Key);
+            _picker.Dismiss();
+            _picker = null;
+
+            // A second click on the same application closes the picker rather than reopening it.
+            if (sameSlot) return;
         }
 
-        int current = 0;
-        for (int i = 0; i < slot.Windows.Count; i++)
-            if (ReferenceEquals(slot.Windows[i], active)) { current = i; break; }
+        Point inWindow = element.TransformToAncestor(this).Transform(new Point(0, 0));
 
-        slot.Windows[(current + 1) % slot.Windows.Count].BringToFront();
+        System.Windows.Rect anchor = new(
+            Left + inWindow.X, Top + inWindow.Y, element.ActualWidth, element.ActualHeight);
+
+        System.Windows.Rect bar = new(Left, Top, Width, Height);
+
+        BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
+            $"picker open: {slot.Key} | {slot.Windows.Count} windows | " +
+            $"anchor {anchor.Left:F1},{anchor.Top:F1} {anchor.Width:F0}x{anchor.Height:F0} DIP"));
+
+        WindowPicker picker = new(slot, anchor, bar, Metrics.Edge, DpiScale <= 0 ? 1.0 : DpiScale);
+        picker.Dismissed += () => _picker = null;
+
+        _picker = picker;
+        picker.Show();
     }
 
     /// <summary>

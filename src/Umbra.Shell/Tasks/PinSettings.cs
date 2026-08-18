@@ -64,19 +64,36 @@ internal sealed class PinSettings
     }
 
     /// <summary>Moves a pinned application to a new position, for drag-reordering.</summary>
-    public void Move(string key, int index)
+    /// <param name="key">The application to move.</param>
+    /// <param name="index">Where to move it to, clamped to the pinned range.</param>
+    /// <param name="persist">
+    /// Whether to write the file. A drag crosses several positions on its way to the one the user
+    /// wants, and writing each of them would put a disk write on a mouse-move handler for orders
+    /// that were never chosen. The drag reorders without persisting and calls <see cref="Persist"/>
+    /// once on drop; <see cref="Changed"/> is raised either way, so the bar still follows the
+    /// pointer.
+    /// </param>
+    /// <returns>True when the order actually changed.</returns>
+    public bool Move(string key, int index, bool persist = true)
     {
         int current = _pins.FindIndex(p => AppIdentity.Same(p.Key, key));
-        if (current < 0) return;
+        if (current < 0) return false;
 
         index = Math.Clamp(index, 0, _pins.Count - 1);
-        if (index == current) return;
+        if (index == current) return false;
 
         PinnedApp pin = _pins[current];
         _pins.RemoveAt(current);
         _pins.Insert(index, pin);
-        Save();
+
+        if (persist) Save();
+        else Changed?.Invoke();
+
+        return true;
     }
+
+    /// <summary>Writes the current order to disk. Used at the end of a drag.</summary>
+    public void Persist() => Save();
 
     private static string DisplayNameFor(ApplicationWindow window)
     {
