@@ -18,12 +18,16 @@ namespace Umbra.Shell.Tasks;
 internal sealed class TaskbarSlot : INotifyPropertyChanged
 {
     private readonly List<ApplicationWindow> _windows = [];
+    private readonly ShortcutResolver _shortcuts;
     private ImageSource? _icon;
+    private AppShortcut? _shortcut;
+    private bool _shortcutChecked;
 
-    public TaskbarSlot(string key, PinnedApp? pin)
+    public TaskbarSlot(string key, PinnedApp? pin, ShortcutResolver? shortcuts = null)
     {
         Key = key;
         Pin = pin;
+        _shortcuts = shortcuts ?? new ShortcutResolver();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -65,6 +69,51 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         return true;
     }
 
+    /// <summary>
+    /// The application's own name, for the menu item that launches another copy of it.
+    /// </summary>
+    /// <remarks>
+    /// Never the window title, which is per-document: "Close window" sitting under a menu headed
+    /// with the name of the file you happen to have open reads as being about that file. The file
+    /// description is the application's own name and is what a pin already stores.
+    /// </remarks>
+    public string DisplayName
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Pin?.Name)) return Pin.Name;
+
+            foreach (ApplicationWindow window in _windows)
+            {
+                if (!string.IsNullOrWhiteSpace(window.WinFileDescription)) return window.WinFileDescription;
+
+                if (!string.IsNullOrWhiteSpace(window.WinFileName))
+                    return System.IO.Path.GetFileNameWithoutExtension(window.WinFileName);
+            }
+
+            return Key;
+        }
+    }
+
+    /// <summary>
+    /// The application's executable, where one is known.
+    /// </summary>
+    /// <remarks>
+    /// Taken from a live window first and the pin record second, because the pin's copy is a
+    /// snapshot: a packaged application that updates moves into a new versioned directory and the
+    /// stored path goes stale, while the running window always reports where it actually is.
+    /// </remarks>
+    public string? ExecutablePath
+    {
+        get
+        {
+            foreach (ApplicationWindow window in _windows)
+                if (!string.IsNullOrWhiteSpace(window.WinFileName)) return window.WinFileName;
+
+            return string.IsNullOrWhiteSpace(Pin?.Path) ? null : Pin.Path;
+        }
+    }
+
     /// <summary>What to show on hover.</summary>
     public string Title => _windows.Count switch
     {
@@ -95,10 +144,67 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
             }
 
             if (_icon is not null) return _icon;
-            if (string.IsNullOrWhiteSpace(Pin?.Path)) return null;
 
-            _icon = IconImageConverter.GetImageFromAssociatedIcon(Pin.Path, IconSize.Large);
+            // The recorded path first: it is the executable this application's own window was
+            // running from, which beats a shortcut of the same name pointing somewhere else.
+            if (PathIsUsable(Pin?.Path))
+            {
+                _icon = IconImageConverter.GetImageFromAssociatedIcon(Pin!.Path, IconSize.Large);
+                if (_icon is not null) return _icon;
+            }
+
+            // The path has gone. Ask the Start Menu where the application went — see
+            // ShortcutResolver for why that is the answer rather than a guess.
+            if (Shortcut() is not { } shortcut) return null;
+
+            string source = PathIsUsable(shortcut.IconPath) ? shortcut.IconPath : shortcut.Target;
+            _icon = IconImageConverter.GetImageFromAssociatedIcon(source, IconSize.Large);
+
             return _icon;
+        }
+    }
+
+    /// <summary>
+    /// What to run when this slot is clicked and nothing is open, and what to pass it.
+    /// </summary>
+    /// <remarks>
+    /// The pin's own path while it still exists. Once it does not — the application updated into a
+    /// new versioned directory — the Start Menu shortcut, which is what Windows itself launches and
+    /// is why its pins survive an update.
+    /// </remarks>
+    public (string Path, string Arguments)? LaunchTarget
+    {
+        get
+        {
+            if (PathIsUsable(Pin?.Path)) return (Pin!.Path, string.Empty);
+
+            return Shortcut() is { } shortcut ? (shortcut.Target, shortcut.Arguments) : null;
+        }
+    }
+
+    /// <summary>The Start Menu shortcut for this application, looked up at most once.</summary>
+    private AppShortcut? Shortcut()
+    {
+        if (_shortcutChecked) return _shortcut;
+
+        _shortcutChecked = true;
+        _shortcut = _shortcuts.Resolve(Pin?.Name ?? DisplayName, Pin?.Path ?? ExecutablePath);
+
+        return _shortcut;
+    }
+
+    private static bool PathIsUsable(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+
+        try
+        {
+            return System.IO.File.Exists(path);
+        }
+        catch (ArgumentException)
+        {
+            // Not path-shaped. An app user model ID need not be.
+            return false;
         }
     }
 
@@ -129,6 +235,12 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     /// <summary>Tells the view the pin state changed.</summary>
     public void RaisePinChanged()
     {
+        // The pin may have been healed to a path that works, so any shortcut fallback found for the
+        // broken one is no longer the best answer.
+        _shortcutChecked = false;
+        _shortcut = null;
+        _icon = null;
+
         Raise(nameof(Pin));
         Raise(nameof(IsPinned));
         Raise(nameof(Title));

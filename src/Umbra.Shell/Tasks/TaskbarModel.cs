@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using ManagedShell.WindowsTasks;
@@ -6,18 +7,27 @@ using ManagedShell.WindowsTasks;
 namespace Umbra.Shell.Tasks;
 
 /// <summary>
-/// Maintains the bar's slots: pinned applications first in their pinned order, then anything else
-/// that happens to be running.
+/// Maintains the bar's slots, in one order that covers pinned and running applications alike.
 /// </summary>
 /// <remarks>
+/// <para>
+/// Layout comes from <see cref="BarOrder"/>; see it for the rule and for why the row is no longer
+/// segregated into a pinned section and a running tail.
+/// </para>
+/// <para>
 /// Slots are updated in place rather than rebuilt. Replacing the collection on every window change
 /// would work, but it would also throw away and recreate every icon and every binding each time any
-/// window anywhere opened, closed or changed title — which on a busy desktop is constant.
+/// window anywhere opened, closed or changed title — which on a busy desktop is constant. It is
+/// also what lets the row animate: the panel slides a container to its new position by recognising
+/// it, and a container that was destroyed and recreated has nowhere to slide from.
+/// </para>
 /// </remarks>
 internal sealed class TaskbarModel : IDisposable
 {
     private readonly ICollectionView _windows;
     private readonly PinSettings _pins;
+    private readonly BarOrder _order = new();
+    private readonly ShortcutResolver _shortcuts = new();
 
     public TaskbarModel(ICollectionView windows, PinSettings pins)
     {
@@ -27,7 +37,7 @@ internal sealed class TaskbarModel : IDisposable
         if (_windows is INotifyCollectionChanged observable)
             observable.CollectionChanged += OnWindowsChanged;
 
-        _pins.Changed += Rebuild;
+        _pins.Changed += OnPinsChanged;
         Rebuild();
     }
 
@@ -44,12 +54,34 @@ internal sealed class TaskbarModel : IDisposable
         foreach (TaskbarSlot slot in Slots) slot.SetForeground(foreground);
     }
 
+    /// <summary>
+    /// Moves an application to a new position in the row, for drag-reordering.
+    /// </summary>
+    /// <param name="key">The application to move. Pinned or not — the row does not distinguish.</param>
+    /// <param name="index">Where to move it to, clamped to the row.</param>
+    /// <param name="persist">
+    /// Whether to write the pin file. A drag passes through every position between its start and
+    /// its end, so the moves it makes on the way are applied in memory and <see cref="PersistOrder"/>
+    /// is called once on drop.
+    /// </param>
+    /// <returns>True when the order actually changed.</returns>
+    public bool Move(string key, int index, bool persist = true)
+    {
+        if (!_order.Move(key, index)) return false;
+
+        Rebuild(persist);
+        return true;
+    }
+
+    /// <summary>Writes the order the user settled on. Called at the end of a drag.</summary>
+    public void PersistOrder() => _pins.Persist();
+
     public void Dispose()
     {
         if (_windows is INotifyCollectionChanged observable)
             observable.CollectionChanged -= OnWindowsChanged;
 
-        _pins.Changed -= Rebuild;
+        _pins.Changed -= OnPinsChanged;
 
         foreach (TaskbarSlot slot in Slots) slot.Detach();
         Slots.Clear();
@@ -57,17 +89,19 @@ internal sealed class TaskbarModel : IDisposable
 
     private void OnWindowsChanged(object? sender, NotifyCollectionChangedEventArgs e) => Rebuild();
 
-    private void Rebuild()
+    private void OnPinsChanged() => Rebuild();
+
+    private void Rebuild() => Rebuild(persist: true);
+
+    private void Rebuild(bool persist)
     {
         Dictionary<string, List<ApplicationWindow>> running = GroupRunningWindows();
 
-        // Pinned applications hold their position whether or not anything is running.
-        List<string> order = [.. _pins.Pins.Select(p => p.Key)];
+        AdoptMovedApplications(running.Keys);
 
-        // Then everything else that is running, in the order the shell reports it.
-        foreach (string key in running.Keys)
-            if (!order.Any(k => AppIdentity.Same(k, key)))
-                order.Add(key);
+        _order.Reconcile([.. _pins.Pins.Select(p => p.Key)], running.Keys);
+
+        IReadOnlyList<string> order = _order.Keys;
 
         for (int index = 0; index < order.Count; index++)
         {
@@ -79,7 +113,7 @@ internal sealed class TaskbarModel : IDisposable
 
             if (existing is null)
             {
-                TaskbarSlot slot = new(key, pin);
+                TaskbarSlot slot = new(key, pin, _shortcuts);
                 slot.SetWindows(windows);
                 Slots.Insert(Math.Min(index, Slots.Count), slot);
                 continue;
@@ -93,6 +127,11 @@ internal sealed class TaskbarModel : IDisposable
 
             existing.SetWindows(windows);
 
+            // A pinned application that is running is the one moment we can see where it really
+            // lives, so take it. Writes only when the path actually changed.
+            if (pin is not null && windows.Count > 0 && _pins.UpdatePath(key, windows[0].WinFileName))
+                existing.RaisePinChanged();
+
             int current = Slots.IndexOf(existing);
             if (current != index && index < Slots.Count) Slots.Move(current, index);
         }
@@ -105,6 +144,53 @@ internal sealed class TaskbarModel : IDisposable
 
             slot.Detach();
             Slots.RemoveAt(i);
+        }
+
+        // The pin file records only pins, so their relative order is read back out of the row —
+        // that is the one thing the file can carry across a restart about where the user put them.
+        // Written only when it actually changed, because this runs on every window event.
+        if (_pins.Reorder(_order.PinnedIn(_pins.IsPinned)) && persist) _pins.Persist();
+    }
+
+    /// <summary>
+    /// Re-points pins whose application has updated into a new directory.
+    /// </summary>
+    /// <remarks>
+    /// Without this the bar shows such an application twice: a pinned icon that can only launch it,
+    /// and a running icon that cannot be pinned — and neither can close it, because the pinned one
+    /// believes nothing is running. Runs before the row is reconciled so the adopted identity is
+    /// what gets laid out, and touches only pins whose own executable has actually gone.
+    /// </remarks>
+    private void AdoptMovedApplications(IEnumerable<string> runningKeys)
+    {
+        List<string> live = [.. runningKeys];
+        if (live.Count == 0) return;
+
+        foreach (PinnedApp pin in _pins.Pins.ToList())
+        {
+            if (PathStillExists(pin.Path)) continue;
+
+            foreach (string key in live)
+            {
+                if (!AppIdentity.IsSameApplicationMoved(pin.Path, key)) continue;
+
+                if (_pins.Rekey(pin.Key, key)) _order.Rename(pin.Key, key);
+                break;
+            }
+        }
+    }
+
+    private static bool PathStillExists(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+
+        try
+        {
+            return File.Exists(path);
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
     }
 

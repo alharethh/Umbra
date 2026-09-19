@@ -1,3 +1,4 @@
+using System.IO;
 using ManagedShell.WindowsTasks;
 
 namespace Umbra.Shell.Tasks;
@@ -35,4 +36,48 @@ internal static class AppIdentity
     /// </summary>
     public static bool Same(string? a, string? b) =>
         a is not null && b is not null && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether a dead path and a live one are the same application, moved.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The identity of a path-keyed application contains its version.</b> Applications that
+    /// update in place install each release into its own directory — Discord went from
+    /// <c>Discordpp-1.0.9253\Discord.exe</c> to <c>Discordpp-1.0.9258\Discord.exe</c> — so
+    /// after an update the running application does not match the pin, and the bar shows the same
+    /// application twice: a pin that can only launch it, and a running icon that cannot be pinned
+    /// to. Neither can close it from the other.
+    /// </para>
+    /// <para>
+    /// The rule is deliberately narrow: the same executable file name, in sibling directories under
+    /// a shared parent. That is the shape a versioned install has and very little else does, and
+    /// the caller only asks about pins whose own path has already gone — so the alternative to
+    /// adopting is a permanently broken icon, not a working one.
+    /// </para>
+    /// </remarks>
+    public static bool IsSameApplicationMoved(string? deadPath, string? livePath)
+    {
+        if (string.IsNullOrWhiteSpace(deadPath) || string.IsNullOrWhiteSpace(livePath)) return false;
+        if (Same(deadPath, livePath)) return false;
+
+        try
+        {
+            if (!Same(Path.GetFileName(deadPath), Path.GetFileName(livePath))) return false;
+
+            string? deadVersion = Path.GetDirectoryName(deadPath);
+            string? liveVersion = Path.GetDirectoryName(livePath);
+
+            if (deadVersion is null || liveVersion is null) return false;
+            if (Same(deadVersion, liveVersion)) return true;
+
+            return Same(Path.GetDirectoryName(deadVersion), Path.GetDirectoryName(liveVersion));
+        }
+        catch (ArgumentException)
+        {
+            // Not path-shaped. An app user model ID need not be, and two of those are either equal
+            // or unrelated — there is no "moved" for them.
+            return false;
+        }
+    }
 }

@@ -32,11 +32,19 @@ internal sealed class IndicatorWidthConverter : IMultiValueConverter
     /// <summary>Extent across the pill's short axis, which does not change with state.</summary>
     public double Thickness { get; set; } = 3.0;
 
-    /// <summary>True when this converter is producing the axis the pill grows along.</summary>
-    public bool AlongBar { get; set; } = true;
+    /// <summary>
+    /// True for the instance feeding <c>Width</c>, false for the one feeding <c>Height</c>.
+    /// </summary>
+    /// <remarks>
+    /// Which screen axis the pill <i>grows</i> along depends on the bar's edge, so this cannot be
+    /// baked in. It used to be: one converter was marked "along the bar" and wired permanently to
+    /// <c>Width</c>, which is right on a horizontal bar and exactly wrong on a vertical one — the
+    /// pill came out as a 16×3 dash lying across the icon instead of a 3×16 line beside it.
+    /// </remarks>
+    public bool Horizontal { get; set; } = true;
 
     /// <summary>
-    /// Takes <c>IsRunning</c> and <c>IsActive</c> as separate bindings.
+    /// Takes <c>IsRunning</c>, <c>IsActive</c> and the bar's <c>IsVertical</c> as separate bindings.
     /// </summary>
     /// <remarks>
     /// Deliberately not a single binding to the slot itself. A <c>Binding</c> with no path resolves
@@ -48,11 +56,17 @@ internal sealed class IndicatorWidthConverter : IMultiValueConverter
     {
         bool running = values.Length > 0 && values[0] is true;
         bool active = values.Length > 1 && values[1] is true;
+        bool vertical = values.Length > 2 && values[2] is true;
 
         // A pinned application that is not running has no indicator at all — the icon alone says
         // "this is here", and a pill would say "this is open", which would be a lie.
         if (!running) return 0.0;
-        if (!AlongBar) return Thickness;
+
+        // The pill grows along the bar. On a horizontal bar that is the X axis, on a vertical bar
+        // the Y axis — so this instance produces the long extent only when its own axis and the
+        // bar's agree.
+        bool along = Horizontal != vertical;
+        if (!along) return Thickness;
 
         return active ? Active : Inactive;
     }

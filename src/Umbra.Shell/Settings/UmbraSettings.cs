@@ -227,9 +227,5 @@ internal sealed class UmbraSettings
     /// explicit settings change is exactly the exception that rule allows for, but doing it in
     /// place is far more work than restarting, and restarting is honest about what it costs.
     /// </remarks>
-    public bool NeedsRestartToReach(UmbraSettings other) =>
-        Edge != other.Edge
-        || Alignment != other.Alignment
-        || Tray != other.Tray
-        || !string.Equals(Monitor, other.Monitor, StringComparison.OrdinalIgnoreCase);
+    public bool NeedsRestartToReach(UmbraSettings other) => Tray != other.Tray;
 }

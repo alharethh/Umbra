@@ -13,6 +13,7 @@ public partial class App : Application
 {
     private ShellHost? _host;
     private BarWindow? _bar;
+    private SingleInstance? _instance;
     private string[] _args = [];
 
     protected override void OnStartup(StartupEventArgs e)
@@ -31,7 +32,26 @@ public partial class App : Application
         // A restart from the settings window hands us the outgoing process to wait on. Without
         // this the new bar can capture Explorer's taskbar state while the old one still has it
         // suppressed, then faithfully restore the user's taskbar to hidden on its own exit.
-        WaitForPreviousInstance(e.Args);
+        bool restarting = WaitForPreviousInstance(e.Args);
+
+        // One bar, and the check has to come before ShellHost: a second instance that got as far
+        // as constructing one would capture Explorer's taskbar state while the first has it
+        // suppressed, and then restore the user's taskbar to hidden when it exits. See
+        // SingleInstance. A restart is given a grace period because it is racing its predecessor
+        // out of the door on purpose; an ordinary launch waits for nothing.
+        _instance = SingleInstance.Claim(timeout: restarting ? TimeSpan.FromSeconds(5) : TimeSpan.Zero);
+
+        if (_instance is null)
+        {
+            // Silently. Double-clicking a taskbar and getting a dialog would be worse than
+            // double-clicking it and getting nothing, which is what every other shell does.
+            BringUpLog.Write("another Umbra already holds the bar; exiting without touching Explorer");
+            Shutdown();
+            return;
+        }
+
+        if (_instance.WasAbandoned)
+            BringUpLog.Write("the single-instance lock was abandoned: the previous exit was not clean");
 
         Settings = UmbraSettings.Load();
         ApplyCommandLineOverrides(Settings, e.Args);
@@ -66,6 +86,11 @@ public partial class App : Application
 
         _host?.Dispose();
         _host = null;
+
+        // After the host, so the lock outlives Explorer's restore. A replacement waiting on this
+        // lock must not start claiming the taskbar while we are still handing it back.
+        _instance?.Dispose();
+        _instance = null;
 
         base.OnExit(e);
     }
@@ -117,7 +142,8 @@ public partial class App : Application
     }
 
     /// <summary>Blocks until the process named by <c>--wait-for</c> has exited.</summary>
-    private static void WaitForPreviousInstance(string[] args)
+    /// <returns>True when a wait token was present, i.e. this launch is a restart.</returns>
+    private static bool WaitForPreviousInstance(string[] args)
     {
         for (int i = 0; i < args.Length - 1; i++)
         {
@@ -137,8 +163,10 @@ public partial class App : Application
                 // Already gone, which is the outcome we wanted.
             }
 
-            return;
+            return true;
         }
+
+        return false;
     }
 
     /// <summary>

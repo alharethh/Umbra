@@ -51,6 +51,38 @@ internal sealed class StartMenuWatcher
         return true;
     }
 
+    /// <summary>Closes the Start menu, if it is open.</summary>
+    /// <returns>True when there was a menu to close.</returns>
+    /// <remarks>
+    /// <para>
+    /// Windows closes Start by itself when you click anywhere outside it. It does not do that for
+    /// us: the bar carries <c>WS_EX_NOACTIVATE</c>, so clicking it never moves the foreground and
+    /// Start is never told it lost anything. Anything the bar then opens is drawn underneath.
+    /// </para>
+    /// <para>
+    /// <b>Out-ranking it is not an option.</b> The Start menu sits in a Z-order band above ordinary
+    /// topmost windows, and entering that band needs <c>SetWindowBand</c> and a UIAccess manifest —
+    /// which means a signed binary installed to a trusted location. Measured: a context menu raised
+    /// with <c>SetWindowPos(HWND_TOPMOST)</c> reports success and still draws behind. So the fix is
+    /// to do what the click should have done.
+    /// </para>
+    /// <para>
+    /// <c>ShowStartMenu</c> is a toggle, which makes it dangerous to call blind — it would
+    /// <i>open</i> the menu we are trying to be rid of. <see cref="Poll"/> is what makes it safe,
+    /// and it re-reads rather than trusting a cached value for exactly that reason.
+    /// </para>
+    /// </remarks>
+    public bool Dismiss()
+    {
+        Poll();
+        if (!IsOpen) return false;
+
+        ManagedShell.Common.Helpers.ShellHelper.ShowStartMenu();
+        IsOpen = false;
+
+        return true;
+    }
+
     private bool IsHostForeground()
     {
         IntPtr foreground = NativeMethods.GetForegroundWindow();

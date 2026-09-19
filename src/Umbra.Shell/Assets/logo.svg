@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Umbra</title>
+
+  <defs>
+    <!-- One gradient across the whole 2x2 block, not one per square. -->
+    <linearGradient id="tile" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#231B4E" />
+      <stop offset="1" stop-color="#A6DFDB" />
+    </linearGradient>
+
+    <radialGradient id="field" cx="128" cy="128" r="158.72" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0A0F12" />
+      <stop offset="1" stop-color="#020307" />
+    </radialGradient>
+  </defs>
+
+  <rect width="256" height="256" fill="url(#field)" />
+
+  <g fill="url(#tile)">
+    <rect x="10" y="10" width="110" height="110" rx="18" ry="18" />
+    <rect x="136" y="10" width="110" height="110" rx="18" ry="18" />
+    <rect x="10" y="136" width="110" height="110" rx="18" ry="18" />
+    <rect x="136" y="136" width="110" height="110" rx="18" ry="18" />
+  </g>
+</svg>

@@ -148,7 +148,7 @@
         </Grid>
 
         <TextBlock Style="{StaticResource Hint}"
-                   Text="Changing the edge, the row alignment or the monitor needs Umbra restarted — they are fixed when the space-reserving AppBar is registered." />
+                   Text="All three apply immediately. Moving the bar re-registers its reserved space, so every maximised window on the desktop reflows — that is expected." />
 
         <TextBlock Text="Wear" FontWeight="SemiBold" Margin="0,8,0,6" />
 

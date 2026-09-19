@@ -7,6 +7,13 @@
     <AssemblyName>Umbra</AssemblyName>
     <RootNamespace>Umbra.Shell</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!--
+      Umbra's own windows - settings, the heatmap, the motion speed tool - appear on the
+      taskbar, and without this they appear with the generic placeholder icon.
+      Assets/logo.svg is the canonical artwork; umbra.ico is rendered from it at nine sizes.
+    -->
+    <ApplicationIcon>Assets\umbra.ico</ApplicationIcon>
     <!-- An application, not a library: no XML docs to generate. -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>

@@ -12,12 +12,10 @@ namespace Umbra.Shell.Settings;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Two kinds of setting, and the window is explicit about which is which. The resting icon size
-/// and the motion layer are properties of what gets drawn, so they apply the moment they change.
-/// The edge, the row alignment and the monitor are baked into the space-reserving AppBar
-/// registration when the bar is constructed, and §6.3 forbids re-registering that rectangle in
-/// steady state because it reflows every maximised window on the desktop. Those need a restart,
-/// and the window says so rather than appearing to apply and quietly not.
+/// Everything here applies the moment it changes, except hosting the notification area — that is
+/// built into the shell host at startup. The edge and the monitor re-register the space-reserving
+/// AppBar, which §6.3 forbids doing *in steady state* because it reflows every maximised window on
+/// the desktop; a user deliberately moving the bar is not steady state, and the reflow is the point.
 /// </para>
 /// <para>
 /// The restart hands the new instance the old one's process id to wait on. Without that the new
@@ -184,10 +182,13 @@ internal partial class SettingsWindow : Window
         bool needsRestart = _saved.NeedsRestartToReach(_working);
 
         RestartNote.Text = needsRestart
-            ? "Saved. The edge, alignment, monitor or tray change takes effect when Umbra restarts."
+            ? "Saved. Hosting the notification area takes effect when Umbra restarts."
             : string.Empty;
 
-        RestartButton.IsEnabled = needsRestart;
+        // Always available. Greying it out when nothing pending needed a restart meant the one
+        // button that reliably fixes a misbehaving bar was unavailable exactly when it was wanted,
+        // and the user has no other way to restart it — Umbra has no window to close.
+        RestartButton.IsEnabled = true;
     }
 
     private void OnRestartClick(object sender, RoutedEventArgs e)

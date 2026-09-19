@@ -48,8 +48,8 @@
         <render:TierBrushConverter x:Key="StartGlyphBrush" Element="StartGlyph" />
 
         <!-- A long pill for the foreground window, a short one for the rest, as Windows 11 does. -->
-        <render:IndicatorWidthConverter x:Key="PillAlong" AlongBar="True" />
-        <render:IndicatorWidthConverter x:Key="PillAcross" AlongBar="False" />
+        <render:IndicatorWidthConverter x:Key="PillX" Horizontal="True" />
+        <render:IndicatorWidthConverter x:Key="PillY" Horizontal="False" />
         </ResourceDictionary>
     </Window.Resources>
 
@@ -257,9 +257,15 @@
                       Height="{Binding RowHeight}"
                       Margin="{Binding RowMargin}">
 
+            <!--
+                A sliding panel, not a StackPanel: reordering the row moves icons between slots,
+                and doing that instantaneously reads as a glitch rather than as a move. It arranges
+                identically and animates the difference. See SlidingStackPanel for why its easing
+                is not a breach of §6.1.
+            -->
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <StackPanel Orientation="{Binding RowOrientation, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <render:SlidingStackPanel Orientation="{Binding RowOrientation, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
 
@@ -269,6 +275,10 @@
                         This Grid is the hit slot. Per P5 it is computed from the undrifted layout
                         and never moves: only the content inside it drifts, so a click always lands
                         where the user sees the icon.
+
+                        A reorder does move it — that is the point of a reorder — but the slot and
+                        its content move together, as one, so the drift never leaves its own slot
+                        and the click target never leaves the icon.
                     -->
                     <Grid Background="Transparent"
                           MouseEnter="OnSlotMouseEnter"
@@ -328,12 +338,12 @@
                         </Grid.Triggers>
 
                         <Grid.ContextMenu>
-                            <ContextMenu Style="{StaticResource DarkContextMenu}">
-                                <!-- Headers and enabled state are set as the menu opens. -->
-                                <MenuItem x:Name="SlotPinItem" Header="Pin to bar" Click="OnSlotPinClick" Style="{StaticResource DarkMenuItem}" />
-                                <Separator x:Name="SlotMenuSeparator" Style="{StaticResource MenuSeparatorStyle}" />
-                                <MenuItem x:Name="SlotCloseItem" Header="Close window" Click="OnSlotClose" Style="{StaticResource DarkMenuItem}" />
-                            </ContextMenu>
+                            <!--
+                                Built in code as it opens - see BarWindow.OnSlotContextMenuOpening.
+                                Its contents depend on what the application publishes in its jump
+                                list, which is read from disk and cannot be expressed here.
+                            -->
+                            <ContextMenu Style="{StaticResource DarkContextMenu}" />
                         </Grid.ContextMenu>
 
                         <!--
@@ -420,20 +430,22 @@
                             -->
                             <Rectangle.RenderTransform>
                                 <TranslateTransform
-                                    X="{Binding ContentOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
-                                    Y="{Binding ContentOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                    X="{Binding PillOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Y="{Binding PillOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
                             </Rectangle.RenderTransform>
 
                             <Rectangle.Width>
-                                <MultiBinding Converter="{StaticResource PillAlong}">
+                                <MultiBinding Converter="{StaticResource PillX}">
                                     <Binding Path="IsRunning" />
                                     <Binding Path="IsActive" />
+                                    <Binding Path="IsVertical" RelativeSource="{RelativeSource AncestorType=Window}" />
                                 </MultiBinding>
                             </Rectangle.Width>
                             <Rectangle.Height>
-                                <MultiBinding Converter="{StaticResource PillAcross}">
+                                <MultiBinding Converter="{StaticResource PillY}">
                                     <Binding Path="IsRunning" />
                                     <Binding Path="IsActive" />
+                                    <Binding Path="IsVertical" RelativeSource="{RelativeSource AncestorType=Window}" />
                                 </MultiBinding>
                             </Rectangle.Height>
                         </Rectangle>

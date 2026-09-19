@@ -163,15 +163,25 @@ public class UmbraSettingsTests : IDisposable
     {
         UmbraSettings baseline = new();
 
-        Assert.True(baseline.NeedsRestartToReach(new UmbraSettings { Edge = BarEdge.Top }));
-        Assert.True(baseline.NeedsRestartToReach(new UmbraSettings { Alignment = Alignment.Center }));
+        // Tray hosting is the only one left. It is built into the shell host at startup, and
+        // unlike the placement settings there is no live path for it \u2014 nor much point building
+        // one, since it collects nothing on Windows 11 25H2.
         Assert.True(baseline.NeedsRestartToReach(new UmbraSettings { Tray = true }));
-        Assert.True(baseline.NeedsRestartToReach(new UmbraSettings { Monitor = @"\\.\DISPLAY2" }));
 
-        // These are properties of what is drawn, so they apply live.
+        // Properties of what is drawn.
         Assert.False(baseline.NeedsRestartToReach(new UmbraSettings { DormantIconSize = 16 }));
         Assert.False(baseline.NeedsRestartToReach(new UmbraSettings { Motion = false }));
         Assert.False(baseline.NeedsRestartToReach(baseline.Clone()));
+
+        // Alignment moves the icons inside the reserved strip without changing the strip, so it
+        // never touches the AppBar registration at all.
+        Assert.False(baseline.NeedsRestartToReach(new UmbraSettings { Alignment = Alignment.Center }));
+
+        // Edge and monitor do re-register it, and that is allowed: \u00a76.3 forbids re-registering in
+        // steady state because it reflows every maximised window, but a user deliberately moving
+        // the bar is not steady state and the reflow is what they asked for.
+        Assert.False(baseline.NeedsRestartToReach(new UmbraSettings { Edge = BarEdge.Top }));
+        Assert.False(baseline.NeedsRestartToReach(new UmbraSettings { Monitor = @"\\.\DISPLAY2" }));
     }
 
     public void Dispose()

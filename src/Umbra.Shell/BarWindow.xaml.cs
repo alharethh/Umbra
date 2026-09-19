@@ -15,6 +15,7 @@ using Umbra.Core.Layout;
 using Umbra.Core.Motion;
 using Umbra.Core.Tiers;
 using Umbra.Shell.Diagnostics;
+using Umbra.Shell.JumpList;
 using Umbra.Shell.Motion;
 using Umbra.Shell.Picker;
 using Umbra.Shell.Rendering;
@@ -129,6 +130,14 @@ internal partial class BarWindow : AppBarWindow
         _clock = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _clock.Tick += OnClockTick;
 
+        // Before the menu is placed, not after: dismissing Start once the popup is already up
+        // would show it clipped for as long as Start takes to animate away. handledEventsToo,
+        // because the slot handler runs first and this must not depend on what it does.
+        AddHandler(
+            ContextMenuOpeningEvent,
+            new ContextMenuEventHandler((_, _) => DismissStartMenu()),
+            handledEventsToo: true);
+
         // A class handler rather than per-menu wiring: the slot menus are created by a
         // DataTemplate, so there is no single place to attach to, and a menu added later would
         // silently miss out.
@@ -136,7 +145,14 @@ internal partial class BarWindow : AppBarWindow
             typeof(ContextMenu), ContextMenu.OpenedEvent,
             new RoutedEventHandler((sender, _) =>
             {
-                if (sender is ContextMenu menu) _menuDismisser.Watch(menu);
+                if (sender is not ContextMenu menu) return;
+
+                _menuDismisser.Watch(menu);
+
+                // The popup is its own top-level window and does not inherit the bar's topmost
+                // flag, so without this it draws under the Start menu. Opened, not Opening: the
+                // popup has no HWND to reorder until it has one.
+                WindowOrder.Raise(menu);
             }));
 
         EventManager.RegisterClassHandler(
@@ -182,6 +198,7 @@ internal partial class BarWindow : AppBarWindow
     // Hover preview state. The timer exists for the whole life of the window but only runs while a
     // pointer is resting on a slot.
     private readonly ContextMenuDismisser _menuDismisser = new();
+    private readonly JumpListIndex _jumpLists = new();
     private DispatcherTimer? _hoverTimer;
     private TaskbarSlot? _hoverSlot;
     private FrameworkElement? _hoverElement;
@@ -194,6 +211,9 @@ internal partial class BarWindow : AppBarWindow
     private FrameworkElement? _pressedElement;
     private Point _pressedAt;
     private bool _dragging;
+    private UIElement? _dragContainer;
+    private double _grabAlong;
+    private SlidingStackPanel? _row;
     private WearSampler? _wear;
 
     /// <summary>
@@ -205,6 +225,54 @@ internal partial class BarWindow : AppBarWindow
     /// the row, so the click targets stay exactly where the undrifted layout put them (P5, §6.5).
     /// </remarks>
     public TranslateTransform ContentOffset { get; } = new();
+
+    /// <summary>
+    /// The running indicator's offset: the full drift along the bar, clamped across it.
+    /// </summary>
+    /// <remarks>
+    /// Its own transform source rather than <see cref="ContentOffset"/>, because the pill is the
+    /// only drifting element that is not centred in the content band. See
+    /// <see cref="ClampPillOffset"/> for why that matters and <see cref="PillEdgeClearance"/> for
+    /// how much room it actually has.
+    /// </remarks>
+    public TranslateTransform PillOffset { get; } = new();
+
+    /// <summary>
+    /// How far the running-indicator pill sits from the outer edge of the bar, in DIP.
+    /// </summary>
+    /// <remarks>
+    /// Windows 11 puts it hard against the edge, and this is the whole of its short-axis clearance.
+    /// <see cref="PillMargin"/> is built from it, so the drawn margin and the clamp cannot disagree.
+    /// </remarks>
+    public const double PillEdgeClearance = 1.0;
+
+    /// <summary>
+    /// Holds the pill's short-axis drift inside the clearance it actually has.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every other drifting element is centred in the content band, so the band absorbs the
+    /// short-axis travel: a 16 px icon in a 48 px band has 16 px of clearance against a peak
+    /// excursion of about 8.75 px. The pill is pinned to the outer edge with
+    /// <see cref="PillEdgeClearance"/> px, and 8.75 px of travel took it off the window, where it
+    /// was clipped — partly for most of the drift cycle and entirely at the extremes. The symptom
+    /// was a running indicator that was sometimes drawn wrong and sometimes not drawn at all, with
+    /// no pattern anyone could see, because the drift period is minutes long.
+    /// </para>
+    /// <para>
+    /// <b>This became reachable when the reserved rectangle was cut from 56 to 48.</b> The 8 px it
+    /// gave up were the headroom that used to absorb exactly this, and the reasoning recorded for
+    /// that change weighed the icon, which is centred and had clearance to spare, rather than the
+    /// one element that had none.
+    /// </para>
+    /// <para>
+    /// Clamped, not zeroed. The long axis is untouched and is the half that does the work anyway:
+    /// the pill is 16 px long and 3 px thick, so travel along the bar spreads its wear over five
+    /// times the distance travel across it ever could.
+    /// </para>
+    /// </remarks>
+    public static double ClampPillOffset(double offset, double clearance) =>
+        Math.Clamp(offset, -clearance, clearance);
 
     /// <summary>
     /// How long the pointer must rest on an icon before its preview appears, in milliseconds.
@@ -236,19 +304,7 @@ internal partial class BarWindow : AppBarWindow
 
         // Built here rather than in the constructor because the accumulator is sized in physical
         // pixels and the window has no size until it has been laid out.
-        double scale = DpiScale <= 0 ? 1.0 : DpiScale;
-        int width = Math.Max(1, (int)Math.Round(ActualWidth * scale));
-        int height = Math.Max(1, (int)Math.Round(ActualHeight * scale));
-
-        _wear = new WearSampler(
-            width,
-            height,
-            () => SceneReader.Read(ContentRoot, this),
-            () => DpiScale <= 0 ? 1.0 : DpiScale);
-
-        _wear.Start();
-
-        BringUpLog.Write($"wear accumulator: {width}x{height} physical px ({_wear.Accumulator.SizeInBytes / 1024} KB)");
+        StartWear();
 
         if (_notificationArea is not null)
         {
@@ -265,6 +321,11 @@ internal partial class BarWindow : AppBarWindow
             {
                 ContentOffset.X = dx;
                 ContentOffset.Y = dy;
+
+                // The pill is the one drifting element that is not centred in the content band, so
+                // it is the one the band's clearance does not protect. See ClampPillOffset.
+                PillOffset.X = IsVertical ? ClampPillOffset(dx, PillEdgeClearance) : dx;
+                PillOffset.Y = IsVertical ? dy : ClampPillOffset(dy, PillEdgeClearance);
 
                 TrayOffset.X = dx * trayRatio;
                 TrayOffset.Y = dy * trayRatio;
@@ -339,7 +400,9 @@ internal partial class BarWindow : AppBarWindow
     {
         if (Application.Current is not App app) return;
 
-        new Settings.SettingsWindow(app.Settings, ApplyLiveSettings, app.Restart).Show();
+        // ShowInFront, not Show: the bar never holds the foreground, so a window it opens lands
+        // behind whatever the user was looking at. See WindowOrder.
+        new Settings.SettingsWindow(app.Settings, ApplyLiveSettings, app.Restart).ShowInFront();
     }
 
     /// <summary>
@@ -358,7 +421,7 @@ internal partial class BarWindow : AppBarWindow
         new MotionSpeedWindow(_motion, CurrentMetrics, suspended =>
         {
             if (_wear is not null) _wear.Suspended = suspended;
-        }).Show();
+        }).ShowInFront();
     }
 
     private void OnHeatmapClick(object sender, RoutedEventArgs e)
@@ -367,17 +430,25 @@ internal partial class BarWindow : AppBarWindow
 
         // Flush first, so what the window shows is what is on disk.
         _wear.Persist();
-        new HeatmapWindow(_wear.Accumulator) { Owner = null }.Show();
+        new HeatmapWindow(_wear.Accumulator) { Owner = null }.ShowInFront();
     }
 
     /// <summary>
     /// Applies the settings that can change without rebuilding the window.
     /// </summary>
     /// <remarks>
-    /// The resting icon size and the motion layer are properties of what is drawn, so they take
-    /// effect immediately. The edge, the alignment and the monitor are not here: they are fixed by
-    /// the AppBar registration and need a restart, which <see cref="Settings.SettingsWindow"/> says
-    /// plainly rather than appearing to apply them.
+    /// <para>
+    /// The resting icon size, the motion layer and the row alignment are all properties of what is
+    /// drawn, so they take effect immediately. The edge and the monitor are not here: they are
+    /// baked into the AppBar registration and still need a restart, which
+    /// <see cref="Settings.SettingsWindow"/> says plainly rather than appearing to apply them.
+    /// </para>
+    /// <para>
+    /// <b>Alignment is live because it does not move the reserved rectangle.</b> Both alignments
+    /// reserve the same strip along the whole edge — only where the icons sit inside it changes —
+    /// so nothing here re-registers the AppBar and §6.3's prohibition is not engaged. It was on the
+    /// restart list for no better reason than being next to the edge in the settings window.
+    /// </para>
     /// </remarks>
     public void ApplyLiveSettings(Settings.UmbraSettings settings)
     {
@@ -386,15 +457,192 @@ internal partial class BarWindow : AppBarWindow
 
         OnPropertyChanged(nameof(IconExtent));
         OnPropertyChanged(nameof(HoverChipExtent));
+
+        ApplyPlacement(settings.Edge, settings.Alignment, ResolveScreen(settings.Monitor));
+
         _motion?.SetEnabled(settings.Motion);
         _motion?.Reemit();
 
         BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
-            $"settings applied live: dormant icon {_dormantIconExtent:F0} px, motion {settings.Motion}"));
+            $"settings applied live: dormant icon {_dormantIconExtent:F0} px, " +
+            $"motion {settings.Motion}, edge {Metrics.Edge}, alignment {Metrics.Alignment}"));
     }
 
+    /// <summary>
+    /// Moves the bar to a different edge, monitor or row alignment, without a restart.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>§6.3 is not violated by this.</b> What it forbids is re-registering the reserved
+    /// rectangle <i>in steady state</i>, because doing so reflows every maximised window on the
+    /// desktop. A deliberate change of edge is not steady state, and reflowing is precisely what
+    /// the user has asked for. The prohibition is against doing it behind their back.
+    /// </para>
+    /// <para>
+    /// Alignment alone never touches the registration — both alignments reserve the same strip and
+    /// only move the icons inside it — so it takes the cheap path and no window on the desktop is
+    /// disturbed.
+    /// </para>
+    /// </remarks>
+    private void ApplyPlacement(CoreBarEdge edge, Alignment alignment, AppBarScreen? screen)
+    {
+        AppBarScreen target = screen ?? AppBarScreen.FromPrimaryScreen();
+
+        bool movingBar = edge != Metrics.Edge || !SameScreen(target, Screen);
+        bool movingRow = alignment != Metrics.Alignment;
+
+        if (!movingBar && !movingRow) return;
+
+        BarMetrics updated = new(
+            edge,
+            alignment,
+            Metrics.Scale,
+            Metrics.MeasuredWindows11RowInset,
+            Metrics.Slot.IconExtent / Metrics.Scale);
+
+        if (movingBar) Reregister(updated, target);
+        else Metrics = updated;
+
+        RaisePlacementProperties();
+
+        // The drift amplitude is derived from the metrics, and the driver reads them through a
+        // lambda — but only on its own 2 Hz tick. Republish now, or the content sits for up to half
+        // a second carrying an offset computed for the edge it used to be on, which on a change of
+        // axis means an offset on the wrong axis entirely.
+        _motion?.Reemit();
+
+        // The accumulator is sized to the reserved rectangle in physical pixels, so a new edge or a
+        // new monitor is a new grid. Done last, after layout has settled at the new size.
+        if (movingBar) Dispatcher.BeginInvoke(DispatcherPriority.Loaded, StartWear);
+    }
+
+    /// <summary>Re-registers the space-reserving AppBar for a new edge or monitor.</summary>
+    /// <remarks>
+    /// Unregister first. Registering a second rectangle before releasing the first leaves Explorer
+    /// holding reserved space for an edge nothing occupies any more, and it survives until Explorer
+    /// restarts — the same leak <c>ABM_REMOVE</c> on shutdown exists to prevent.
+    /// </remarks>
+    private void Reregister(BarMetrics updated, AppBarScreen target)
+    {
+        UnregisterAppBar();
+
+        Metrics = updated;
+        Screen = target;
+        AppBarEdge = ToAppBarEdge(updated.Edge);
+
+        // Both, because which one is the depth depends on the axis and AppBarWindow reads whichever
+        // matches the edge it is registering for.
+        DesiredHeight = updated.ReservedExtent;
+        DesiredWidth = updated.ReservedExtent;
+
+        RegisterAppBar();
+        UpdatePosition();
+
+        BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
+            $"re-registered AppBar: edge {updated.Edge} on {Screen.DeviceName} " +
+            $"extent {updated.ReservedExtent} -> {Left},{Top} {Width}x{Height}"));
+    }
+
+    /// <summary>
+    /// Tells every bound layout property that the geometry moved.
+    /// </summary>
+    /// <remarks>
+    /// All of it, on any placement change. The subset that depends on the edge rather than the
+    /// alignment is not worth tracking separately: these are cheap property reads, they happen
+    /// only when the user changes a setting, and a list that has to be kept in sync with which
+    /// property reads what is a list that will fall out of sync and leave one control behind.
+    /// </remarks>
+    private void RaisePlacementProperties()
+    {
+        foreach (string name in (string[])[
+            nameof(IsVertical), nameof(ContentBand),
+            nameof(RowOrientation), nameof(RowWidth), nameof(RowHeight),
+            nameof(RowHorizontalAlignment), nameof(RowVerticalAlignment), nameof(RowMargin),
+            nameof(SlotWidth), nameof(SlotHeight),
+            nameof(StartHorizontalAlignment), nameof(StartVerticalAlignment),
+            nameof(StartHitWidth), nameof(StartHitHeight), nameof(StartGlyphMargin),
+            nameof(TrayHorizontalAlignment), nameof(TrayVerticalAlignment), nameof(TrayMargin),
+            nameof(TraySlotWidth), nameof(TraySlotHeight), nameof(TrayIconExtent),
+            nameof(PillWidth), nameof(PillHeight), nameof(PillMargin),
+            nameof(PillHorizontalAlignment), nameof(PillVerticalAlignment),
+            nameof(IconExtent), nameof(HoverChipExtent),
+            nameof(ClockDate),
+        ])
+        {
+            OnPropertyChanged(name);
+        }
+    }
+
+    /// <summary>
+    /// Starts wear sampling at the bar's current physical size, replacing any previous sampler.
+    /// </summary>
+    /// <remarks>
+    /// The outgoing dataset is flushed before it is dropped. It will not be loaded back if the
+    /// geometry changed — <c>WearStore.LoadCompatible</c> refuses a grid of a different shape, which
+    /// is correct, since per-pixel wear from a horizontal bar means nothing on a vertical one — but
+    /// persisting first means the record on disk is whole up to the moment the user moved the bar,
+    /// rather than missing its last five minutes.
+    /// </remarks>
+    private void StartWear()
+    {
+        double scale = DpiScale <= 0 ? 1.0 : DpiScale;
+        int width = Math.Max(1, (int)Math.Round(ActualWidth * scale));
+        int height = Math.Max(1, (int)Math.Round(ActualHeight * scale));
+
+        if (_wear is not null)
+        {
+            if (_wear.Accumulator.Width == width && _wear.Accumulator.Height == height) return;
+
+            _wear.Persist();
+            _wear.Dispose();
+        }
+
+        _wear = new WearSampler(
+            width,
+            height,
+            () => SceneReader.Read(ContentRoot, this),
+            () => DpiScale <= 0 ? 1.0 : DpiScale);
+
+        _wear.Start();
+
+        BringUpLog.Write($"wear accumulator: {width}x{height} physical px ({_wear.Accumulator.SizeInBytes / 1024} KB)");
+    }
+
+    /// <summary>
+    /// Finds a monitor by device name, falling back to the primary.
+    /// </summary>
+    /// <remarks>
+    /// By name, never by index: indices are reassigned when a monitor is unplugged, so an index
+    /// would silently move the bar to a different screen.
+    /// </remarks>
+    private static AppBarScreen? ResolveScreen(string deviceName)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName)) return null;
+
+        try
+        {
+            foreach (AppBarScreen screen in AppBarScreen.FromAllScreens())
+                if (string.Equals(screen.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase))
+                    return screen;
+        }
+        catch (Exception e) when (e is InvalidOperationException or PlatformNotSupportedException)
+        {
+            BringUpLog.Write(e, "could not enumerate monitors; staying where we are");
+        }
+
+        return null;
+    }
+
+    private static bool SameScreen(AppBarScreen a, AppBarScreen? b) =>
+        b is not null && string.Equals(a.DeviceName, b.DeviceName, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Geometry for this bar, straight from the spec model.</summary>
-    public BarMetrics Metrics { get; }
+    /// <remarks>
+    /// Replaced wholesale rather than mutated — <c>BarMetrics</c> is immutable, which is what makes
+    /// it safe to hand to the motion driver and the wear sampler. Only the row alignment changes at
+    /// runtime; the edge and the monitor are still baked into the AppBar registration.
+    /// </remarks>
+    public BarMetrics Metrics { get; private set; }
 
     /// <summary>The live window list, as ManagedShell reports it.</summary>
     public ICollectionView Windows { get; }
@@ -765,10 +1013,10 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>Holds the pill just clear of the screen edge.</summary>
     public Thickness PillMargin => Metrics.Edge switch
     {
-        CoreBarEdge.Left => new Thickness(1, 0, 0, 0),
-        CoreBarEdge.Right => new Thickness(0, 0, 1, 0),
-        CoreBarEdge.Top => new Thickness(0, 1, 0, 0),
-        _ => new Thickness(0, 0, 0, 1),
+        CoreBarEdge.Left => new Thickness(PillEdgeClearance, 0, 0, 0),
+        CoreBarEdge.Right => new Thickness(0, 0, PillEdgeClearance, 0),
+        CoreBarEdge.Top => new Thickness(0, PillEdgeClearance, 0, 0),
+        _ => new Thickness(0, 0, 0, PillEdgeClearance),
     };
 
     /// <summary>Closes the bar, which the AppBar base class otherwise refuses to do.</summary>
@@ -900,44 +1148,197 @@ internal partial class BarWindow : AppBarWindow
     }
 
     /// <summary>
-    /// Brings the menu into line with the slot as it opens. Set here rather than bound, because a
-    /// ContextMenu lives in its own popup tree and a RelativeSource binding up to the window
-    /// resolves to nothing.
+    /// Closes the Start menu before opening one of ours, which is what the click should have done.
     /// </summary>
+    /// <remarks>
+    /// See <see cref="StartMenuWatcher.Dismiss"/> for why this is a dismissal rather than a
+    /// Z-order fight. The glyph colour is reset here because the watcher does not own it: leaving
+    /// it would hold the Start button Windows-blue with no menu behind it.
+    /// </remarks>
+    private void DismissStartMenu()
+    {
+        if (!_startMenu.Dismiss()) return;
+
+        StartActive = false;
+        _startPressedAt = DateTime.MinValue;
+    }
+
+    /// <summary>
+    /// Builds the slot's menu as it opens: the application's jump list tasks, then the application
+    /// itself, then pin and close.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Built rather than declared, because most of it is not knowable until the menu is asked for.
+    /// The tasks come from what the application published to its jump list on disk, and the close
+    /// item has to name how many windows it is about to close.
+    /// </para>
+    /// <para>
+    /// The order is the Windows taskbar's: tasks at the top, furthest from the pointer, and the
+    /// destructive item at the bottom. <b>Close is last on purpose</b> — it is the only item here
+    /// that cannot be undone, and the pointer arrives at the end nearest the bar.
+    /// </para>
+    /// </remarks>
     private void OnSlotContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: TaskbarSlot slot } element) return;
-        if (element.ContextMenu is null) return;
+        if (element.ContextMenu is not { } menu) return;
 
-        foreach (object child in element.ContextMenu.Items)
+        menu.Items.Clear();
+
+        AddTasks(menu, slot);
+
+        // The application itself, which launches another copy. Windows puts this directly above
+        // pin and close, labelled with the application's name rather than "Open" or "Run".
+        AddItem(menu, slot.Pin?.Name ?? slot.DisplayName, slot.Icon, (_, _) => Launch(slot));
+
+        AddItem(
+            menu,
+            slot.IsPinned ? "Unpin from bar" : "Pin to bar",
+            icon: null,
+            (s2, e2) => OnSlotPinClick(s2, e2),
+            enabled: slot.IsPinned || slot.IsRunning);
+
+        if (!slot.IsRunning) return;
+
+        // Naming the count matters: "Close" on an application with six windows open is a much
+        // bigger action than it looks, and the menu should say so before the click rather than
+        // after it. Per-window close lives in the hover preview.
+        menu.Items.Add(Separator());
+
+        AddItem(
+            menu,
+            slot.Windows.Count > 1 ? $"Close all {slot.Windows.Count} windows" : "Close window",
+            icon: null,
+            (s2, e2) => OnSlotClose(s2, e2));
+    }
+
+    /// <summary>Adds the application's published jump list tasks, if it publishes any.</summary>
+    /// <remarks>
+    /// Silent when there are none, which is the common case for applications that never called
+    /// <c>ICustomDestinationList</c> — an empty "Tasks" heading over nothing would be worse than no
+    /// heading. The list is read from disk on the way past; see <see cref="JumpListIndex"/> for why
+    /// that is affordable here.
+    /// </remarks>
+    private void AddTasks(ContextMenu menu, TaskbarSlot slot)
+    {
+        IReadOnlyList<JumpListTask> tasks;
+
+        try
         {
-            switch (child)
+            tasks = _jumpLists.TasksFor(slot.Key, slot.ExecutablePath);
+        }
+        catch (Exception ex)
+        {
+            // A menu that fails to open is far worse than one missing its tasks, and everything
+            // below this point works without them.
+            BringUpLog.Write(ex, $"jump list: could not read tasks for {slot.Key}");
+            return;
+        }
+
+        if (tasks.Count == 0) return;
+
+        AddHeader(menu, "Tasks");
+
+        foreach (JumpListTask task in tasks.Take(MaximumJumpListTasks))
+        {
+            JumpListTask captured = task;
+            AddItem(menu, task.Title, slot.Icon, (_, _) => RunTask(captured));
+        }
+
+        menu.Items.Add(Separator());
+    }
+
+    /// <summary>
+    /// How many jump list entries the menu will show.
+    /// </summary>
+    /// <remarks>
+    /// Windows shows about ten. The cap is not really about space: the scan cannot tell which
+    /// category an entry belongs to, so a long list would mix an application's tasks with whatever
+    /// else it publishes, and the useful items are at the top.
+    /// </remarks>
+    private const int MaximumJumpListTasks = 10;
+
+    /// <summary>Runs a jump list task.</summary>
+    /// <remarks>
+    /// <c>UseShellExecute</c>, because a task's target is not always an ordinary executable a
+    /// process can be started from directly — packaged applications live under <c>WindowsApps</c>,
+    /// where direct execution is refused, and the shell knows how to launch them.
+    /// </remarks>
+    private static void RunTask(JumpListTask task)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(task.Path)
             {
-                case MenuItem { Name: "SlotPinItem" } pin:
-                    pin.Header = slot.IsPinned ? "Unpin from bar" : "Pin to bar";
-                    pin.IsEnabled = slot.IsPinned || slot.IsRunning;
-                    break;
+                Arguments = task.Arguments,
+                UseShellExecute = true,
+            });
 
-                case MenuItem { Name: "SlotCloseItem" } close:
-                    // Per-window close lives in the picker; this is the group action. Naming the
-                    // count matters — "Close" on an application with six windows open is a much
-                    // bigger action than it looks, and the menu should say so before the click
-                    // rather than after it.
-                    close.IsEnabled = slot.IsRunning;
-                    close.Visibility = slot.IsRunning ? Visibility.Visible : Visibility.Collapsed;
-                    close.Header = slot.Windows.Count > 1
-                        ? $"Close all {slot.Windows.Count} windows"
-                        : "Close window";
-                    break;
-
-                // Hiding the close item on its own would leave the rule that separated it dangling
-                // at the bottom of the menu.
-                case Separator { Name: "SlotMenuSeparator" } rule:
-                    rule.Visibility = slot.IsRunning ? Visibility.Visible : Visibility.Collapsed;
-                    break;
-            }
+            BringUpLog.Write($"jump list task: {task.Title} -> {task.Path} {task.Arguments}");
+        }
+        catch (Exception e)
+        {
+            // Every exception, not a chosen few. A task that silently does nothing is the failure
+            // mode this project has already been bitten by once.
+            BringUpLog.Write(e, $"jump list task failed: {task.Title}");
         }
     }
+
+    private void AddHeader(ContextMenu menu, string text) =>
+        menu.Items.Add(new MenuItem { Header = text, Style = MenuStyle("MenuSectionHeader") });
+
+    private void AddItem(
+        ContextMenu menu, string header, ImageSource? icon, RoutedEventHandler onClick, bool enabled = true)
+    {
+        MenuItem item = new()
+        {
+            Header = header,
+            IsEnabled = enabled,
+            Style = MenuStyle("DarkMenuItem"),
+        };
+
+        if (icon is not null)
+            item.Icon = new Image { Source = icon, Width = 16, Height = 16 };
+
+        item.Click += onClick;
+        menu.Items.Add(item);
+    }
+
+    private Separator Separator() => new() { Style = MenuStyle("MenuSeparatorStyle") };
+
+    /// <summary>
+    /// Looks a menu style up from the window, not from the menu.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A ContextMenu cannot find the window's resources.</b> It lives in its own popup tree and
+    /// its resource lookup does not climb into the window that owns it, so
+    /// <c>menu.TryFindResource</c> returns null for everything in <c>MenuTheme.xaml</c> — silently,
+    /// because a null Style is legal and simply leaves WPF's default template in place.
+    /// </para>
+    /// <para>
+    /// The result looked <i>almost</i> right, which is what made it hard to see: the default
+    /// template also has an icon column and also highlights on hover, so the menu appeared themed
+    /// while ignoring every metric in it. The give-aways were rows measuring 22 DIP against the
+    /// style's 36, and separators running edge to edge instead of inset.
+    /// </para>
+    /// <para>
+    /// Logged when a key goes missing, because the failure is invisible otherwise: the menu would
+    /// keep opening, keep working, and quietly stop looking like itself.
+    /// </para>
+    /// </remarks>
+    private Style? MenuStyle(string key)
+    {
+        if (TryFindResource(key) is Style style) return style;
+
+        if (_missingMenuStyles.Add(key))
+            BringUpLog.Write($"menu style '{key}' not found; falling back to the WPF default");
+
+        return null;
+    }
+
+    private readonly HashSet<string> _missingMenuStyles = [];
 
     /// <summary>Starts the hover-preview countdown for the icon under the pointer.</summary>
     /// <remarks>
@@ -983,16 +1384,16 @@ internal partial class BarWindow : AppBarWindow
     /// Records a press, so a later move can tell a drag from a click.
     /// </summary>
     /// <remarks>
-    /// Only pinned applications reorder. The row is pinned applications in their pinned order
-    /// followed by whatever else happens to be running (see <see cref="TaskbarModel"/>), and the
-    /// running tail has no stored order to rewrite — dragging within it would appear to work and
-    /// be undone by the next rebuild.
+    /// Any icon reorders, pinned or not. The row is one order covering both (see
+    /// <see cref="Tasks.BarOrder"/>), so there is no longer a running tail without a stored order
+    /// for a drag to rewrite — which is the only reason unpinned icons used to be refused.
     /// </remarks>
     private void OnSlotMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: TaskbarSlot slot } element) return;
 
-        if (!slot.IsPinned || Pins.Pins.Count < 2) return;
+        // One icon has nowhere to go.
+        if (Slots.Count < 2) return;
 
         _pressedSlot = slot;
         _pressedElement = element;
@@ -1010,10 +1411,15 @@ internal partial class BarWindow : AppBarWindow
     /// rearranging the user's taskbar.
     /// </para>
     /// <para>
-    /// Reordering goes through <see cref="PinSettings"/> rather than moving items in the collection
-    /// directly. The model rebuilds itself from the pin order, so a direct collection move would be
-    /// reverted the next time any window anywhere opened or closed — visibly, and only sometimes,
-    /// which is the worst kind of bug to be handed.
+    /// Reordering goes through <see cref="TaskbarModel"/> rather than moving items in the
+    /// collection directly. The model rebuilds itself from its own order, so a direct collection
+    /// move would be reverted the next time any window anywhere opened or closed — visibly, and
+    /// only sometimes, which is the worst kind of bug to be handed.
+    /// </para>
+    /// <para>
+    /// The dragged icon is carried under the pointer while the rest of the row slides around it.
+    /// Snapping it from slot to slot instead was the first cut, and it made a drag hard to aim:
+    /// nothing said which icon was being moved except that it had dimmed.
     /// </para>
     /// </remarks>
     private void OnSlotMouseMove(object sender, MouseEventArgs e)
@@ -1021,12 +1427,11 @@ internal partial class BarWindow : AppBarWindow
         if (_pressedSlot is null || e.LeftButton != MouseButtonState.Pressed) return;
 
         Point now = e.GetPosition(WindowList);
+        double along = IsVertical ? now.Y : now.X;
 
         if (!_dragging)
         {
-            double moved = IsVertical
-                ? Math.Abs(now.Y - _pressedAt.Y)
-                : Math.Abs(now.X - _pressedAt.X);
+            double moved = Math.Abs(along - (IsVertical ? _pressedAt.Y : _pressedAt.X));
 
             double threshold = IsVertical
                 ? SystemParameters.MinimumVerticalDragDistance
@@ -1037,15 +1442,68 @@ internal partial class BarWindow : AppBarWindow
             _dragging = true;
             _pressedElement?.CaptureMouse();
             SetDragFeedback(_pressedElement, dragging: true);
+            BeginCarry();
+
+            // A preview left hanging over the row would sit on top of the thing being dragged.
+            _hoverTimer?.Stop();
+            _picker?.Dismiss();
+            _picker = null;
         }
 
         // Which slot position the pointer is over, in the undrifted layout (P5: hit geometry does
         // not move, so this needs no drift correction).
-        double along = IsVertical ? now.Y : now.X;
-        int target = (int)Math.Floor(along / Metrics.Slot.Pitch);
-        target = Math.Clamp(target, 0, Pins.Pins.Count - 1);
+        int target = Math.Clamp((int)Math.Floor(along / Metrics.Slot.Pitch), 0, Slots.Count - 1);
 
-        Pins.Move(_pressedSlot.Key, target, persist: false);
+        _tasks.Move(_pressedSlot.Key, target, persist: false);
+        Carry(along);
+    }
+
+    /// <summary>
+    /// Lifts the pressed icon out of the row's own animation so the pointer can carry it.
+    /// </summary>
+    /// <remarks>
+    /// The panel arranges item containers, not the template's hit slot, so what gets carried is the
+    /// container. It is the same instance for the whole drag — the model moves slots rather than
+    /// replacing them, and WPF's generator moves the matching container rather than rebuilding it —
+    /// so it is looked up once, on the frame the drag commits.
+    /// </remarks>
+    private void BeginCarry()
+    {
+        _row ??= FindDescendant<SlidingStackPanel>(WindowList);
+        if (_row is null || _pressedElement is null) return;
+
+        _dragContainer = WindowList.ContainerFromElement(_pressedElement) as UIElement;
+        if (_dragContainer is null) return;
+
+        double arranged = SlidingStackPanel.ArrangedAt(_dragContainer);
+
+        if (double.IsNaN(arranged))
+        {
+            // Never arranged, so there is no frame of reference to carry it in. Reorder without it.
+            _dragContainer = null;
+            return;
+        }
+
+        // Where within the slot the icon was taken hold of, so it does not jump to centre itself
+        // under the pointer the instant the drag commits.
+        _grabAlong = (IsVertical ? _pressedAt.Y : _pressedAt.X) - arranged;
+        _row.Hold(_dragContainer);
+    }
+
+    /// <summary>Draws the held icon under the pointer.</summary>
+    private void Carry(double along)
+    {
+        if (_row is null || _dragContainer is null) return;
+
+        double arranged = SlidingStackPanel.ArrangedAt(_dragContainer);
+        if (double.IsNaN(arranged)) return;
+
+        // Following the pointer, but not off the end of the row: an overshoot should rest against
+        // the last slot rather than trail the icon out over the clock.
+        double limit = Math.Max(0, (Slots.Count - 1) * Metrics.Slot.Pitch);
+        double desired = Math.Clamp(along - _grabAlong, 0, limit);
+
+        _row.Carry(_dragContainer, desired - arranged);
     }
 
     /// <summary>
@@ -1067,11 +1525,17 @@ internal partial class BarWindow : AppBarWindow
     private void EndDrag()
     {
         FrameworkElement? element = _pressedElement;
+        UIElement? container = _dragContainer;
         bool dragged = _dragging;
 
         _pressedSlot = null;
         _pressedElement = null;
+        _dragContainer = null;
         _dragging = false;
+
+        // Hands the icon back to the panel, which slides it the last few pixels into its slot
+        // rather than letting it snap there the moment the button comes up.
+        if (container is not null) _row?.Release(container);
 
         if (element is not null)
         {
@@ -1081,17 +1545,22 @@ internal partial class BarWindow : AppBarWindow
 
         if (!dragged) return;
 
-        Pins.Persist();
-        BringUpLog.Write($"reordered pins: {string.Join(", ", Pins.Pins.Select(p => p.Name))}");
+        _tasks.PersistOrder();
+        BringUpLog.Write($"reordered row: {string.Join(", ", Slots.Select(s => s.Pin?.Name ?? s.Key))}");
     }
 
-    /// <summary>Dims the icon being dragged, so it reads as picked up rather than stuck.</summary>
+    /// <summary>Lifts the icon being dragged, so it reads as picked up rather than as left behind.</summary>
+    /// <remarks>
+    /// A light touch, not the near-transparency this used to be. The icon now travels with the
+    /// pointer, so the movement already says it has been picked up; fading it to 0.45 on top of
+    /// that read as the icon disappearing rather than as it being held.
+    /// </remarks>
     private static void SetDragFeedback(FrameworkElement? slotElement, bool dragging)
     {
         if (slotElement is null) return;
         if (FindDescendant<Image>(slotElement) is not { } icon) return;
 
-        icon.Opacity = dragging ? 0.45 : 1.0;
+        icon.Opacity = dragging ? 0.7 : 1.0;
     }
 
     /// <summary>
@@ -1269,42 +1738,39 @@ internal partial class BarWindow : AppBarWindow
 
     private void Launch(TaskbarSlot slot)
     {
-        string? path = slot.Pin?.Path;
+        (string Path, string Arguments)? target = slot.LaunchTarget;
 
-        // Logged before the attempt, and on both branches, because "clicking a pinned application
-        // does nothing" currently produces no evidence at all: the catch below only handles two
-        // exception types, and nothing reaches the log, so it is not yet known whether the launch
-        // is failing or never being asked for.
-        BringUpLog.Write($"launch: key={slot.Key} path='{path}' " +
-                         $"exists={(!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))}");
+        BringUpLog.Write($"launch: key={slot.Key} pin='{slot.Pin?.Path}' resolved='{target?.Path}'");
 
         try
         {
-            // A path is a plain executable; anything else is an app user model ID, which is how
-            // packaged applications are started and cannot be run as a file.
-            if (!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))
+            // A resolved target is a real file on disk — either the pin's own executable or the
+            // Start Menu shortcut's, once the pin's has gone. Anything else is an app user model
+            // ID, which is how packaged applications start and cannot be run as a file.
+            if (target is { } runnable)
             {
                 bool started = ManagedShell.Common.Helpers.ShellHelper.StartProcess(
-                    path, string.Empty, string.Empty, string.Empty);
+                    runnable.Path, runnable.Arguments, string.Empty, string.Empty);
 
                 BringUpLog.Write($"launch: StartProcess returned {started}");
+                if (started) return;
             }
-            else
-            {
-                ManagedShell.Common.Helpers.ShellHelper.ActivateApplication(slot.Key, string.Empty);
-                BringUpLog.Write("launch: went via ActivateApplication");
-            }
+
+            ManagedShell.Common.Helpers.ShellHelper.ActivateApplication(slot.Key, string.Empty);
+            BringUpLog.Write("launch: went via ActivateApplication");
         }
         catch (Exception ex)
         {
-            // Deliberately every exception, not the two that were listed. A launch that throws
-            // anything else was previously silent, which is exactly the state this bug is in.
+            // Deliberately every exception, not a chosen few. A launch that throws anything else
+            // was previously silent, which is the state this was found in.
             BringUpLog.Write(ex, $"failed to launch {slot.Key}");
         }
     }
 
     private void OnSlotPinClick(object sender, RoutedEventArgs e)
     {
+        // A menu item built in code inherits its DataContext from the ContextMenu, which inherits
+        // from the slot it was opened on. Same route the declared items used.
         if (sender is not FrameworkElement { DataContext: TaskbarSlot slot }) return;
 
         if (slot.IsPinned) Pins.Unpin(slot.Key);
