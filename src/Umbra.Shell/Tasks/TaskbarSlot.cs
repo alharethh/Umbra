@@ -145,6 +145,20 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 
             if (_icon is not null) return _icon;
 
+            // <b>Only a pinned application gets an icon synthesised, and widening that hangs the
+            // bar.</b> A pin is the one thing that stays on the row with no window to take an icon
+            // from; a running application without one yet simply has not been given it by
+            // ManagedShell, and will raise PropertyChanged when it is.
+            //
+            // Asking for any slot without a live icon looks harmless and is not:
+            // GetImageFromAssociatedIcon is a synchronous shell call on the UI thread, and on this
+            // machine it <i>never returns</i> for C:\Program Files\Ascent\Ascent.exe. The bar
+            // froze before its window was ever shown -- no icons, no clock, no Start button, and
+            // no error, because nothing had thrown. It only reproduced with the tray switched off,
+            // which is pure timing: the tray's extra startup work delays the first layout long
+            // enough for the live icon to arrive, so the fallback is never reached.
+            if (!IsPinned) return null;
+
             // The recorded path first: it is the executable this application's own window was
             // running from, which beats a shortcut of the same name pointing somewhere else.
             if (PathIsUsable(Pin?.Path))
