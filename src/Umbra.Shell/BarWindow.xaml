@@ -71,48 +71,6 @@
         -->
         <SolidColorBrush x:Key="HoverChipBrush" Color="#FF3A3A3A" />
 
-        <!--
-            The accent tint: a second copy of the glyph in Windows blue, faded in over the first.
-
-            <b>A copy rather than an animated brush</b>, because the real one's colour comes from a
-            converter bound to the tier level and the brush it returns is frozen — there is nothing
-            there to animate. Overlaying is also the cheaper thing to get right: the base glyph
-            keeps its tier colour throughout, so nothing about the Tier 0 and Tier 1 appearance
-            §2.3 budgets for is touched by this.
-
-            <b>Cheaper than the chip in wear terms, too.</b> Tinting re-colours pixels that are
-            already lit; a chip lights a rectangle of pixels that were black. Both only ever happen
-            at Tier 2, so neither is on the duty budget — but if only one of these survives, this
-            is the one that costs nothing.
-
-            TargetType is FrameworkElement so one style serves the Path copies and the TextBlock
-            ones; everything it sets belongs to that base class.
-        -->
-        <Style x:Key="TrailingAccentTint" TargetType="FrameworkElement">
-            <Setter Property="Opacity" Value="0" />
-            <Setter Property="IsHitTestVisible" Value="False" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Panel}}" Value="True">
-                    <DataTrigger.EnterActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1"
-                                                 Duration="0:0:0.14" />
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </DataTrigger.EnterActions>
-                    <DataTrigger.ExitActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0"
-                                                 Duration="0:0:0.22" />
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </DataTrigger.ExitActions>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
         <Style x:Key="TrailingHoverChip" TargetType="Border">
             <Setter Property="CornerRadius" Value="5" />
             <Setter Property="Background" Value="{StaticResource HoverChipBrush}" />
@@ -635,32 +593,16 @@
                     <ScaleTransform x:Name="TrayChevronScale" />
                 </Grid.RenderTransform>
 
-                <!--
-                    The drift sits on this wrapper rather than on the glyph, because there are two
-                    glyphs now and a Transform has one parent: assigning the same instance to both
-                    is what stopped the running indicator rendering at all.
-                -->
-                <Grid RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}">
-                    <Path x:Name="TrayChevronGlyph"
-                          HorizontalAlignment="Center" VerticalAlignment="Center"
-                          Data="M 0,4 L 4.5,0 L 9,4"
-                          Stretch="Uniform"
-                          Width="{Binding TrayChevronWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-                          Height="{Binding TrayChevronHeight, RelativeSource={RelativeSource AncestorType=Window}}"
-                          StrokeThickness="1.4"
-                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                          Stroke="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ClockBrush}}" />
-
-                    <Path Style="{StaticResource TrailingAccentTint}"
-                          HorizontalAlignment="Center" VerticalAlignment="Center"
-                          Data="M 0,4 L 4.5,0 L 9,4"
-                          Stretch="Uniform"
-                          Width="{Binding TrayChevronWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-                          Height="{Binding TrayChevronHeight, RelativeSource={RelativeSource AncestorType=Window}}"
-                          StrokeThickness="1.4"
-                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                          Stroke="{Binding StartAccentBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
-                </Grid>
+                <Path x:Name="TrayChevronGlyph"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Data="M 0,4 L 4.5,0 L 9,4"
+                      Stretch="Uniform"
+                      Width="{Binding TrayChevronWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                      Height="{Binding TrayChevronHeight, RelativeSource={RelativeSource AncestorType=Window}}"
+                      StrokeThickness="1.4"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      Stroke="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ClockBrush}}"
+                      RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}" />
             </Grid>
         </Grid>
 
@@ -716,26 +658,15 @@
                           Width="{Binding TraySlotWidth}"
                           Height="{Binding TraySlotHeight}">
 
-                        <Grid RenderTransform="{Binding NetworkOffset}">
-                            <Path Data="{Binding NetworkGlyph}"
-                                  HorizontalAlignment="Center" VerticalAlignment="Center"
-                                  Stretch="Uniform"
-                                  Width="{Binding TrayIconExtent}"
-                                  Height="{Binding TrayIconExtent}"
-                                  StrokeThickness="1.5"
-                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                  Stroke="{Binding TierLevel, Converter={StaticResource ClockBrush}}" />
-
-                            <Path Style="{StaticResource TrailingAccentTint}"
-                                  Data="{Binding NetworkGlyph}"
-                                  HorizontalAlignment="Center" VerticalAlignment="Center"
-                                  Stretch="Uniform"
-                                  Width="{Binding TrayIconExtent}"
-                                  Height="{Binding TrayIconExtent}"
-                                  StrokeThickness="1.5"
-                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                  Stroke="{Binding StartAccentBrush}" />
-                        </Grid>
+                        <Path Data="{Binding NetworkGlyph}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Stretch="Uniform"
+                              Width="{Binding TrayIconExtent}"
+                              Height="{Binding TrayIconExtent}"
+                              StrokeThickness="1.5"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              Stroke="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
+                              RenderTransform="{Binding NetworkOffset}" />
                     </Grid>
                 </StackPanel>
             </Grid>
@@ -770,22 +701,13 @@
                         <ScaleTransform x:Name="LanguageScale" />
                     </Grid.RenderTransform>
 
-                    <Grid RenderTransform="{Binding LanguageOffset}">
-                        <TextBlock Text="{Binding LanguageName}"
-                                   FontSize="12"
-                                   Margin="7,0"
-                                   VerticalAlignment="Center"
-                                   HorizontalAlignment="Center"
-                                   Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}" />
-
-                        <TextBlock Style="{StaticResource TrailingAccentTint}"
-                                   Text="{Binding LanguageName}"
-                                   FontSize="12"
-                                   Margin="7,0"
-                                   VerticalAlignment="Center"
-                                   HorizontalAlignment="Center"
-                                   Foreground="{Binding StartAccentBrush}" />
-                    </Grid>
+                    <TextBlock Text="{Binding LanguageName}"
+                               FontSize="12"
+                               Margin="7,0"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
+                               RenderTransform="{Binding LanguageOffset}" />
                 </Grid>
             </Grid>
 
@@ -915,16 +837,6 @@
                     </Style>
                 </Rectangle.Style>
             </Rectangle>
-
-            <!--
-                And the same accent over it, so the hairline reads as the same gesture as the
-                glyphs rather than as a different kind of feedback in the same row.
-            -->
-            <Rectangle Style="{StaticResource TrailingAccentTint}"
-                       Width="{Binding ShowDesktopLineWidth}"
-                       Height="{Binding ShowDesktopLineHeight}"
-                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Fill="{Binding StartAccentBrush}" />
             </Grid>
         </Grid>
 
