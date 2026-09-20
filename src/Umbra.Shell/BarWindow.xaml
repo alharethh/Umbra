@@ -69,7 +69,7 @@
             surface the glyph sits on — it is brightest where it meets the bar, which is the wrong
             way round.
         -->
-        <SolidColorBrush x:Key="HoverChipBrush" Color="#FF3A3A3A" />
+        <SolidColorBrush x:Key="HoverChipBrush" Color="#FF343434" />
 
         <Style x:Key="TrailingHoverChip" TargetType="Border">
             <Setter Property="CornerRadius" Value="5" />
@@ -81,7 +81,14 @@
                     <DataTrigger.EnterActions>
                         <BeginStoryboard>
                             <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.10"
+                                <!--
+                                    To full, not to a fraction. The fraction was written for a
+                                    white fill, where 10% over black is the grey we now use
+                                    outright; left in place with a grey brush it multiplied twice
+                                    and the chip disappeared. The colour belongs in the brush,
+                                    where it can be read.
+                                -->
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1"
                                                  Duration="0:0:0.12" />
                             </Storyboard>
                         </BeginStoryboard>
@@ -142,7 +149,7 @@
                   Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                   Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
-                <Border Style="{StaticResource TrailingHoverChip}" Margin="2" />
+                <Border Style="{StaticResource TrailingHoverChip}" Margin="2,6" />
 
                 <Image Width="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
                        Height="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -586,7 +593,7 @@
               Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
               Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
-            <Border Style="{StaticResource TrailingHoverChip}" Margin="2" />
+            <Border Style="{StaticResource TrailingHoverChip}" Margin="2,6" />
 
             <Grid RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform>
@@ -622,7 +629,7 @@
               MouseLeftButtonUp="OnSystemClusterClick"
               VerticalAlignment="Center">
 
-            <Border Style="{StaticResource TrailingHoverChip}" Margin="1,2" />
+            <Border Style="{StaticResource TrailingHoverChip}" Margin="1,6" />
 
             <Grid RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform>
@@ -694,7 +701,7 @@
                     was as short as the glyphs are tall and half again as wide, so the chip came
                     out a letterbox rather than a key.
                 -->
-                <Border Style="{StaticResource TrailingHoverChip}" Margin="0,9" />
+                <Border Style="{StaticResource TrailingHoverChip}" Margin="0,6" />
 
                 <Grid RenderTransformOrigin="0.5,0.5">
                     <Grid.RenderTransform>
@@ -732,7 +739,7 @@
                     the pointer arrives, so the chip was always one layout pass behind the thing
                     it was meant to be behind.
                 -->
-                <Border Style="{StaticResource TrailingHoverChip}" Margin="-7,5" />
+                <Border Style="{StaticResource TrailingHoverChip}" Margin="-7,6" />
 
                 <Grid RenderTransformOrigin="0.5,0.5">
                     <Grid.RenderTransform>
@@ -799,7 +806,7 @@
             <Rectangle Width="{Binding ShowDesktopLineWidth}"
                        Height="{Binding ShowDesktopLineHeight}"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Opacity="0.55"
+                       Opacity="0.35"
                        Fill="{Binding TierLevel, Converter={StaticResource ClockBrush}}">
                 <Rectangle.Style>
                     <Style TargetType="Rectangle">
@@ -827,7 +834,7 @@
                                 <DataTrigger.ExitActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.55"
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.35"
                                                              Duration="0:0:0.20" />
                                         </Storyboard>
                                     </BeginStoryboard>
