@@ -184,9 +184,18 @@ internal partial class BarWindow : AppBarWindow
             typeof(ContextMenu), ContextMenu.ClosedEvent,
             new RoutedEventHandler((_, _) => _menuDismisser.Release()));
 
+        // Raised on a thread-pool thread by NetworkChange, so it is marshalled rather than
+        // touching a dependency property from wherever the network stack happened to notify.
+        _network.Changed += () => Dispatcher.BeginInvoke(() =>
+        {
+            OnPropertyChanged(nameof(NetworkGlyph));
+            OnPropertyChanged(nameof(NetworkDescription));
+        });
+
         Loaded += OnLoaded;
         Closed += (_, _) =>
         {
+            _network.Dispose();
             _menuDismisser.Release();
             _clock.Stop();
             _proximity.Dispose();
@@ -205,6 +214,7 @@ internal partial class BarWindow : AppBarWindow
     private readonly DispatcherTimer _clock;
     private readonly StartMenuWatcher _startMenu = new();
     private readonly KeyboardLayoutWatcher _language = new();
+    private readonly NetworkWatcher _network = new();
     private readonly TaskbarModel _tasks;
 
     /// <summary>
@@ -332,6 +342,8 @@ internal partial class BarWindow : AppBarWindow
         // pixels and the window has no size until it has been laid out.
         StartWear();
 
+        MeasureClock();
+
         if (_notificationArea is not null)
         {
             LogTrayContents("at load");
@@ -355,6 +367,12 @@ internal partial class BarWindow : AppBarWindow
 
                 TrayOffset.X = dx * trayRatio;
                 TrayOffset.Y = dy * trayRatio;
+
+                // The network glyph sits among the tray icons and is the same size, so it takes
+                // the tray's amplitude rather than the row's — its slot is no wider than theirs,
+                // and P5 is per slot.
+                NetworkOffset.X = dx * trayRatio;
+                NetworkOffset.Y = dy * trayRatio;
             };
 
             _motion.ClockOffsetChanged += (dx, dy) =>
@@ -598,11 +616,15 @@ internal partial class BarWindow : AppBarWindow
             nameof(PillWidth), nameof(PillHeight), nameof(PillMargin),
             nameof(PillHorizontalAlignment), nameof(PillVerticalAlignment),
             nameof(IconExtent), nameof(HoverChipExtent),
-            nameof(ClockDate),
+            nameof(ClockDate), nameof(ClockMargin),
         ])
         {
             OnPropertyChanged(name);
         }
+
+        // Not in the list above, because it is computed rather than read: the reserved width is
+        // measured from the font, and on a vertical bar there is nothing to reserve.
+        if (IsLoaded) MeasureClock();
     }
 
     /// <summary>
@@ -740,6 +762,43 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     public TranslateTransform ClockOffset { get; } = new();
 
+    /// <summary>
+    /// Width held for the clock whatever it is currently showing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The clock changes width when the pointer arrives</b> — seconds appear at Tier 1 (§6.4)
+    /// and the date line appears under them — and it is the last thing in a right-aligned row, so
+    /// everything to its left was shoved sideways every time the bar was hovered. Reserving the
+    /// wide width makes the row still.
+    /// </para>
+    /// <para>
+    /// Measured rather than guessed, with the clock's own typeface at its own size, because the
+    /// width of <c>00:00:00</c> is a property of the font and the user's digits, not a number to
+    /// write down. Measured once: it changes only with the edge or the DPI.
+    /// </para>
+    /// <para>
+    /// The <i>time</i> line is what is measured. The date line appears at the same moment and is
+    /// narrower at every locale checked here, but a locale where it is not would shift the row
+    /// again — visibly, and only for that user.
+    /// </para>
+    /// </remarks>
+    public double ClockMinWidth { get; private set; } = double.NaN;
+
+    /// <summary>
+    /// Clearance between the clock and whatever precedes it.
+    /// </summary>
+    /// <remarks>
+    /// Wider than the gap between tray icons, because the clock is text and its neighbours are
+    /// glyphs: without it the language indicator reads as part of the time.
+    /// </remarks>
+    internal const double ClockLeadingGap = 12.0;
+
+    /// <inheritdoc cref="ClockLeadingGap"/>
+    public Thickness ClockMargin => IsVertical
+        ? new Thickness(0, ClockLeadingGap, 0, 0)
+        : new Thickness(ClockLeadingGap, 0, 0, 0);
+
     /// <summary>Current time, refreshed once a minute.</summary>
     public string ClockTime { get; private set; } = string.Empty;
 
@@ -770,6 +829,49 @@ internal partial class BarWindow : AppBarWindow
     public bool ShowsDate => TierLevel >= 1.0;
 
     /// <summary>
+    /// The show-desktop control's hairline, which appears from Tier 1 like the date.
+    /// </summary>
+    /// <remarks>
+    /// <b>Its hit area is always there; only the line comes and goes.</b> Windows draws its sliver
+    /// permanently, which on this panel would be a lit column of pixels in a fixed position for
+    /// the whole life of the display — the exact shape §2.3's duty budget exists to refuse. The
+    /// control still works when it is invisible, and it is in the screen corner, which is the one
+    /// place a pointer can always land without aiming.
+    /// </remarks>
+    public bool ShowsShowDesktopLine => TierLevel >= 1.0;
+
+    /// <summary>
+    /// Hit extent of the show-desktop control along the bar's long axis.
+    /// </summary>
+    /// <remarks>
+    /// Exactly the trailing margin the row already holds back — §6.3's drift inset plus
+    /// <see cref="TrailingEdgePadding"/> — so the control claims space that was empty rather than
+    /// taking any from the clock. Like the Start button (§6.5) its hit area runs into the screen
+    /// corner while its drawn content stays inboard of the drift inset, where it cannot clip.
+    /// </remarks>
+    public double ShowDesktopHitExtent => Metrics.RowInset + TrailingEdgePadding;
+
+    /// <inheritdoc cref="ShowDesktopHitExtent"/>
+    public double ShowDesktopHitWidth => IsVertical ? Metrics.ContentBand : ShowDesktopHitExtent;
+
+    /// <inheritdoc cref="ShowDesktopHitExtent"/>
+    public double ShowDesktopHitHeight => IsVertical ? ShowDesktopHitExtent : Metrics.ContentBand;
+
+    /// <summary>Which corner the show-desktop control occupies.</summary>
+    public HorizontalAlignment ShowDesktopHorizontalAlignment =>
+        IsVertical ? HorizontalAlignment.Center : HorizontalAlignment.Right;
+
+    /// <inheritdoc cref="ShowDesktopHorizontalAlignment"/>
+    public VerticalAlignment ShowDesktopVerticalAlignment =>
+        IsVertical ? VerticalAlignment.Bottom : VerticalAlignment.Center;
+
+    /// <summary>The hairline runs across the bar's short axis, as Windows' sliver does.</summary>
+    public double ShowDesktopLineWidth => IsVertical ? 16 : 1;
+
+    /// <inheritdoc cref="ShowDesktopLineWidth"/>
+    public double ShowDesktopLineHeight => IsVertical ? 1 : 16;
+
+    /// <summary>
     /// The input language indicator's own drift offset.
     /// </summary>
     /// <remarks>
@@ -782,6 +884,94 @@ internal partial class BarWindow : AppBarWindow
 
     /// <summary>The three-letter input language name, as the Windows taskbar shows it.</summary>
     public string LanguageName => _language.Name;
+
+    /// <summary>The network indicator's drift offset — its own transform, as every element has.</summary>
+    public TranslateTransform NetworkOffset { get; } = new();
+
+    /// <summary>Wi-Fi, Ethernet or a slashed globe (§11.1).</summary>
+    public Geometry NetworkGlyph => NetworkGlyphs.For(_network.Kind);
+
+    /// <summary>What the indicator says on hover.</summary>
+    public string NetworkDescription => _network.Description;
+
+    /// <summary>
+    /// Opens Quick Settings, which is where Windows 11 puts the network controls.
+    /// </summary>
+    /// <remarks>
+    /// Clicking Windows' own network icon opens the whole Quick Settings panel rather than
+    /// anything network-specific, so this matches it. Our panels close first; Windows' own are
+    /// left alone, because <c>ShowActionCenter</c> is a toggle and dismissing an open Quick
+    /// Settings here would fight the very call that follows.
+    /// </remarks>
+    private void OnNetworkClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+
+        ClearPanelsFor(BarPanel.None);
+        ManagedShell.Common.Helpers.ShellHelper.ShowActionCenter();
+    }
+
+    /// <summary>
+    /// Opens the notification centre, as clicking the Windows clock does.
+    /// </summary>
+    /// <remarks>
+    /// A toggle, like every other shell surface, so our own panels are cleared and Windows' are
+    /// not — see <see cref="DismissWindowsSurfaces"/> for why dismissing before a toggle would
+    /// undo itself.
+    /// </remarks>
+    private void OnClockClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+
+        ClearPanelsFor(BarPanel.None);
+        ManagedShell.Common.Helpers.ShellHelper.ShowNotificationCenter();
+    }
+
+    /// <summary>
+    /// Minimises everything and shows the desktop, as the sliver at the end of the Windows taskbar
+    /// does — and restores it all on a second click.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Through the shell's own COM object, not by messaging the taskbar.</b> The usual trick is
+    /// <c>WM_COMMAND 419</c> to <c>Shell_TrayWnd</c>, which cannot work here: Explorer's taskbar is
+    /// suppressed and ManagedShell registers a <c>Shell_TrayWnd</c> of our own, so
+    /// <c>FindWindow</c> would hand back our window and the message would go nowhere. It would
+    /// fail silently, which is the worst available outcome.
+    /// </para>
+    /// <para>
+    /// Late-bound because <c>Shell32</c>'s interop assembly is a dependency worth not taking for
+    /// one call. <c>ToggleDesktop</c> rather than <c>MinimizeAll</c>, because the Windows control
+    /// restores what it minimised when clicked again and users rely on that.
+    /// </para>
+    /// </remarks>
+    private void OnShowDesktopClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+
+        ClearPanelsFor(BarPanel.None);
+        DismissWindowsSurfaces();
+
+        try
+        {
+            Type? shell = Type.GetTypeFromProgID("Shell.Application");
+            if (shell is null)
+            {
+                BringUpLog.Write("show desktop: Shell.Application is not registered");
+                return;
+            }
+
+            object? instance = Activator.CreateInstance(shell);
+            shell.InvokeMember("ToggleDesktop", System.Reflection.BindingFlags.InvokeMethod,
+                               binder: null, target: instance, args: null);
+        }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException
+                                       or MissingMethodException
+                                       or System.Reflection.TargetInvocationException)
+        {
+            BringUpLog.Write(ex, "show desktop failed");
+        }
+    }
 
     /// <summary>
     /// Whether to draw it at all.
@@ -1003,6 +1193,7 @@ internal partial class BarWindow : AppBarWindow
 
         bar.OnPropertyChanged(nameof(ShowsDate));
         bar.OnPropertyChanged(nameof(ShowsSeconds));
+        bar.OnPropertyChanged(nameof(ShowsShowDesktopLine));
 
         // The icon grows with the tier, and its permitted drift amplitude shrinks as it does.
         // Republish the offset now rather than waiting up to half a second for the next motion
@@ -1196,6 +1387,41 @@ internal partial class BarWindow : AppBarWindow
     /// changes — the display has no seconds, so a per-second repaint would light the same pixels
     /// sixty times for one change.
     /// </summary>
+    /// <summary>
+    /// Works out how much width to hold for the clock, from the clock's own font.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is reserved on a vertical bar: the whole content band is the width there, so the
+    /// clock cannot push anything sideways in the first place. See <see cref="ClockMinWidth"/>.
+    /// </remarks>
+    private void MeasureClock()
+    {
+        double previous = ClockMinWidth;
+
+        if (IsVertical)
+        {
+            ClockMinWidth = double.NaN;
+        }
+        else
+        {
+            FormattedText widest = new(
+                "00:00:00",
+                CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight,
+                new Typeface(ClockTimeText.FontFamily, ClockTimeText.FontStyle,
+                             ClockTimeText.FontWeight, ClockTimeText.FontStretch),
+                ClockTimeText.FontSize,
+                Brushes.White,
+                VisualTreeHelper.GetDpi(this).PixelsPerDip);
+
+            // Rounded up: a fractional shortfall still reflows the row, and a spare pixel costs
+            // nothing but layout.
+            ClockMinWidth = Math.Ceiling(widest.Width) + 1;
+        }
+
+        if (!ClockMinWidth.Equals(previous)) OnPropertyChanged(nameof(ClockMinWidth));
+    }
+
     private void OnClockTick(object? sender, EventArgs e)
     {
         DateTime now = DateTime.Now;

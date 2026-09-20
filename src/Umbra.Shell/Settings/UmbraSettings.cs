@@ -70,10 +70,21 @@ internal sealed class UmbraSettings
     /// Whether to host the notification area.
     /// </summary>
     /// <remarks>
-    /// Off by default. The interception works but Windows 11 25H2 does not deliver icons that way,
-    /// It works; it costs a permanent 100 ms timer — docs/measurements.md step 7.
+    /// <para>
+    /// <b>On by default</b> — the project owner's decision, 2026-09-20. It was off because tray
+    /// hosting costs a permanent 100 ms timer and §11.2 Q2, whether ManagedShell's timers defeat
+    /// display idle, is unmeasured. <b>Q2 is still unmeasured and this does not settle it</b>; what
+    /// settled the default is that a taskbar replacement without a notification area is not one.
+    /// </para>
+    /// <para>
+    /// <b>Changing this does not reach anyone who has run Umbra before.</b> The file is rewritten
+    /// with every key whenever settings are saved, so an existing <c>settings.txt</c> carries the
+    /// old <c>tray = false</c> explicitly and a stored setting rightly beats a default. That is
+    /// working as intended, and it is also how this went unnoticed: the flag and the setting were
+    /// both true in testing while the file on disk said otherwise.
+    /// </para>
     /// </remarks>
-    public bool Tray { get; set; }
+    public bool Tray { get; set; } = true;
 
     /// <summary>
     /// Device name of the monitor to occupy, or empty for the primary.
@@ -199,7 +210,7 @@ internal sealed class UmbraSettings
         "# The drift and micro-jitter layer.",
         $"motion = {Motion.ToString().ToLowerInvariant()}",
         "",
-        "# Notification area hosting. Works; costs a permanent 100 ms timer, so it is off by default.",
+        "# Notification area hosting. On by default; costs a permanent 100 ms timer.",
         $"tray = {Tray.ToString().ToLowerInvariant()}",
         "",
         @"# Device name of the monitor to occupy, e.g. \\.\DISPLAY1. Empty means the primary.",

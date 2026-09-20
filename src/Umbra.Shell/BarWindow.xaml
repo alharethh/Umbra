@@ -535,6 +535,28 @@
         </ItemsControl>
 
             <!--
+                The network indicator. Drawn rather than hosted, because Windows 11 never sends
+                one as a notification icon — NETWORK_GUID has never appeared in the stream on any
+                run, while VOLUME_GUID does. Stroked so it takes the tier brush like the chevron;
+                a bitmap would have to go through the monochrome normaliser instead.
+            -->
+            <Grid x:Name="NetworkIndicator"
+                  Background="Transparent"
+                  ToolTip="{Binding NetworkDescription}"
+                  MouseLeftButtonUp="OnNetworkClick"
+                  VerticalAlignment="Center"
+                  Width="{Binding TraySlotWidth}"
+                  Height="{Binding TraySlotHeight}">
+
+                <Path Data="{Binding NetworkGlyph}"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      StrokeThickness="1.2"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      Stroke="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
+                      RenderTransform="{Binding NetworkOffset}" />
+            </Grid>
+
+            <!--
                 The input language indicator — the NOB or ENG the Windows taskbar shows. Not a
                 notification icon: it is the Text Services Framework input indicator, which no
                 amount of tray work would ever have produced, so we draw it ourselves.
@@ -568,10 +590,15 @@
             -->
             <StackPanel VerticalAlignment="Center"
                         HorizontalAlignment="Center"
-                        Margin="8,0,0,0"
+                        Background="Transparent"
+                        ToolTip="Open notifications"
+                        MouseLeftButtonUp="OnClockClick"
+                        Margin="{Binding ClockMargin}"
+                        MinWidth="{Binding ClockMinWidth}"
                         RenderTransform="{Binding ClockOffset}">
 
-                <TextBlock Text="{Binding ClockTime}"
+                <TextBlock x:Name="ClockTimeText"
+                           Text="{Binding ClockTime}"
                            FontSize="14"
                            TextAlignment="Center"
                            Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}" />
@@ -594,6 +621,44 @@
                 </TextBlock>
             </StackPanel>
         </StackPanel>
+
+        <!--
+            Show desktop. The sliver in the trailing corner of the Windows taskbar: click to
+            minimise everything, click again to put it back.
+
+            A sibling of the trailing group rather than a child of it, so its hit area reaches
+            the screen corner — the one target a pointer can hit without aiming. It occupies the
+            margin the row already holds back for drift (§6.3), so it takes no space from the
+            clock. The hairline is drawn inboard of that inset, where it cannot clip, and only
+            from Tier 1: a permanently lit column in a fixed position is what §2.3 exists to
+            refuse, and the control works whether or not it can be seen.
+        -->
+        <Grid x:Name="ShowDesktop"
+              Background="Transparent"
+              ToolTip="Show desktop"
+              MouseLeftButtonUp="OnShowDesktopClick"
+              HorizontalAlignment="{Binding ShowDesktopHorizontalAlignment}"
+              VerticalAlignment="{Binding ShowDesktopVerticalAlignment}"
+              Width="{Binding ShowDesktopHitWidth}"
+              Height="{Binding ShowDesktopHitHeight}">
+
+            <Rectangle Width="{Binding ShowDesktopLineWidth}"
+                       Height="{Binding ShowDesktopLineHeight}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Opacity="0.55"
+                       Fill="{Binding TierLevel, Converter={StaticResource ClockBrush}}">
+                <Rectangle.Style>
+                    <Style TargetType="Rectangle">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShowsShowDesktopLine}" Value="True">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Rectangle.Style>
+            </Rectangle>
+        </Grid>
 
         <!--
             The overflow flyout. A Popup rather than a window so it follows the chevron as the bar

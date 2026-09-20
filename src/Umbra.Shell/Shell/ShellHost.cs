@@ -40,12 +40,13 @@ internal sealed class ShellHost : IDisposable
     /// were being thrown away inside ManagedShell by a null <c>PinnedNotifyIcons</c>, silently. See
     /// docs/measurements.md step 7 for the full chain and how it was finally caught.
     /// <para>
-    /// Still off by default, for the one reason that survived: it costs a permanent 100 ms timer,
-    /// and §11.2 Q2 — whether ManagedShell's timers defeat display idle — is unmeasured. That is a
-    /// power question, not a functional one.
+    /// <b>On by default since 2026-09-20</b>, by the project owner's decision. It costs a permanent
+    /// 100 ms timer and §11.2 Q2 — whether ManagedShell's timers defeat display idle — is still
+    /// unmeasured; that is a power question to answer, not a reason to ship a taskbar with no
+    /// notification area.
     /// </para>
     /// </param>
-    public ShellHost(bool enableTray = false)
+    public ShellHost(bool enableTray = true)
     {
         // Before anything else. ManagedShell reports its own failures to ShellLogger and carries
         // on, so an unattached logger turns every internal fault into silence — which is exactly
