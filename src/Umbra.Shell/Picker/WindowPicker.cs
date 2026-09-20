@@ -4,9 +4,11 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ManagedShell.WindowsTasks;
 using Umbra.Core.Layout;
+using Umbra.Core.Tiers;
 using Umbra.Shell.Diagnostics;
 using Umbra.Shell.Tasks;
 using WpfRect = System.Windows.Rect;
@@ -30,15 +32,39 @@ namespace Umbra.Shell.Picker;
 /// </para>
 /// <para>
 /// Because it never activates, it also never gets a deactivated event to close on. It therefore
-/// watches the cursor while it is open and closes once the pointer has been away from both itself
-/// and the bar for <see cref="DismissGraceMilliseconds"/>. That timer runs only while the picker is
-/// up, so it does not add to the permanent wake-up budget §6.6 is careful about.
+/// watches the cursor while it is open, and begins fading the moment the pointer is away from both
+/// itself and the bar — the same moment the bar starts dimming, and over the same
+/// <see cref="FadeOut"/>, so the two leave together. That timer runs only while the picker is up,
+/// so it does not add to the permanent wake-up budget §6.6 is careful about.
 /// </para>
 /// </remarks>
 internal sealed partial class WindowPicker : Window
 {
-    /// <summary>How long the pointer must be away before the picker closes, in milliseconds.</summary>
-    private const int DismissGraceMilliseconds = 600;
+    /// <summary>
+    /// How long the picker takes to fade once the pointer has left it and the bar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The bar's own fall, so the two go together.</b> It used to sit at full opacity for 600 ms
+    /// and then vanish in a single frame, while the bar underneath had already been dimming the
+    /// whole time — the preview outlived the thing it belonged to, and the disappearance was a cut
+    /// rather than a fade.
+    /// </para>
+    /// <para>
+    /// <see cref="TierController.ReleaseSeconds"/> is one tier <i>step</i>, and the bar falls two
+    /// of them — Tier 2 to Tier 0 — so the picker's fade is twice it. Taking the number from the
+    /// tier system rather than writing 800 here means the two cannot drift apart later.
+    /// </para>
+    /// </remarks>
+    private static readonly TimeSpan FadeOut =
+        TimeSpan.FromSeconds(TierController.ReleaseSeconds * 2.0);
+
+    /// <summary>How long it takes to come back if the pointer returns mid-fade.</summary>
+    /// <remarks>
+    /// The bar's attack, for the same reason, and quick: a picker that crawls back to full opacity
+    /// reads as lag on a pointer that never really left.
+    /// </remarks>
+    private static readonly TimeSpan FadeIn = TimeSpan.FromSeconds(TierController.AttackSeconds);
 
     private const double ColumnWidth = 200.0;
     private const double ThumbnailHeight = 116.0;
@@ -77,7 +103,10 @@ internal sealed partial class WindowPicker : Window
 
         _watch = new DispatcherTimer(DispatcherPriority.Background)
         {
-            Interval = TimeSpan.FromMilliseconds(100),
+            // 30 Hz rather than 10. At 100 ms the picker could sit lit for a tenth of a second
+            // after the bar had begun to dim, which is visible against an 800 ms fade. It runs
+            // only while the picker is up, so it still costs nothing in steady state (§6.6).
+            Interval = TimeSpan.FromMilliseconds(32),
         };
         _watch.Tick += OnWatchTick;
 
@@ -438,13 +467,17 @@ internal sealed partial class WindowPicker : Window
 
         if (inside)
         {
+            CancelFade();
             _awaySince = DateTime.MaxValue;
             return;
         }
 
-        if (_awaySince == DateTime.MaxValue) _awaySince = DateTime.UtcNow;
+        // The moment the pointer is away from both, not after a wait: the bar starts dimming on
+        // the same condition, and anything held back here is the preview outliving it.
+        if (_awaySince != DateTime.MaxValue) return;
 
-        if ((DateTime.UtcNow - _awaySince).TotalMilliseconds >= DismissGraceMilliseconds) Dismiss();
+        _awaySince = DateTime.UtcNow;
+        BeginFade();
     }
 
     /// <summary>Drops columns whose window has gone. Returns true when the picker closed.</summary>
@@ -475,6 +508,67 @@ internal sealed partial class WindowPicker : Window
         new(rect.Left - by, rect.Top - by, rect.Width + by * 2, rect.Height + by * 2);
 
     /// <summary>Closes the picker, releasing every thumbnail.</summary>
+    /// <summary>
+    /// Fades the picker out and closes it when it has gone.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Quadratic ease-in, which is <see cref="TierEasing.Release"/>'s curve — the bar dims on that
+    /// shape, and a linear fade beside it reads as two things leaving at different speeds even
+    /// when they finish together.
+    /// </para>
+    /// <para>
+    /// <b>Closed from the animation's completion rather than from a second timer.</b> One clock
+    /// owns the disappearance, so there is no arrangement where the window is disposed while still
+    /// visible, or lingers invisibly holding its DWM thumbnail registrations.
+    /// </para>
+    /// </remarks>
+    private void BeginFade()
+    {
+        if (_fading) return;
+
+        _fading = true;
+
+        DoubleAnimation fade = new()
+        {
+            To = 0.0,
+            Duration = FadeOut,
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn },
+        };
+
+        fade.Completed += (_, _) =>
+        {
+            if (_fading) Dismiss();
+        };
+
+        BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>Brings it back if the pointer returned before it had gone.</summary>
+    /// <remarks>
+    /// A second animation rather than an assignment to <c>Opacity</c>: a running animation holds
+    /// the property, so setting it directly while one is in flight does nothing visible. Handing
+    /// the fade a new target is what stops it, and the flag is what stops its <c>Completed</c>
+    /// handler closing a picker that is on its way back.
+    /// </remarks>
+    private void CancelFade()
+    {
+        if (!_fading) return;
+
+        _fading = false;
+
+        DoubleAnimation back = new()
+        {
+            To = 1.0,
+            Duration = FadeIn,
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+        };
+
+        BeginAnimation(OpacityProperty, back);
+    }
+
+    private bool _fading;
+
     public void Dismiss()
     {
         _watch.Stop();
