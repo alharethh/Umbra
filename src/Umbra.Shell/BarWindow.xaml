@@ -47,6 +47,36 @@
         <render:TierBrushConverter x:Key="ClockBrush" Element="Clock" />
         <render:TierBrushConverter x:Key="StartGlyphBrush" Element="StartGlyph" />
 
+        <!--
+            One tray icon. Shared by the strip on the bar and by the overflow flyout, so an icon
+            looks and behaves identically wherever it happens to be sitting.
+        -->
+        <DataTemplate x:Key="TrayIconTemplate">
+            <Grid Background="Transparent"
+                  ToolTip="{Binding Title}"
+                  MouseLeftButtonDown="OnTrayIconMouseDown"
+                  MouseLeftButtonUp="OnTrayIconMouseUp"
+                  MouseRightButtonDown="OnTrayIconMouseDown"
+                  MouseRightButtonUp="OnTrayIconMouseUp"
+                  MouseEnter="OnTrayIconMouseEnter"
+                  MouseLeave="OnTrayIconMouseLeave"
+                  Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                  Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+
+                <Image Width="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Height="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <Image.Source>
+                        <MultiBinding Converter="{StaticResource TrayTierIcon}">
+                            <Binding Path="Icon" />
+                            <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                        </MultiBinding>
+                    </Image.Source>
+                </Image>
+            </Grid>
+        </DataTemplate>
+
         <!-- A long pill for the foreground window, a short one for the rest, as Windows 11 does. -->
         <render:IndicatorWidthConverter x:Key="PillX" Horizontal="True" />
         <render:IndicatorWidthConverter x:Key="PillY" Horizontal="False" />
@@ -463,6 +493,28 @@
                     Margin="{Binding TrayMargin}">
 
         <!--
+            The overflow chevron (§7.1). Hidden entirely when nothing is behind it, because a
+            permanently lit affordance opening an empty panel is a lit pixel for nothing.
+        -->
+        <Grid x:Name="TrayChevron"
+              Background="Transparent"
+              ToolTip="Show hidden icons"
+              Visibility="{Binding TrayOverflowVisibility}"
+              MouseLeftButtonUp="OnTrayChevronClick"
+              VerticalAlignment="Center"
+              Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+              Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+
+            <Path x:Name="TrayChevronGlyph"
+                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Data="M 0,4 L 4.5,0 L 9,4"
+                  StrokeThickness="1.4"
+                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                  Stroke="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ClockBrush}}"
+                  RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}" />
+        </Grid>
+
+        <!--
             The notification area. Its slots are smaller than the icon row's, so it uses its own
             derived drift amplitude — applying the row's would push these icons out of their slots
             and break P5.
@@ -478,31 +530,7 @@
             </ItemsControl.ItemsPanel>
 
             <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Grid Background="Transparent"
-                          ToolTip="{Binding Title}"
-                          MouseLeftButtonDown="OnTrayIconMouseDown"
-                          MouseLeftButtonUp="OnTrayIconMouseUp"
-                          MouseRightButtonDown="OnTrayIconMouseDown"
-                          MouseRightButtonUp="OnTrayIconMouseUp"
-                          MouseEnter="OnTrayIconMouseEnter"
-                          MouseLeave="OnTrayIconMouseLeave"
-                          Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-                          Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
-
-                        <Image Width="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Height="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
-                               RenderOptions.BitmapScalingMode="HighQuality"
-                               RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}">
-                            <Image.Source>
-                                <MultiBinding Converter="{StaticResource TrayTierIcon}">
-                                    <Binding Path="Icon" />
-                                    <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                </MultiBinding>
-                            </Image.Source>
-                        </Image>
-                    </Grid>
-                </DataTemplate>
+                <StaticResource ResourceKey="TrayIconTemplate" />
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
@@ -542,6 +570,49 @@
                 </TextBlock>
             </StackPanel>
         </StackPanel>
+
+        <!--
+            The overflow flyout. A Popup rather than a window so it follows the chevron as the bar
+            moves between edges, and AllowsTransparency so its corners can be rounded against
+            whatever is behind it.
+
+            StaysOpen is true and dismissal is driven by the pointer watcher in code-behind. WPF
+            closes a popup by capturing the mouse and watching for a click outside, and the bar
+            carries WS_EX_NOACTIVATE — so that capture is not honoured across processes and the
+            flyout would sit open until you clicked back inside Umbra. The window picker and the
+            context menus solve it the same way, for the same reason.
+        -->
+        <Popup x:Name="TrayOverflowPopup"
+               PlacementTarget="{Binding ElementName=TrayChevron}"
+               Placement="Top"
+               VerticalOffset="-6"
+               AllowsTransparency="True"
+               StaysOpen="True"
+               PopupAnimation="None">
+
+            <Border Background="#F21C1C18"
+                    BorderBrush="#FF3A3A33"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="6"
+                    SnapsToDevicePixels="True">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270"
+                                      Opacity="0.55" Color="#FF000000" />
+                </Border.Effect>
+
+                <ItemsControl x:Name="TrayOverflowHost"
+                              ItemsSource="{Binding OverflowTrayIcons}"
+                              ItemTemplate="{StaticResource TrayIconTemplate}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <!-- Five across, as Windows 11 lays its own overflow out. -->
+                            <UniformGrid Columns="5" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </Border>
+        </Popup>
     </Grid>
 
 </appbar:AppBarWindow>

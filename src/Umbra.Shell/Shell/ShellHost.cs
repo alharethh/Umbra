@@ -19,6 +19,21 @@ internal sealed class ShellHost : IDisposable
     private readonly ExplorerStateGuard _explorerState;
     private bool _disposed;
 
+    /// <summary>
+    /// The notification icons that stay out of the overflow: volume, network, power, action centre.
+    /// </summary>
+    /// <remarks>
+    /// Identified by the fixed GUIDs Windows gives its own indicators, not by path — every one of
+    /// them is owned by <c>explorer.exe</c>, so a path would match all four and nothing else.
+    /// </remarks>
+    private static readonly string[] SystemIndicators =
+    [
+        ManagedShell.WindowsTray.NotificationArea.VOLUME_GUID,
+        ManagedShell.WindowsTray.NotificationArea.NETWORK_GUID,
+        ManagedShell.WindowsTray.NotificationArea.POWER_GUID,
+        ManagedShell.WindowsTray.NotificationArea.HEALTH_GUID,
+    ];
+
     /// <param name="enableTray">
     /// <b>This works.</b> It was believed not to — recorded as "Windows 11 25H2 does not deliver
     /// notification icons this way" — and that was wrong. Windows routes them correctly; the icons
@@ -62,9 +77,14 @@ internal sealed class ShellHost : IDisposable
             // null unless the host sets it, and NotifyIcon.SetPinValues() dereferences it for
             // every icon that arrives — so every icon threw a NullReferenceException that
             // SysTrayCallback caught and reported only to ShellLogger, which nothing was
-            // listening to. The tray collected nothing and said nothing, for months. Empty
-            // because Umbra has no pin-a-tray-icon UI yet and shows the whole set.
-            PinnedNotifyIcons = [],
+            // listening to. The tray collected nothing and said nothing, for months.
+            //
+            // The four system indicators, which is what Windows keeps out of the overflow and
+            // what ManagedShell itself defaults to. Everything else goes behind the chevron.
+            // Measured on this machine: the volume icon really does arrive carrying VOLUME_GUID,
+            // as an ordinary notify icon owned by explorer.exe. The network one does not arrive
+            // at all — it is listed anyway so that it lands in the right place if it ever does.
+            PinnedNotifyIcons = SystemIndicators,
 
             EnableWin11DpiWorkaround = false,
         };

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -83,13 +84,15 @@ internal partial class BarWindow : AppBarWindow
 
         // Null when tray hosting is switched off — see ShellHost.
         //
-        // All icons, not the pinned ones. §7.1's "tray overflow flyout" is what would justify
-        // showing a subset, and it is not built — so binding to PinnedIcons means binding to a
-        // collection that is empty unless the user has pinned something, and there is no UI to
-        // pin with. Measured: nine icons collected, PinnedIcons held none of them. Narrow this
-        // again when the overflow chevron exists, not before.
+        // Two collections now that §7.1's overflow chevron exists: the system indicators stay on
+        // the bar, everything else lives behind the chevron. ManagedShell maintains both views off
+        // the pinned-GUID list ShellHost supplies, so nothing here has to filter.
         _notificationArea = host.ShellManager.NotificationArea;
-        TrayIcons = _notificationArea?.AllIcons;
+        TrayIcons = _notificationArea?.PinnedIcons;
+        OverflowTrayIcons = _notificationArea?.UnpinnedIcons;
+
+        if (_notificationArea is not null)
+            _notificationArea.TrayIcons.CollectionChanged += (_, _) => OnPropertyChanged(nameof(TrayOverflowVisibility));
 
         DataContext = this;
         InitializeComponent();
@@ -657,8 +660,26 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>What the bar actually shows: one slot per application.</summary>
     public ObservableCollection<TaskbarSlot> Slots => _tasks.Slots;
 
-    /// <summary>The notification area's icons (§11.1), or null when tray hosting is off.</summary>
+    /// <summary>
+    /// The notification icons shown on the bar itself — the system indicators (§11.1).
+    /// </summary>
+    /// <remarks>Null when tray hosting is off.</remarks>
     public ICollectionView? TrayIcons { get; }
+
+    /// <summary>The notification icons behind the overflow chevron.</summary>
+    public ICollectionView? OverflowTrayIcons { get; }
+
+    /// <summary>
+    /// Whether the chevron is worth drawing.
+    /// </summary>
+    /// <remarks>
+    /// Hidden rather than disabled when the overflow is empty. A permanently lit affordance that
+    /// opens an empty panel is both a lie and, on this bar, a fixed lit pixel for nothing.
+    /// </remarks>
+    public Visibility TrayOverflowVisibility =>
+        OverflowTrayIcons is not null && OverflowTrayIcons.Cast<object>().Any()
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
     /// <summary>
     /// The notification area's drift offset — the same phase as the icon row, scaled down to what
@@ -1344,6 +1365,110 @@ internal partial class BarWindow : AppBarWindow
 
     private readonly HashSet<string> _missingMenuStyles = [];
 
+    /// <summary>Opens or closes the overflow flyout.</summary>
+    private void OnTrayChevronClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        SetTrayOverflowOpen(!TrayOverflowPopup.IsOpen);
+    }
+
+    /// <summary>
+    /// Shows or hides the flyout, and runs the pointer watcher only while it is up.
+    /// </summary>
+    /// <remarks>
+    /// The watcher is the same device the window picker and the context menus use, for the same
+    /// reason: the bar carries <c>WS_EX_NOACTIVATE</c>, so WPF's own dismiss-on-click-outside —
+    /// which works by capturing the mouse — is not honoured across processes. Without this the
+    /// flyout stays open until you click back inside Umbra.
+    /// </remarks>
+    private void SetTrayOverflowOpen(bool open)
+    {
+        TrayOverflowPopup.IsOpen = open;
+
+        if (!open)
+        {
+            _trayOverflowWatch?.Stop();
+            return;
+        }
+
+        _trayOverflowWatch ??= CreateTrayOverflowWatch();
+        _trayOverflowAwaySince = null;
+        _trayOverflowWatch.Start();
+    }
+
+    private DispatcherTimer CreateTrayOverflowWatch()
+    {
+        DispatcherTimer timer = new(DispatcherPriority.Background)
+        {
+            // 10 Hz, and only while the flyout is open. §6.6 is about not adding standing
+            // wake-ups; this one exists for as long as a panel the user opened is on screen.
+            Interval = TimeSpan.FromMilliseconds(100),
+        };
+
+        timer.Tick += (_, _) =>
+        {
+            if (!TrayOverflowPopup.IsOpen) { timer.Stop(); return; }
+
+            if (PointerIsOverTrayOverflow())
+            {
+                _trayOverflowAwaySince = null;
+                return;
+            }
+
+            // A grace period, because the pointer has to cross the gap between the chevron and
+            // the flyout to reach it, and closing mid-journey would make the panel unreachable.
+            _trayOverflowAwaySince ??= DateTime.UtcNow;
+
+            if (DateTime.UtcNow - _trayOverflowAwaySince >= TimeSpan.FromMilliseconds(600))
+                SetTrayOverflowOpen(false);
+        };
+
+        return timer;
+    }
+
+    /// <summary>Whether the cursor is on the flyout or on the chevron that opened it.</summary>
+    /// <remarks>
+    /// Both rectangles are read in physical pixels straight from Win32, and the cursor is too, so
+    /// no DPI conversion happens anywhere in the comparison — the same rule the context menu
+    /// dismisser follows.
+    /// </remarks>
+    private bool PointerIsOverTrayOverflow()
+    {
+        if (!TrayNative.GetCursorPos(out TrayNative.POINT cursor)) return true;
+
+        if (TrayOverflowPopup.Child is FrameworkElement child
+            && PresentationSource.FromVisual(child) is HwndSource source
+            && TrayNative.GetWindowRect(source.Handle, out TrayNative.RECT popup)
+            && cursor.X >= popup.Left && cursor.X < popup.Right
+            && cursor.Y >= popup.Top && cursor.Y < popup.Bottom)
+        {
+            return true;
+        }
+
+        Point origin = TrayChevron.PointToScreen(new Point(0, 0));
+        Point far = TrayChevron.PointToScreen(new Point(TrayChevron.ActualWidth, TrayChevron.ActualHeight));
+
+        return cursor.X >= origin.X && cursor.X < far.X && cursor.Y >= origin.Y && cursor.Y < far.Y;
+    }
+
+    private DispatcherTimer? _trayOverflowWatch;
+    private DateTime? _trayOverflowAwaySince;
+
+    private static class TrayNative
+    {
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct POINT { public int X, Y; }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct RECT { public int Left, Top, Right, Bottom; }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool GetCursorPos(out POINT point);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+    }
+
     /// <summary>Starts the hover-preview countdown for the icon under the pointer.</summary>
     /// <remarks>
     /// Moving from one icon to another while a preview is already up switches immediately rather
@@ -1863,6 +1988,10 @@ internal partial class BarWindow : AppBarWindow
 
     private void OnTrayIconMouseUp(object sender, MouseButtonEventArgs e)
     {
+        // Acting on an icon dismisses the panel it was in, or the flyout sits over whatever the
+        // click just raised.
+        if (TrayOverflowPopup.IsOpen) SetTrayOverflowOpen(false);
+
         if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
 
         icon.IconMouseUp(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);
