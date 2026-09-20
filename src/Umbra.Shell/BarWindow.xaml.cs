@@ -140,7 +140,9 @@ internal partial class BarWindow : AppBarWindow
             IntPtr foreground = GetForegroundWindow();
             _tasks.UpdateForeground(foreground);
 
-            if (_language.Poll(foreground))
+            // Not while Start is up: it is a surface of its own, with a layout of its own, and
+            // the indicator should still be naming the application underneath it.
+            if (!_startMenu.IsOpen && _language.Poll(foreground))
             {
                 OnPropertyChanged(nameof(LanguageName));
                 OnPropertyChanged(nameof(LanguageVisibility));

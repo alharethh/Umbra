@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text;
 using Umbra.Shell.Diagnostics;
 
 namespace Umbra.Shell.Shell;
@@ -53,6 +54,9 @@ internal sealed class KeyboardLayoutWatcher
     public bool Poll(IntPtr foreground)
     {
         RefreshInstalled();
+
+        // A panel is not somewhere anyone types. See ReportsSomeoneElsesLayout.
+        if (ReportsSomeoneElsesLayout(foreground)) return false;
 
         bool changed = false;
 
@@ -189,6 +193,45 @@ internal sealed class KeyboardLayoutWatcher
         return installed[0];
     }
 
+    /// <summary>
+    /// Whether this foreground window's layout is nobody's business but its own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The indicator names the language the next keystroke will be typed in, and a shell panel
+    /// is not where anyone types.</b> Reported as "when i click the sound&amp;internet button it
+    /// changes language" — and the layout never changed at all. Quick Settings simply runs its own
+    /// layout, measured as <c>0x0414</c> on this machine against the user's <c>0x0809</c>, so
+    /// giving it the foreground made the indicator report that instead. Faithfully, and uselessly.
+    /// </para>
+    /// <para>
+    /// <b>This looked like a keyboard bug and was not one</b>, which is worth recording because
+    /// the first measurement agreed with the wrong explanation: reading
+    /// <c>GetKeyboardLayout</c> of whatever happens to be in front returns a *different thread's*
+    /// layout the moment the foreground moves, so a before-and-after pair looks exactly like a
+    /// layout that changed. Pinning the user's own window and re-reading *that* is what showed it
+    /// had not.
+    /// </para>
+    /// <para>
+    /// Our own windows are excluded for the same reason and one more: the bar never takes the
+    /// foreground, but its settings and heatmap windows do, and they are not typing surfaces
+    /// either.
+    /// </para>
+    /// </remarks>
+    private static bool ReportsSomeoneElsesLayout(IntPtr window)
+    {
+        if (window == IntPtr.Zero) return true;
+
+        NativeMethods.GetWindowThreadProcessId(window, out int processId);
+        if (processId == Environment.ProcessId) return true;
+
+        StringBuilder className = new(256);
+        if (NativeMethods.GetClassName(window, className, className.Capacity) <= 0) return false;
+
+        // The same table the dismissal uses, so a surface added there is covered here too.
+        return ShellSurfaceWatcher.SurfaceFor(className.ToString()) != ShellSurface.None;
+    }
+
     private static IntPtr LayoutOf(IntPtr window)
     {
         if (window == IntPtr.Zero) return IntPtr.Zero;
@@ -309,6 +352,9 @@ internal sealed class KeyboardLayoutWatcher
 
         [DllImport("user32.dll")]
         internal static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
 
         [DllImport("user32.dll")]
         internal static extern IntPtr GetKeyboardLayout(uint thread);
