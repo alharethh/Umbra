@@ -60,10 +60,10 @@ own, and this is aimed squarely at it.
   taskbar; the clock opens the calendar and notifications.
 
   ![The overflow flyout, then Quick Settings](docs/media/panels.gif)
+
+  ![The clock opening notifications and the calendar](docs/media/clock.gif)
 - **Show desktop** in the trailing corner, where it has always been. Click once to clear the
   screen, again to put everything back.
-
-  ![Clicking the corner brings the windows back](docs/media/desktop.gif)
 - **A wear heatmap.** Umbra records how much light every pixel of its own rectangle has emitted,
   weighted the way burn-in actually accumulates, and will draw you the map. No other taskbar can
   tell you what it has been doing to your screen.
