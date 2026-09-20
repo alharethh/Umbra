@@ -47,7 +47,7 @@ own, and this is aimed squarely at it.
 
 ![Hover feedback on the notification area](docs/media/hover.gif)
 
-<sub>The hover pane and its sweep, on the notification area and the clock. The same scripted loop lights every control at once; pointing at one lights that one.</sub>
+<sub>Each control lights as the pointer reaches it — the overflow chevron, the volume and network cluster, the input language, the clock, and the show-desktop corner.</sub>
 
 - **Any edge, live.** Move the bar between edges from the settings window; the desktop reflows.
 - **The row is one order.** Pinned and running icons share it, and any icon can be dragged anywhere.
