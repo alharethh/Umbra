@@ -90,6 +90,38 @@
             </Style.Triggers>
         </Style>
 
+        <!--
+            The pinned system indicators — volume, network, power, health. Their own template,
+            because inside the system cluster they are not separate controls: the cluster carries
+            the hover chip and the left click, exactly as the one Windows 11 button does.
+
+            Right-click still reaches the icon, so Windows' own volume menu is unaffected, and the
+            enter/leave forwarding stays because the owning process draws its own tooltip from it.
+        -->
+        <DataTemplate x:Key="SystemIndicatorTemplate">
+            <Grid Background="Transparent"
+                  ToolTip="{Binding Title}"
+                  MouseRightButtonDown="OnTrayIconMouseDown"
+                  MouseRightButtonUp="OnTrayIconMouseUp"
+                  MouseEnter="OnTrayIconMouseEnter"
+                  MouseLeave="OnTrayIconMouseLeave"
+                  Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                  Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+
+                <Image Width="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Height="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <Image.Source>
+                        <MultiBinding Converter="{StaticResource TrayTierIcon}">
+                            <Binding Path="Icon" />
+                            <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                        </MultiBinding>
+                    </Image.Source>
+                </Image>
+            </Grid>
+        </DataTemplate>
+
         <DataTemplate x:Key="TrayIconTemplate">
             <Grid Background="Transparent"
                   ToolTip="{Binding Title}"
@@ -567,57 +599,70 @@
         </Grid>
 
         <!--
-            The notification area. Its slots are smaller than the icon row's, so it uses its own
-            derived drift amplitude — applying the row's would push these icons out of their slots
-            and break P5.
+            The system cluster: the pinned indicators and the network glyph, as one control.
+
+            Windows 11 has a single button here covering volume, network and battery, and it opens
+            Quick Settings. Splitting them gave two hover chips side by side with a dead hairline
+            between, which is not what the row is.
+
+            Its slots are smaller than the icon row's, so it uses its own derived drift amplitude —
+            applying the row's would push these out of their slots and break P5.
         -->
-        <ItemsControl x:Name="TrayHost"
-                      ItemsSource="{Binding TrayIcons}"
-                      VerticalAlignment="Center">
+        <Grid x:Name="SystemCluster"
+              Background="Transparent"
+              ToolTip="{Binding NetworkDescription}"
+              MouseLeftButtonUp="OnSystemClusterClick"
+              VerticalAlignment="Center">
 
-            <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <StackPanel Orientation="{Binding RowOrientation, RelativeSource={RelativeSource AncestorType=Window}}" />
-                </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
+            <Border Style="{StaticResource TrailingHoverChip}" Margin="1,2" />
 
-            <ItemsControl.ItemTemplate>
-                <StaticResource ResourceKey="TrayIconTemplate" />
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+            <Grid RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <ScaleTransform x:Name="SystemClusterScale" />
+                </Grid.RenderTransform>
 
-            <!--
-                The network indicator. Drawn rather than hosted, because Windows 11 never sends
-                one as a notification icon — NETWORK_GUID has never appeared in the stream on any
-                run, while VOLUME_GUID does. Stroked so it takes the tier brush like the chevron;
-                a bitmap would have to go through the monochrome normaliser instead.
-            -->
-            <Grid x:Name="NetworkIndicator"
-                  Background="Transparent"
-                  ToolTip="{Binding NetworkDescription}"
-                  MouseLeftButtonUp="OnNetworkClick"
-                  VerticalAlignment="Center"
-                  Width="{Binding TraySlotWidth}"
-                  Height="{Binding TraySlotHeight}">
+                <StackPanel Orientation="{Binding RowOrientation}">
 
-                <Border Style="{StaticResource TrailingHoverChip}" Margin="2" />
+                    <ItemsControl x:Name="TrayHost"
+                                  ItemsSource="{Binding TrayIcons}"
+                                  VerticalAlignment="Center">
 
-                <Grid RenderTransformOrigin="0.5,0.5">
-                    <Grid.RenderTransform>
-                        <ScaleTransform x:Name="NetworkScale" />
-                    </Grid.RenderTransform>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="{Binding RowOrientation, RelativeSource={RelativeSource AncestorType=Window}}" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
 
-                    <Path Data="{Binding NetworkGlyph}"
-                          HorizontalAlignment="Center" VerticalAlignment="Center"
-                          Stretch="Uniform"
-                          Width="{Binding TrayIconExtent}"
-                          Height="{Binding TrayIconExtent}"
-                          StrokeThickness="1.5"
-                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                          Stroke="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
-                          RenderTransform="{Binding NetworkOffset}" />
-                </Grid>
+                        <ItemsControl.ItemTemplate>
+                            <StaticResource ResourceKey="SystemIndicatorTemplate" />
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!--
+                        The network indicator. Drawn rather than hosted, because Windows 11 never
+                        sends one as a notification icon — NETWORK_GUID has never appeared in the
+                        stream on any run, while VOLUME_GUID does. Stroked so it takes the tier
+                        brush like the chevron; a bitmap would have to go through the monochrome
+                        normaliser instead.
+                    -->
+                    <Grid x:Name="NetworkIndicator"
+                          VerticalAlignment="Center"
+                          Width="{Binding TraySlotWidth}"
+                          Height="{Binding TraySlotHeight}">
+
+                        <Path Data="{Binding NetworkGlyph}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Stretch="Uniform"
+                              Width="{Binding TrayIconExtent}"
+                              Height="{Binding TrayIconExtent}"
+                              StrokeThickness="1.5"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              Stroke="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
+                              RenderTransform="{Binding NetworkOffset}" />
+                    </Grid>
+                </StackPanel>
             </Grid>
+        </Grid>
 
             <!--
                 The input language indicator — the NOB or ENG the Windows taskbar shows. Not a
@@ -725,8 +770,6 @@
               Width="{Binding ShowDesktopHitWidth}"
               Height="{Binding ShowDesktopHitHeight}">
 
-            <Border Style="{StaticResource TrailingHoverChip}" Margin="2,6" />
-
             <Grid RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform>
                     <ScaleTransform x:Name="ShowDesktopScale" />
@@ -743,6 +786,31 @@
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding ShowsShowDesktopLine}" Value="True">
                                 <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+
+                            <!--
+                                The line itself is the feedback here, rather than the wash the
+                                other trailing controls use. A chip the size of this hit area is a
+                                slab against a 1 px line, and the control is a hairline by design:
+                                it should brighten, not acquire a body.
+                            -->
+                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Panel}}" Value="True">
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1.0"
+                                                             Duration="0:0:0.12" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.EnterActions>
+                                <DataTrigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.55"
+                                                             Duration="0:0:0.20" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.ExitActions>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>

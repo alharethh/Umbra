@@ -49,41 +49,45 @@ public class TrayGlyphSizeTests
         Assert.Equal(Spec().Gutter, Drawn().Gutter, 6);
 
     /// <summary>
-    /// The mistake this exists to catch: applying the spec's drift ratio to a glyph that is not
-    /// the spec's size.
+    /// Why the drift ratio may not be taken from the spec: a worked counter-example.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Containment on its own cannot catch it.</b> §6.2 derives amplitude from the gutter, so a
-    /// cramped slot politely asks for less travel and still fits — the first version of this test
-    /// asserted that and passed against the broken arrangement. What actually breaks P5 is taking
-    /// the amplitude from a slot we are not drawing.
+    /// <b>Containment on its own cannot catch this.</b> §6.2 derives amplitude from the gutter, so
+    /// a cramped slot politely asks for less travel and still fits — the first version of this
+    /// test asserted exactly that and passed against the broken arrangement. What breaks P5 is
+    /// taking the amplitude from a slot we are not drawing.
     /// </para>
     /// <para>
-    /// <c>BarMetrics.TrayDriftRatio</c> is computed from §7.1's 16-in-24. Applied to a 20 px glyph
-    /// left in a 24 px pitch it puts more travel into the slot than the gutter has — silently, only
-    /// at the turnarounds of a cycle minutes long, and only for the icons at the ends of the group.
+    /// The size here is 20 px in §7.1's 24 px pitch, which is deliberately <b>not</b> what the bar
+    /// currently draws: it is the case that demonstrates the rule. At the shipped 18 px the spec's
+    /// ratio happens to still fit, which is luck rather than design and is no reason to rely on
+    /// it — the guard is the test below.
     /// </para>
     /// </remarks>
     [Fact]
-    public void The_Specs_Drift_Ratio_Would_Overrun_An_Enlarged_Glyph()
+    public void The_Specs_Drift_Ratio_Overruns_A_Glyph_Grown_Inside_The_Specs_Pitch()
     {
+        const double grown = 20.0;
+
         BarMetrics metrics = new(BarEdge.Bottom, Alignment.Start, scale: 1.0);
 
         // What the bar would apply if it kept reading the spec's ratio.
         double travel = metrics.Slot.PeakOffset * metrics.TrayDriftRatio;
 
-        SlotMetrics cramped = new(BarMetrics.BaseTrayPitch, BarWindow.TrayGlyphExtent);
+        SlotMetrics cramped = new(BarMetrics.BaseTrayPitch, grown);
 
         Assert.True(
             travel > cramped.Gutter,
             $"the premise no longer holds: {travel:F2} px of travel fits the {cramped.Gutter:F2} px " +
-            "gutter an enlarged glyph leaves in the spec's pitch");
+            $"gutter a {grown} px glyph leaves in the spec's pitch");
 
-        // With the pitch moved to match, the same travel is comfortably inside.
+        // Widened to match, the same travel is comfortably inside.
+        SlotMetrics widened = new(BarMetrics.BaseTrayPitch + (grown - BarMetrics.BaseTrayIconExtent), grown);
+
         Assert.True(
-            travel < Drawn().Gutter,
-            $"{travel:F2} px of travel does not fit the {Drawn().Gutter:F2} px gutter we actually draw");
+            travel < widened.Gutter,
+            $"{travel:F2} px of travel does not fit the {widened.Gutter:F2} px gutter of a widened pitch");
     }
 
     /// <summary>

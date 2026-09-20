@@ -743,9 +743,10 @@ internal partial class BarWindow : AppBarWindow
     /// <remarks>
     /// <b>A deliberate deviation from §7.1's 16 px</b>, in the same spirit as the icon row's
     /// dormant size: 16 px was measured against Windows 10's notification area and reads as small
-    /// beside a 24 px task icon on this panel. The project owner asked for larger, so 20 px.
+    /// beside a 24 px task icon on this panel. Tried at 20 px on hardware and judged too large by
+    /// the project owner; 18 is where it settled.
     /// </remarks>
-    internal const double TrayGlyphExtent = 20.0;
+    internal const double TrayGlyphExtent = 18.0;
 
     /// <summary>
     /// Pitch of a tray slot, enlarged with the glyph so the gutter is unchanged.
@@ -982,19 +983,30 @@ internal partial class BarWindow : AppBarWindow
     public string NetworkDescription => _network.Description;
 
     /// <summary>
-    /// Opens Quick Settings, which is where Windows 11 puts the network controls.
+    /// Opens Quick Settings — the system cluster's only action.
     /// </summary>
     /// <remarks>
-    /// Clicking Windows' own network icon opens the whole Quick Settings panel rather than
-    /// anything network-specific, so this matches it. Our panels close first; Windows' own are
-    /// left alone, because <c>ShowActionCenter</c> is a toggle and dismissing an open Quick
-    /// Settings here would fight the very call that follows.
+    /// <para>
+    /// <b>Sound and network are one control, as they are on Windows 11.</b> The real taskbar has a
+    /// single button covering volume, network and battery that opens Quick Settings; treating them
+    /// as separate targets meant two hover chips side by side and a hairline between them where
+    /// neither lit. The pinned strip is exactly the right membership for it — it holds the four
+    /// system GUIDs and nothing else, because everything without one goes to the overflow.
+    /// </para>
+    /// <para>
+    /// Left click only. A right click still reaches the icon underneath, so Windows' own volume
+    /// menu is unaffected; the cluster never sees it.
+    /// </para>
+    /// <para>
+    /// Our panels close first and Windows' are left alone, because <c>ShowActionCenter</c> is a
+    /// toggle and dismissing an open Quick Settings here would fight the call that follows.
+    /// </para>
     /// </remarks>
-    private void OnNetworkClick(object sender, MouseButtonEventArgs e)
+    private void OnSystemClusterClick(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
 
-        PlayPress(NetworkScale);
+        PlayPress(SystemClusterScale);
         ClearPanelsFor(BarPanel.None);
         ManagedShell.Common.Helpers.ShellHelper.ShowActionCenter();
     }
