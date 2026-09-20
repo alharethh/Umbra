@@ -55,13 +55,19 @@ own, and this is aimed squarely at it.
   ![Live thumbnails as the pointer moves along the row](docs/media/preview.gif)
 - **Real jump lists.** Right-click an icon for the application's own published tasks — "New private
   window", "New Code Session" — read from the same files Explorer reads.
-- **Notification area** with an overflow flyout, volume and network as one cluster, and an input
-  language indicator. Volume and network open Quick Settings together, as they do on the real
-  taskbar; the clock opens the calendar and notifications.
+- **Notification area** with an overflow flyout, and volume and network as one cluster that opens
+  Quick Settings together, as they do on the real taskbar. The clock opens the calendar and
+  notifications.
 
   ![The overflow flyout, then Quick Settings](docs/media/panels.gif)
 
   ![The clock opening notifications and the calendar](docs/media/clock.gif)
+- **An input language indicator**, naming what the focused window will type in. Click it to cycle.
+  It is not a notification icon — Explorer draws its own through the Text Services Framework — so
+  this one is drawn from scratch.
+
+  ![Clicking the indicator cycles the input language](docs/media/language.gif)
+
 - **Show desktop** in the trailing corner, where it has always been. Click once to clear the
   screen, again to put everything back.
 - **A wear heatmap.** Umbra records how much light every pixel of its own rectangle has emitted,
@@ -70,6 +76,8 @@ own, and this is aimed squarely at it.
 - **Hover feedback you can colour**, on a holographic pane or a plain chip, your choice — capped so
   the colour is a choice about hue and never about how much light the panel emits. Start takes the
   same treatment: a band of light crosses the button and paints the logo blue behind it.
+
+  ![The sweep crossing each control as the pointer passes](docs/media/hover.gif)
 
   ![The Start logo lighting under the pointer](docs/media/start.gif)
 
