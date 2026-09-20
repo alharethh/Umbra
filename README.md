@@ -11,6 +11,7 @@
 ![WPF](https://img.shields.io/badge/WPF-C%23-239120)
 ![tests](https://img.shields.io/badge/tests-355%20passing-2ea44f)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
+![licence](https://img.shields.io/badge/licence-MIT-blue)
 
 </div>
 
@@ -96,7 +97,12 @@ And the rest of what a taskbar owes you:
 
 ## Install
 
-Windows 11 and the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+**Download the [latest release](https://github.com/alharethh/Umbra/releases/latest)**, unzip it
+anywhere, and run `Umbra.exe`. You will need the
+[.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if Umbra does not
+start, that is what is missing.
+
+Or build it, which needs the [.NET 10 SDK](https://dotnet.microsoft.com/download):
 
 ```bash
 git clone https://github.com/alharethh/Umbra.git
@@ -112,7 +118,8 @@ heatmap, and **Exit**. Configuration lives in the settings window and in
 
 ## Status
 
-Runs daily on Windows 11 25H2. No binary release yet — build it yourself for now.
+Runs daily on Windows 11 25H2. First release is `0.1.0`, built and used on one machine — treat it
+as early.
 
 **Works:** every edge on one monitor · space-reserving AppBar · Explorer suppressed and restored ·
 pinning, launching and free drag-reorder · window previews · jump lists · notification area with
@@ -125,8 +132,12 @@ the full tier and motion system · live settings.
   not mechanical — a non-OLED second screen may not want any of this treatment.
 - **No keyboard navigation and no screen-reader support.** A custom bar is invisible to a screen
   reader without explicit automation peers, and none are written yet.
-- **The notification area costs a permanent 100 ms timer.** Whether that stops the display idling —
-  and so whether it costs more panel life than it saves — is not yet answered.
+- **The notification area keeps a timer running ten times a second.** That is how it holds its own
+  window in front of Explorer's, and it never stops while Umbra is running. A screen that is being
+  poked constantly may never be left alone long enough to idle — and an OLED panel does some of its
+  own upkeep while idle. So it is possible that hosting the tray costs more panel life than the
+  rest of Umbra saves. **Nobody has measured it yet.** If you would rather not find out, turn the
+  notification area off in Settings; everything else keeps working.
 
 ## How it is built
 
@@ -150,8 +161,8 @@ as a regression baseline.
 
 ## Licence
 
-Not chosen yet. ManagedShell is Apache 2.0, which is compatible with anything you are likely to
-pick; a licence belongs here before anyone else builds on this.
+[MIT](LICENSE). [ManagedShell](https://github.com/cairoshell/ManagedShell) is Apache 2.0 and is
+redistributed unmodified in the release — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ---
 
