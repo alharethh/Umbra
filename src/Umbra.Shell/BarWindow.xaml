@@ -13,6 +13,7 @@
         Background="#FF000000"
 
         ToolTipService.InitialShowDelay="2400"
+        ToolTipService.BetweenShowDelay="0"
 
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Grayscale"
@@ -383,32 +384,61 @@
                 <Canvas x:Name="StartBlue" Width="24" Height="24"
                         Canvas.Left="0" Canvas.Top="0"
                         IsHitTestVisible="False">
+                    <!--
+                        <b>The blue arrives with the sweep, not with the pointer.</b> It used to
+                        fade in over 130 ms the instant the button was hovered, which put it well
+                        ahead of the band of light crossing the pane behind it — the logo was
+                        already blue by the time the thing supposedly colouring it arrived.
+
+                        So the layer is drawn at full opacity and revealed through a mask instead:
+                        a gradient running corner to corner, white before the front and clear after
+                        it, with both stops walked from off one corner to off the other. What the
+                        eye sees is the blue being laid down by the light as it passes.
+
+                        The mask's axis is the pane's: StartPoint 0,0 to EndPoint 1,1 is top-left
+                        to bottom-right, which is the direction the sweep travels, and the duration
+                        is the sweep's 0.65 s so the two stay together.
+
+                        <b>Masking rather than a second fade is also what keeps it clean.</b> A
+                        blue copy faded in over the grey one draws both at once, and two
+                        anti-aliased edges on the same sub-pixel position composite into something
+                        heavier and fringed — that is what killed the accent tint on the trailing
+                        glyphs. Here the mask hides the blue everywhere the grey is doing the work,
+                        so the two are never both solid in the same place.
+                    -->
+                    <Canvas.OpacityMask>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#FFFFFFFF" Offset="-0.35" />
+                            <GradientStop Color="#00FFFFFF" Offset="-0.12" />
+                        </LinearGradientBrush>
+                    </Canvas.OpacityMask>
+
                     <Canvas.Style>
                         <Style TargetType="Canvas">
-                            <Setter Property="Opacity" Value="0" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding StartHighlighted, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
                                     <DataTrigger.EnterActions>
                                         <BeginStoryboard>
                                             <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                 To="1" Duration="0:0:0.13">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <QuadraticEase EasingMode="EaseOut" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
+                                                <!--
+                                                    Reached by property path, not by name: a Style
+                                                    trigger has no name scope to resolve a
+                                                    TargetName against, and the compiler says so.
+                                                -->
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.OpacityMask).(GradientBrush.GradientStops)[0].(GradientStop.Offset)"
+                                                                 To="1.12" Duration="0:0:0.65" />
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.OpacityMask).(GradientBrush.GradientStops)[1].(GradientStop.Offset)"
+                                                                 To="1.35" Duration="0:0:0.65" />
                                             </Storyboard>
                                         </BeginStoryboard>
                                     </DataTrigger.EnterActions>
                                     <DataTrigger.ExitActions>
                                         <BeginStoryboard>
                                             <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                 To="0" Duration="0:0:0.22">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <QuadraticEase EasingMode="EaseIn" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.OpacityMask).(GradientBrush.GradientStops)[0].(GradientStop.Offset)"
+                                                                 To="-0.35" Duration="0:0:0.28" />
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.OpacityMask).(GradientBrush.GradientStops)[1].(GradientStop.Offset)"
+                                                                 To="-0.12" Duration="0:0:0.28" />
                                             </Storyboard>
                                         </BeginStoryboard>
                                     </DataTrigger.ExitActions>
@@ -962,6 +992,7 @@
 
             <Border Background="#F21C1C18"
                     ToolTipService.InitialShowDelay="2400"
+                    ToolTipService.BetweenShowDelay="0"
                     BorderBrush="#FF3A3A33"
                     BorderThickness="1"
                     CornerRadius="8"
