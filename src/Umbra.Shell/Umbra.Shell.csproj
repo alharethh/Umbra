@@ -4,6 +4,27 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <!--
+    ManagedShell's tasks service uses Windows Forms, and until this was here we were getting
+    away with it: a framework-dependent build runs on a shared framework that carries WPF and
+    Windows Forms together, so the assembly resolved at runtime without anyone asking for it.
+    A self-contained build publishes only what is referenced, so it shipped without
+    System.Windows.Forms and died on the first ShellManager with a FileNotFoundException
+    naming it.
+
+    The reference rather than <UseWindowsForms>, which turns on the whole SDK feature: its
+    implicit usings collide with WPF on Application, ContextMenu, Brush and Color across this
+    project, and its analysers reject the DPI awareness in app.manifest — which is
+    load-bearing here, because every coordinate in this codebase is either physical or DIP on
+    purpose. What is wanted is the assembly, not the programming model.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+  </ItemGroup>
+
+  <PropertyGroup>
     <AssemblyName>Umbra</AssemblyName>
     <RootNamespace>Umbra.Shell</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
