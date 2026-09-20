@@ -398,6 +398,60 @@ so a counter and a window-handle lookup both returned stale values, and a window
 another cannot be screenshotted with `CopyFromScreen` — `PrintWindow` with `PW_RENDERFULLCONTENT`
 captures it regardless of Z-order. Verify the instrument before believing the result.
 
+## Step 10 — what the notification area is actually carrying, and what language it is in
+
+Reference machine as above. The bar was run on the secondary monitor for this step
+(`\\.\DISPLAY2`, 1920 x 1080 at 100%), which is also the first time the reserved rectangle has been
+measured there: `x=2560 y=1223 w=1920 h=48`.
+
+### Every notification icon, by GUID
+
+The question was the missing network indicator, and the honest way to ask it is to name every icon
+that arrives rather than to look for the one that does not. Eight icons, unchanged across three
+runs:
+
+| Title | GUID | Pinned |
+| :---- | :---- | :---- |
+| `Speakers (USB): 38%` | `7820ae73-23e3-4229-82c1-e41cb67d5b9c` (**volume**) | yes |
+| Safely Remove Hardware and Eject Media | `7820ae78-23e3-4229-82c1-e41cb67d5b9c` | no |
+| `3 apps are using your microphone` | `7820ae82-23e3-4229-82c1-e41cb67d5b9c` | no |
+| Discord | `699e423d-73da-42ba-b94e-881ff8672467` | no |
+| Ascent | all zeroes | no |
+| OBS Studio | all zeroes | no |
+| NVIDIA Broadcast | all zeroes | no |
+| Packaged app | all zeroes | no |
+
+**No network icon, and `NETWORK_GUID` is already in the pinned list** — so one would land in the
+right place if it arrived. Volume does arrive, carrying `VOLUME_GUID`, which rules out "Windows 11
+no longer sends system indicators" as an explanation. The machine is on Ethernet; whether that is
+the reason is still open, and the instrument that would answer it now runs all session rather than
+for the first six collection changes. Three of the eight carry all zeroes, which is why icons are
+keyed for logging by GUID **and** path — keyed by GUID alone they collapse into one entry and only
+the first arrival is ever reported.
+
+### The input language, and a list that was the wrong list
+
+`NOB`, read from the foreground window's layout — the same string the Windows taskbar shows. It is
+not a notification icon and never will be: it is the Text Services Framework input indicator, which
+Explorer draws itself.
+
+**The layout list has two plausible sources and they disagree.** Measured here:
+
+| Source | Count | Contents |
+| :---- | :---- | :---- |
+| `GetKeyboardLayoutList` | 4 | `04140414` nb-NO, `08090809` en-GB, `04090409` en-US, `04140409` en-US on the Norwegian device |
+| `HKCU\Keyboard Layout\Preload` | 2 | `00000414`, `00000809` |
+
+The first reports every layout *loaded in the session*, including ones some other process asked
+for. Cycling through it shows `ENG` three times in a row, which reads as a control that has stopped
+working — and two of those three would put the user on a US key mapping they never chose, with the
+indicator still reading `ENG`. `Preload` is the user's own list, in the user's own order, and is
+what Windows' indicator walks. That is now the source, with the enumeration kept as a fallback.
+
+The three-letter name is the **ISO** one, not .NET's `ThreeLetterWindowsLanguageName`: they
+disagree on exactly this machine's languages, `NOB` against `NOR`. English agrees under both, so a
+check written against English alone would have passed either way.
+
 ## Still open
 
 - **§11.2 Q2 — do ManagedShell's 100 ms timers defeat display idle?** Not yet measured. Only the

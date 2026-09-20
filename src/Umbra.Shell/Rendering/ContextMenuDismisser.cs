@@ -61,6 +61,22 @@ internal sealed class ContextMenuDismisser
         _menu = null;
     }
 
+    /// <summary>
+    /// Closes the menu being watched, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// For the case the pointer rules cannot see: another panel of the bar's opening over the
+    /// menu. No click landed outside it — the click landed on Umbra — so nothing here would have
+    /// fired. Closing raises <c>Closed</c>, which releases the watch through the class handler;
+    /// releasing again costs nothing and keeps this correct if that handler ever goes away.
+    /// </remarks>
+    public void Close()
+    {
+        if (_menu is { IsOpen: true } menu) menu.IsOpen = false;
+
+        Release();
+    }
+
     private void OnTick(object? sender, EventArgs e)
     {
         if (_menu is null || !_menu.IsOpen)

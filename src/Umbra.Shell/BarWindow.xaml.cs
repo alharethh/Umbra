@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -92,10 +93,15 @@ internal partial class BarWindow : AppBarWindow
         OverflowTrayIcons = _notificationArea?.UnpinnedIcons;
 
         if (_notificationArea is not null)
-            _notificationArea.TrayIcons.CollectionChanged += (_, _) => OnPropertyChanged(nameof(TrayOverflowVisibility));
+            _notificationArea.TrayIcons.CollectionChanged += (_, _) => OnTrayIconsChanged();
 
         DataContext = this;
         InitializeComponent();
+
+        // Placed by callback rather than by a PlacementMode, because none of them centres. See
+        // FlyoutPlacement: Top hangs the panel off the chevron's left edge, which runs it off the
+        // end of the screen from a chevron that sits near the trailing end of the bar.
+        TrayOverflowPopup.CustomPopupPlacementCallback = PlaceTrayOverflow;
 
         // Zero, not §3's 40 px: the bar engages when the pointer is on it, not when the pointer is
         // near it. A 40 px band lights the bar up on the way past, which reads as the taskbar
@@ -124,8 +130,16 @@ internal partial class BarWindow : AppBarWindow
             StartActive = _startMenu.IsOpen || justPressed;
             StartHighlighted = StartActive || StartButton.IsMouseOver;
 
-            // Which slot owns the foreground window, for the running indicator.
-            _tasks.UpdateForeground(GetForegroundWindow());
+            // Which slot owns the foreground window, for the running indicator — and, from the
+            // same handle, which input language the next keystroke will be typed in.
+            IntPtr foreground = GetForegroundWindow();
+            _tasks.UpdateForeground(foreground);
+
+            if (_language.Poll(foreground))
+            {
+                OnPropertyChanged(nameof(LanguageName));
+                OnPropertyChanged(nameof(LanguageVisibility));
+            }
 
             // Keep polling at the fast interval while the menu is up, even if the pointer has
             // wandered off the bar. Otherwise the tick drops to 100 ms and the colour outlives the
@@ -142,7 +156,11 @@ internal partial class BarWindow : AppBarWindow
         // because the slot handler runs first and this must not depend on what it does.
         AddHandler(
             ContextMenuOpeningEvent,
-            new ContextMenuEventHandler((_, _) => DismissStartMenu()),
+            new ContextMenuEventHandler((_, _) =>
+            {
+                ClearPanelsFor(BarPanel.ContextMenu);
+                DismissWindowsSurfaces();
+            }),
             handledEventsToo: true);
 
         // A class handler rather than per-menu wiring: the slot menus are created by a
@@ -186,6 +204,7 @@ internal partial class BarWindow : AppBarWindow
     private readonly NotificationArea? _notificationArea;
     private readonly DispatcherTimer _clock;
     private readonly StartMenuWatcher _startMenu = new();
+    private readonly KeyboardLayoutWatcher _language = new();
     private readonly TaskbarModel _tasks;
 
     /// <summary>
@@ -342,6 +361,12 @@ internal partial class BarWindow : AppBarWindow
             {
                 ClockOffset.X = dx;
                 ClockOffset.Y = dy;
+
+                // The same numbers into a second transform, because the language indicator is text
+                // beside the clock and wants the clock's treatment — but never the clock's
+                // transform object. See LanguageOffset.
+                LanguageOffset.X = dx;
+                LanguageOffset.Y = dy;
             };
             _motion.Start();
         }
@@ -743,6 +768,40 @@ internal partial class BarWindow : AppBarWindow
 
     /// <summary>The date line appears from Tier 1 upward (§7.1, §7.3).</summary>
     public bool ShowsDate => TierLevel >= 1.0;
+
+    /// <summary>
+    /// The input language indicator's own drift offset.
+    /// </summary>
+    /// <remarks>
+    /// Its own <see cref="TranslateTransform"/>, carrying the clock's numbers. Sharing the clock's
+    /// instance across two elements is the failure that stopped the running indicator rendering
+    /// at all: a <c>Transform</c> assigned to several elements is not a shared value, it is one
+    /// object with one parent, and WPF drops the rest.
+    /// </remarks>
+    public TranslateTransform LanguageOffset { get; } = new();
+
+    /// <summary>The three-letter input language name, as the Windows taskbar shows it.</summary>
+    public string LanguageName => _language.Name;
+
+    /// <summary>
+    /// Whether to draw it at all.
+    /// </summary>
+    /// <remarks>
+    /// Hidden with one installed language, as Windows hides its own: the indicator would be a
+    /// permanently lit patch of text that cannot ever change, which is the worst shape a pixel can
+    /// have on this panel and conveys nothing in exchange.
+    /// </remarks>
+    public Visibility LanguageVisibility =>
+        _language.HasChoice && _language.Name.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>Cycles the foreground window's input language, as clicking Windows' own does.</summary>
+    private void OnLanguageClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+
+        ClearPanelsFor(BarPanel.None);
+        _language.CycleForeground(GetForegroundWindow());
+    }
 
     /// <summary>The Start button sits at the aligned end, ahead of the icon row.</summary>
     public HorizontalAlignment StartHorizontalAlignment =>
@@ -1153,12 +1212,16 @@ internal partial class BarWindow : AppBarWindow
     }
 
     private int _loggedTrayChanges;
+    private readonly HashSet<string> _loggedTrayIdentities = [];
 
     private void LogTrayContents(string reason)
     {
         if (_notificationArea is null) return;
 
-        // Only the first few, or a chatty tray writes to disk forever.
+        LogNewTrayIdentities();
+
+        // Only the first few of the running totals, or a chatty tray writes to disk forever. The
+        // identity lines above are deduplicated instead, so they can keep running all session.
         if (_loggedTrayChanges++ > 6) return;
 
         int all = _notificationArea.TrayIcons.Count;
@@ -1170,6 +1233,60 @@ internal partial class BarWindow : AppBarWindow
         foreach (NotifyIcon icon in _notificationArea.TrayIcons.Take(12))
             BringUpLog.Write($"  tray icon | pinned={icon.IsPinned} hidden={icon.IsHidden} " +
                              $"| {icon.Title} | {icon.Path}");
+    }
+
+    /// <summary>
+    /// Writes one line per notification icon the session has never seen, naming its GUID.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is the instrument for the missing network indicator.</b> <c>NETWORK_GUID</c> is
+    /// already in the pinned list, so an Ethernet or Wi-Fi icon that arrived would land in the
+    /// right place by itself — the question is only whether one ever arrives, and on this machine
+    /// none has. That is not the same as Windows 11 not sending system indicators, because the
+    /// volume icon does arrive carrying <c>VOLUME_GUID</c>. Before concluding the network icon is
+    /// part of the XAML Quick Settings cluster rather than a notify icon, the honest test is to
+    /// watch every GUID for a while across a Wi-Fi/Ethernet change.
+    /// </para>
+    /// <para>
+    /// Deduplicated by identity rather than capped by count, because the interesting event is
+    /// rare and arrives long after the first few collection changes — a cap would switch the
+    /// instrument off before the thing it exists to catch could happen.
+    /// </para>
+    /// <para>
+    /// Icons are keyed by GUID where they have one and by path otherwise: a third of the icons
+    /// measured on this machine carry all zeroes, so the GUID alone would collapse them into one
+    /// entry and report the first arrival only.
+    /// </para>
+    /// </remarks>
+    private void LogNewTrayIdentities()
+    {
+        if (_notificationArea is null) return;
+
+        foreach (NotifyIcon icon in _notificationArea.TrayIcons)
+        {
+            string guid = icon.GUID.ToString();
+            if (!_loggedTrayIdentities.Add($"{guid}|{icon.Path}|{icon.Title}")) continue;
+
+            string known = SystemIndicatorName(guid);
+
+            BringUpLog.Write(
+                $"tray icon seen | guid={guid}{known} | pinned={icon.IsPinned} " +
+                $"| {icon.Title} | {icon.Path}");
+        }
+    }
+
+    /// <summary>Names the GUID when it is one of Windows' own indicators.</summary>
+    private static string SystemIndicatorName(string guid)
+    {
+        if (Matches(NotificationArea.VOLUME_GUID)) return " (volume)";
+        if (Matches(NotificationArea.NETWORK_GUID)) return " (network)";
+        if (Matches(NotificationArea.POWER_GUID)) return " (power)";
+        if (Matches(NotificationArea.HEALTH_GUID)) return " (health)";
+
+        return string.Empty;
+
+        bool Matches(string known) => string.Equals(guid, known, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -1365,12 +1482,171 @@ internal partial class BarWindow : AppBarWindow
 
     private readonly HashSet<string> _missingMenuStyles = [];
 
+    /// <summary>A panel Umbra can put on screen. One at a time, as on the Windows taskbar.</summary>
+    private enum BarPanel
+    {
+        /// <summary>None of ours: the click belongs to another process.</summary>
+        None,
+
+        /// <summary>The notification-area overflow flyout.</summary>
+        TrayOverflow,
+
+        /// <summary>The window picker, whether raised by hovering an icon or by clicking one.</summary>
+        Picker,
+
+        /// <summary>Any of the bar's context menus.</summary>
+        ContextMenu,
+    }
+
+    /// <summary>
+    /// Closes every panel of ours except the one that is about to open.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Without this they stack: the overflow flyout over an open jump list, a window preview over
+    /// the flyout. Each has its own dismissal rule — the flyout and the picker watch the pointer,
+    /// a menu watches for a click elsewhere — and none of those rules fires when the thing that
+    /// covered it is another panel of ours, because the pointer never left the bar and the click
+    /// landed inside Umbra.
+    /// </para>
+    /// <para>
+    /// Windows' own surfaces are <b>not</b> closed here. That is
+    /// <see cref="DismissWindowsSurfaces"/>, because it is only right for a panel the user
+    /// deliberately opened — see the note there about hovering.
+    /// </para>
+    /// </remarks>
+    private void ClearPanelsFor(BarPanel opening)
+    {
+        if (opening != BarPanel.TrayOverflow && TrayOverflowPopup.IsOpen)
+            SetTrayOverflowOpen(false);
+
+        if (opening != BarPanel.Picker)
+        {
+            _picker?.Dismiss();
+            _picker = null;
+        }
+
+        if (opening != BarPanel.ContextMenu) _menuDismisser.Close();
+    }
+
+    /// <summary>
+    /// Closes the Start menu and whichever of Windows' own flyouts is open, before one of ours
+    /// opens over it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both are things the click should have done by itself and did not: the bar carries
+    /// <c>WS_EX_NOACTIVATE</c>, so clicking it never moves the foreground and neither surface is
+    /// ever told it lost anything. See <see cref="StartMenuWatcher.Dismiss"/> and
+    /// <see cref="ShellSurfaceWatcher"/>.
+    /// </para>
+    /// <para>
+    /// <b>Called for a click and never for a hover.</b> Closing the Start menu because the pointer
+    /// crossed the bar on its way somewhere else would be the bar reacting to traffic rather than
+    /// to the user — the same reasoning that sets the engaged band to zero rather than §3's 40 px.
+    /// So the hover preview clears our own panels and leaves Windows' alone, even though it means
+    /// that one preview can be drawn underneath an open Start menu.
+    /// </para>
+    /// </remarks>
+    private void DismissWindowsSurfaces()
+    {
+        DismissStartMenu();
+        _shellSurfaces.Dismiss();
+    }
+
+    private readonly ShellSurfaceWatcher _shellSurfaces = new();
+
+    /// <summary>
+    /// Keeps the chevron and an open flyout honest when icons arrive or leave.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An application can register or drop a notification icon at any moment, including while its
+    /// panel is on screen — a download finishing, an update agent exiting. Two things go wrong if
+    /// nothing is done about it.
+    /// </para>
+    /// <para>
+    /// <b>The panel grows from its top-left corner.</b> A popup keeps the placement it was given,
+    /// so a row appearing makes it taller and it extends <i>downward</i>, through the bar, rather
+    /// than staying centred above the chevron. <c>Reposition</c> runs the placement callback
+    /// again against the new size; at <c>Loaded</c> priority, because the size is not final until
+    /// the new item has been measured.
+    /// </para>
+    /// <para>
+    /// <b>The last icon leaving takes the chevron with it</b>, since the chevron is collapsed when
+    /// there is nothing behind it. That would leave the flyout floating above a gap, anchored to
+    /// an element with no position, until the pointer wandered off and the grace period ran out.
+    /// </para>
+    /// </remarks>
+    private void OnTrayIconsChanged()
+    {
+        OnPropertyChanged(nameof(TrayOverflowVisibility));
+
+        if (!TrayOverflowPopup.IsOpen) return;
+
+        if (TrayOverflowVisibility != Visibility.Visible)
+        {
+            SetTrayOverflowOpen(false);
+            return;
+        }
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            if (TrayOverflowPopup.IsOpen) Reposition(TrayOverflowPopup);
+        });
+    }
+
+    /// <summary>
+    /// Makes a popup run its placement again.
+    /// </summary>
+    /// <remarks>
+    /// <c>Popup.Reposition</c> is exactly this method and is internal to WPF, so the way in is to
+    /// change a property that placement depends on and change it straight back. The value itself
+    /// does not matter here: <see cref="PlaceTrayOverflow"/> is handed the offset and ignores it,
+    /// deriving everything from the two sizes.
+    /// </remarks>
+    private static void Reposition(System.Windows.Controls.Primitives.Popup popup)
+    {
+        double offset = popup.HorizontalOffset;
+
+        popup.HorizontalOffset = offset + 1;
+        popup.HorizontalOffset = offset;
+    }
+
     /// <summary>Opens or closes the overflow flyout.</summary>
     private void OnTrayChevronClick(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
-        SetTrayOverflowOpen(!TrayOverflowPopup.IsOpen);
+
+        bool opening = !TrayOverflowPopup.IsOpen;
+
+        if (opening)
+        {
+            ClearPanelsFor(BarPanel.TrayOverflow);
+
+            // Before the popup is placed, not after. Dismissing a surface once ours is already up
+            // shows it clipped for as long as the other one takes to animate away — the same
+            // ordering the context menus need against the Start menu.
+            DismissWindowsSurfaces();
+        }
+
+        SetTrayOverflowOpen(opening);
     }
+
+    /// <summary>
+    /// Centres the flyout on the chevron, on the inboard side of whichever edge the bar is on.
+    /// </summary>
+    /// <remarks>
+    /// Evaluated every time the popup opens, so it follows the bar when the user moves it between
+    /// edges without a restart. The geometry itself is in <see cref="FlyoutPlacement"/>, which has
+    /// no WPF state to set up and so can be tested without a window.
+    /// </remarks>
+    private CustomPopupPlacement[] PlaceTrayOverflow(Size popupSize, Size targetSize, Point offset) =>
+    [
+        new CustomPopupPlacement(
+            FlyoutPlacement.Centred(Metrics.Edge, popupSize, targetSize),
+            FlyoutPlacement.SlideAxis(Metrics.Edge)),
+    ];
 
     /// <summary>
     /// Shows or hides the flyout, and runs the pointer watcher only while it is up.
@@ -1394,7 +1670,60 @@ internal partial class BarWindow : AppBarWindow
         _trayOverflowWatch ??= CreateTrayOverflowWatch();
         _trayOverflowAwaySince = null;
         _trayOverflowWatch.Start();
+
+        LogTrayOverflowPlacement();
     }
+
+    /// <summary>
+    /// Records where the flyout actually landed, against the chevron it belongs to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The placement arithmetic is asserted in <c>FlyoutPlacementTests</c>; what a test cannot
+    /// reach is whether WPF handed the callback the sizes it claims to, and whether Windows then
+    /// pushed the result somewhere else to keep it on screen. Both show up here as a centre error
+    /// in pixels.
+    /// </para>
+    /// <para>
+    /// It also means the other three edges can be checked from the log rather than from a
+    /// screenshot taken at exactly the right moment — the flyout closes 600 ms after the pointer
+    /// leaves it, and a synthetic pointer is not reliable enough to hold it open (see the
+    /// methodological note in docs/measurements.md).
+    /// </para>
+    /// <para>
+    /// At <c>Loaded</c> priority: the popup has no window rectangle until it has been placed, and
+    /// reading one before that reports the origin.
+    /// </para>
+    /// </remarks>
+    private void LogTrayOverflowPlacement() => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+    {
+        if (!TrayOverflowPopup.IsOpen) return;
+
+        if (TrayOverflowPopup.Child is not FrameworkElement child
+            || PresentationSource.FromVisual(child) is not HwndSource source
+            || !TrayNative.GetWindowRect(source.Handle, out TrayNative.RECT popup))
+        {
+            BringUpLog.Write("tray overflow open: no window rectangle to measure");
+            return;
+        }
+
+        // Both in physical pixels: the popup's from Win32, the chevron's through PointToScreen,
+        // which returns physical. Nothing here is in DIP, so nothing needs converting.
+        Point origin = TrayChevron.PointToScreen(new Point(0, 0));
+        Point far = TrayChevron.PointToScreen(
+            new Point(TrayChevron.ActualWidth, TrayChevron.ActualHeight));
+
+        double chevronCentreX = (origin.X + far.X) / 2;
+        double chevronCentreY = (origin.Y + far.Y) / 2;
+        double popupCentreX = (popup.Left + popup.Right) / 2.0;
+        double popupCentreY = (popup.Top + popup.Bottom) / 2.0;
+
+        BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
+            $"tray overflow open on {Metrics.Edge}: popup {popup.Left},{popup.Top} " +
+            $"{popup.Right - popup.Left}x{popup.Bottom - popup.Top} | " +
+            $"chevron centre {chevronCentreX:F0},{chevronCentreY:F0} | " +
+            $"offset along bar {(IsVertical ? popupCentreY - chevronCentreY : popupCentreX - chevronCentreX):F1} px"));
+    });
 
     private DispatcherTimer CreateTrayOverflowWatch()
     {
@@ -1772,6 +2101,11 @@ internal partial class BarWindow : AppBarWindow
             if (sameSlot) return;
         }
 
+        // A click, unlike a hover, is the user choosing this panel over whatever Windows has open.
+        // The activate-and-minimise path needs no equivalent: it moves the foreground, which is
+        // what closes those surfaces by itself.
+        DismissWindowsSurfaces();
+
         ShowPreview(slot, element);
     }
 
@@ -1794,6 +2128,11 @@ internal partial class BarWindow : AppBarWindow
             _picker.Dismiss();
             _picker = null;
         }
+
+        // The overflow flyout and any open menu belong to the panel the user has finished with.
+        // Windows' own surfaces are left alone: this runs on hover too, and closing the Start menu
+        // because the pointer crossed the bar is the bar reacting to traffic.
+        ClearPanelsFor(BarPanel.Picker);
 
         Point inWindow = element.TransformToAncestor(this).Transform(new Point(0, 0));
 
@@ -1980,6 +2319,21 @@ internal partial class BarWindow : AppBarWindow
     private void OnTrayIconMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
+
+        // Ours go now, before the owner is told: whatever it raises belongs in front of them, and
+        // a jump list left open would be over the top of it.
+        //
+        // The flyout is exempt until the button comes up — it is named here as the panel that
+        // stays — because the icon may be <i>inside</i> it. Closing it on the way down detaches
+        // the element the button is on, and the mouse-up that most applications actually open
+        // their menu from would never be delivered. It closes in OnTrayIconMouseUp instead, after
+        // the click has been forwarded.
+        //
+        // Windows' own surfaces are deliberately not touched here, and this is the one place where
+        // that matters: every one of those is a toggle. Closing Quick Settings and then handing
+        // the click to the volume icon — which opens Quick Settings — would leave the panel up
+        // when the user had just asked for it to go away.
+        ClearPanelsFor(BarPanel.TrayOverflow);
 
         UpdateTrayHostSize();
         icon.IconMouseDown(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);

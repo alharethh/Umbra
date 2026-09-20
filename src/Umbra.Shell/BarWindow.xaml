@@ -1,4 +1,4 @@
-<appbar:AppBarWindow x:Class="Umbra.Shell.BarWindow"
+﻿<appbar:AppBarWindow x:Class="Umbra.Shell.BarWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:appbar="clr-namespace:ManagedShell.AppBar;assembly=ManagedShell.AppBar"
@@ -535,6 +535,30 @@
         </ItemsControl>
 
             <!--
+                The input language indicator — the NOB or ENG the Windows taskbar shows. Not a
+                notification icon: it is the Text Services Framework input indicator, which no
+                amount of tray work would ever have produced, so we draw it ourselves.
+
+                Collapsed unless more than one language is installed, exactly as Windows hides
+                its own. Clicking it switches the foreground window to the next one.
+            -->
+            <Grid x:Name="LanguageIndicator"
+                  Background="Transparent"
+                  ToolTip="Switch input language"
+                  Visibility="{Binding LanguageVisibility}"
+                  MouseLeftButtonUp="OnLanguageClick"
+                  VerticalAlignment="Center"
+                  Margin="8,0,0,0">
+
+                <TextBlock Text="{Binding LanguageName}"
+                           FontSize="12"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center"
+                           Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
+                           RenderTransform="{Binding LanguageOffset}" />
+            </Grid>
+
+            <!--
                 The clock. No seconds at any tier (§6.4) — a ticking seconds field is
                 high-frequency change in a tiny fixed area with almost no informational value — and
                 the colon does not blink. The date appears from Tier 1 upward.
@@ -584,8 +608,7 @@
         -->
         <Popup x:Name="TrayOverflowPopup"
                PlacementTarget="{Binding ElementName=TrayChevron}"
-               Placement="Top"
-               VerticalOffset="-6"
+               Placement="Custom"
                AllowsTransparency="True"
                StaysOpen="True"
                PopupAnimation="None">
