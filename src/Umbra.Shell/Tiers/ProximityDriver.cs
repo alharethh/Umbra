@@ -80,6 +80,27 @@ internal sealed class ProximityDriver : IDisposable
     /// </remarks>
     public bool KeepFast { get; set; }
 
+    /// <summary>
+    /// Whether the pointer is on a panel the bar itself opened.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A panel of ours is part of the bar as far as the tier system is concerned.</b> The
+    /// overflow flyout, the window picker and the context menus all open <i>off</i> the bar, so
+    /// reaching for one takes the pointer outside the bar's rectangle — the distance jumps, the
+    /// level ramps down, and the icons grey out underneath the panel the user is trying to use.
+    /// Reported exactly that way: "the mouse moves up which triggers the bar to go idle".
+    /// </para>
+    /// <para>
+    /// Supplied as a predicate rather than as extra rectangles because the owner already knows how
+    /// to test each panel, and each of those tests is written in the units that panel reports —
+    /// physical pixels for a popup's window rectangle, device-independent ones for the picker. A
+    /// rectangle handed over here would have to be converted, and mixing those two is the bug this
+    /// project keeps rediscovering.
+    /// </para>
+    /// </remarks>
+    public Func<bool>? PointerOverPanel { get; set; }
+
     public void Start() => _timer.Start();
 
     public void Dispose()
@@ -126,6 +147,9 @@ internal sealed class ProximityDriver : IDisposable
 
     private double DistanceToBar()
     {
+        // On one of our own panels counts as on the bar, at zero distance — see PointerOverPanel.
+        if (PointerOverPanel?.Invoke() == true) return 0.0;
+
         if (!NativeMethods.GetCursorPos(out NativeMethods.POINT cursor)) return double.MaxValue;
 
         // GetCursorPos is in physical pixels; the bar's rect is in DIPs. On a mixed-DPI setup this

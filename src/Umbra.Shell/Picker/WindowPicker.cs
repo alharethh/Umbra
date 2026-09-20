@@ -90,6 +90,24 @@ internal sealed partial class WindowPicker : Window
     /// <summary>The application this picker belongs to, so a second click on it can toggle.</summary>
     public string SlotKey => _slot.Key;
 
+    /// <summary>
+    /// Whether the pointer is on the picker, by the same reckoning the dismissal watch uses.
+    /// </summary>
+    /// <remarks>
+    /// Shared with the tier system, which needs it for a different reason: reaching for a
+    /// thumbnail takes the pointer off the bar, and without this the icons underneath grey out
+    /// while the user is looking at them. Deliberately the same margin as the dismissal test, so
+    /// the picker cannot be lit and dismissing at the same time.
+    /// </remarks>
+    public bool PointerIsInside()
+    {
+        if (!GetCursorPos(out NativePoint native)) return false;
+
+        Point cursor = new(native.X / _dpiScale, native.Y / _dpiScale);
+
+        return Inflate(new WpfRect(Left, Top, Width, Height), 12).Contains(cursor);
+    }
+
     /// <summary>Builds one column per window: a header strip, then a box for the thumbnail.</summary>
     /// <remarks>
     /// The header is above the thumbnail rather than over it because DWM composites the thumbnail

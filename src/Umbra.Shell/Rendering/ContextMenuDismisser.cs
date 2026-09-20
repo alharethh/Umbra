@@ -101,6 +101,20 @@ internal sealed class ContextMenuDismisser
         _menu.IsOpen = false;
     }
 
+    /// <summary>
+    /// Whether a menu is open with the pointer on it.
+    /// </summary>
+    /// <remarks>
+    /// For the tier system rather than for dismissal: a menu opens off the bar, so reading the
+    /// pointer's distance to the bar alone greys out the row behind an open jump list.
+    /// </remarks>
+    public bool PointerIsOnMenu()
+    {
+        if (_menu is not { IsOpen: true }) return false;
+
+        return GetCursorPos(out NativePoint cursor) && InsideMenu(cursor);
+    }
+
     /// <summary>Whether the cursor is over the menu's own popup window.</summary>
     private bool InsideMenu(NativePoint cursor)
     {

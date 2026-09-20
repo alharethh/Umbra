@@ -66,55 +66,133 @@
             bar, which is Tier 2, and nothing is left lit when it fades.
         -->
         <!--
-            Grey rather than white at low opacity. The two are nearly the same colour over a black
-            bar, but the white one reads as a pane of light behind the glyph rather than as a
-            surface the glyph sits on — it is brightest where it meets the bar, which is the wrong
-            way round.
-        -->
-        <SolidColorBrush x:Key="HoverChipBrush" Color="#FF232323" />
+            Hover feedback: a holographic card rather than Windows' grey wash.
 
-        <Style x:Key="TrailingHoverChip" TargetType="Border">
-            <Setter Property="CornerRadius" Value="5" />
-            <Setter Property="Background" Value="{StaticResource HoverChipBrush}" />
+            A dark pane with a faint accent edge, a cyan glow, and a band of light that sweeps
+            across it once on the way in. The sweep is a rectangle of gradient rotated 45 degrees
+            and translated across the pane, clipped to it — the same construction as the CSS the
+            project owner asked for, where a ::before element is rotated and slid on hover.
+
+            Three things about it that are this bar rather than a web page:
+
+            The accent is capped to the Tier 2 luminance ceiling (see BarWindow.AccentColor). A
+            hover effect is the easiest place to smuggle something brighter than §2.3 allows past
+            the budget, and this one lights pixels that were black.
+
+            It runs only at Tier 2 — nothing here is ever drawn while the bar is dormant, so it is
+            off the duty budget entirely.
+
+            Every animated property belongs to an element inside this template, so each chip has
+            its own. Sharing one Transform across elements is the failure that stopped the running
+            indicator rendering at all.
+        -->
+        <Style x:Key="HolographicChip" TargetType="Control">
             <Setter Property="Opacity" Value="0" />
             <Setter Property="IsHitTestVisible" Value="False" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Panel}}" Value="True">
-                    <DataTrigger.EnterActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <!--
-                                    To full, not to a fraction. The fraction was written for a
-                                    white fill, where 10% over black is the grey we now use
-                                    outright; left in place with a grey brush it multiplied twice
-                                    and the chip disappeared. The colour belongs in the brush,
-                                    where it can be read.
-                                -->
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1"
-                                                 Duration="0:0:0.12" />
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </DataTrigger.EnterActions>
-                    <DataTrigger.ExitActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0"
-                                                 Duration="0:0:0.20" />
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </DataTrigger.ExitActions>
-                </DataTrigger>
-            </Style.Triggers>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Control">
+                        <Border x:Name="Pane"
+                                CornerRadius="6"
+                                Background="#FF0E1315"
+                                BorderThickness="1"
+                                ClipToBounds="True"
+                                RenderTransformOrigin="0.5,0.5">
+
+                            <Border.BorderBrush>
+                                <SolidColorBrush Color="{Binding AccentColor, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                 Opacity="0.28" />
+                            </Border.BorderBrush>
+
+                            <Border.RenderTransform>
+                                <ScaleTransform x:Name="PaneScale" />
+                            </Border.RenderTransform>
+
+                            <Border.Effect>
+                                <DropShadowEffect x:Name="Glow"
+                                                  Color="{Binding AccentColor, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  BlurRadius="14"
+                                                  ShadowDepth="0"
+                                                  Opacity="0" />
+                            </Border.Effect>
+
+                            <!--
+                                Oversized on purpose: rotated 45 degrees it has to cover the pane's
+                                diagonal at both ends of its travel, and the pane clips the rest.
+                            -->
+                            <Rectangle x:Name="Sweep"
+                                       Width="150" Height="150"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Opacity="0.75">
+                                <Rectangle.RenderTransform>
+                                    <TransformGroup>
+                                        <RotateTransform Angle="-45" />
+                                        <TranslateTransform x:Name="SweepMove" Y="-110" />
+                                    </TransformGroup>
+                                </Rectangle.RenderTransform>
+
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Offset="0.34" Color="#0053E7FF" />
+                                        <GradientStop Offset="0.50"
+                                                      Color="{Binding AccentColor, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        <GradientStop Offset="0.66" Color="#0053E7FF" />
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Panel}}" Value="True">
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                             To="1" Duration="0:0:0.14" />
+
+                                            <DoubleAnimation Storyboard.TargetName="PaneScale"
+                                                             Storyboard.TargetProperty="ScaleX"
+                                                             To="1.06" Duration="0:0:0.22" />
+                                            <DoubleAnimation Storyboard.TargetName="PaneScale"
+                                                             Storyboard.TargetProperty="ScaleY"
+                                                             To="1.06" Duration="0:0:0.22" />
+
+                                            <DoubleAnimation Storyboard.TargetName="Glow"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="0.7" Duration="0:0:0.24" />
+
+                                            <!-- One pass, on the way in, as the card does. -->
+                                            <DoubleAnimation Storyboard.TargetName="SweepMove"
+                                                             Storyboard.TargetProperty="Y"
+                                                             From="-110" To="110" Duration="0:0:0.65" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.EnterActions>
+
+                                <DataTrigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                             To="0" Duration="0:0:0.24" />
+                                            <DoubleAnimation Storyboard.TargetName="PaneScale"
+                                                             Storyboard.TargetProperty="ScaleX"
+                                                             To="1" Duration="0:0:0.24" />
+                                            <DoubleAnimation Storyboard.TargetName="PaneScale"
+                                                             Storyboard.TargetProperty="ScaleY"
+                                                             To="1" Duration="0:0:0.24" />
+                                            <DoubleAnimation Storyboard.TargetName="Glow"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="0" Duration="0:0:0.24" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.ExitActions>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
-        <!--
-            The pinned system indicators — volume, network, power, health. Their own template,
-            because inside the system cluster they are not separate controls: the cluster carries
-            the hover chip and the left click, exactly as the one Windows 11 button does.
-
-            Right-click still reaches the icon, so Windows' own volume menu is unaffected, and the
-            enter/leave forwarding stays because the owning process draws its own tooltip from it.
-        -->
         <DataTemplate x:Key="SystemIndicatorTemplate">
             <Grid Background="Transparent"
                   ToolTip="{Binding Title}"
@@ -151,7 +229,7 @@
                   Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                   Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
-                <Border Style="{StaticResource TrailingHoverChip}" Margin="2,6" />
+                <Control Style="{StaticResource HolographicChip}" Margin="2,6" />
 
                 <Image Width="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
                        Height="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -595,7 +673,7 @@
               Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
               Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
-            <Border Style="{StaticResource TrailingHoverChip}" Margin="2,6" />
+            <Control Style="{StaticResource HolographicChip}" Margin="2,6" />
 
             <Grid RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform>
@@ -631,7 +709,7 @@
               MouseLeftButtonUp="OnSystemClusterClick"
               VerticalAlignment="Center">
 
-            <Border Style="{StaticResource TrailingHoverChip}" Margin="1,6" />
+            <Control Style="{StaticResource HolographicChip}" Margin="1,6" />
 
             <Grid RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform>
@@ -703,7 +781,7 @@
                     was as short as the glyphs are tall and half again as wide, so the chip came
                     out a letterbox rather than a key.
                 -->
-                <Border Style="{StaticResource TrailingHoverChip}" Margin="0,6" />
+                <Control Style="{StaticResource HolographicChip}" Margin="0,6" />
 
                 <Grid RenderTransformOrigin="0.5,0.5">
                     <Grid.RenderTransform>
@@ -741,7 +819,7 @@
                     the pointer arrives, so the chip was always one layout pass behind the thing
                     it was meant to be behind.
                 -->
-                <Border Style="{StaticResource TrailingHoverChip}" Margin="-7,6" />
+                <Control Style="{StaticResource HolographicChip}" Margin="-7,6" />
 
                 <Grid RenderTransformOrigin="0.5,0.5">
                     <Grid.RenderTransform>
@@ -799,6 +877,13 @@
               VerticalAlignment="{Binding ShowDesktopVerticalAlignment}"
               Width="{Binding ShowDesktopHitWidth}"
               Height="{Binding ShowDesktopHitHeight}">
+
+            <!--
+                Narrow on purpose. The hit area runs to the screen corner, but a pane that wide
+                would be a slab beside a 1 px line — this is about as wide as the line is long, so
+                it reads as the line acquiring a surface rather than as a button appearing.
+            -->
+            <Control Style="{StaticResource HolographicChip}" Margin="12,6" />
 
             <Grid RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform>

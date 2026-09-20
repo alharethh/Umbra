@@ -114,6 +114,11 @@ internal partial class BarWindow : AppBarWindow
 
         _proximity.LevelChanged += level => TierLevel = level;
 
+        // A panel of ours is part of the bar as far as the tier is concerned. Without this,
+        // reaching into the overflow flyout takes the pointer off the bar, the level ramps down,
+        // and the icons grey out underneath the panel being used.
+        _proximity.PointerOverPanel = PointerIsOnOwnPanel;
+
         // Polled from the proximity tick rather than its own timer — §6.6 is about not adding
         // wake-ups, and this needs no better resolution than the tier ramp does.
         //
@@ -1365,6 +1370,32 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>The Windows logo blue, capped to the Tier 2 luminance ceiling (§3.2).</summary>
     public System.Windows.Media.Brush StartAccentBrush { get; } = CreateStartAccent();
 
+    /// <summary>
+    /// The hover accent, as a <see cref="System.Windows.Media.Color"/> so gradients can use it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A cyan rather than the Start button's blue, because the holographic sweep wants a colour
+    /// that reads as light passing over a surface rather than as a second accent competing with
+    /// Start. <b>Capped to the same Tier 2 luminance ceiling</b> — a hover effect is the easiest
+    /// place in a design to smuggle past the brightest thing §2.3 allows, and this one is drawn
+    /// over pixels that were black.
+    /// </para>
+    /// <para>
+    /// Exposed as a colour because a <c>GradientStop</c> takes one; the brush form would have to
+    /// be unpacked in XAML, which cannot be done.
+    /// </para>
+    /// </remarks>
+    public System.Windows.Media.Color AccentColor { get; } = CreateAccentColor();
+
+    private static System.Windows.Media.Color CreateAccentColor()
+    {
+        Umbra.Core.Color.Rgb capped = Umbra.Core.Color.Srgb.CapLuminance(
+            Umbra.Core.Color.Rgb.FromHex("#53E7FF"), TierPalette.Tier2LuminanceCap);
+
+        return System.Windows.Media.Color.FromRgb(capped.R, capped.G, capped.B);
+    }
+
     private static System.Windows.Media.Brush CreateStartAccent()
     {
         Umbra.Core.Color.Rgb capped = Umbra.Core.Color.Srgb.CapLuminance(
@@ -2135,6 +2166,29 @@ internal partial class BarWindow : AppBarWindow
         };
 
         return timer;
+    }
+
+    /// <summary>
+    /// Whether the pointer is on any panel the bar has open.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each panel answers for itself, in its own units — the flyout and the menus in physical
+    /// pixels straight from Win32, the picker in device-independent ones against its own window.
+    /// Nothing is converted here, which is the point: this project has lost a day to mixing those
+    /// two before.
+    /// </para>
+    /// <para>
+    /// Cheap enough for the 16 ms tick. Each test is a cursor read and a rectangle comparison, and
+    /// all of them short-circuit when nothing is open.
+    /// </para>
+    /// </remarks>
+    private bool PointerIsOnOwnPanel()
+    {
+        if (TrayOverflowPopup.IsOpen && PointerIsOverTrayOverflow()) return true;
+        if (_picker?.PointerIsInside() == true) return true;
+
+        return _menuDismisser.PointerIsOnMenu();
     }
 
     /// <summary>Whether the cursor is on the flyout or on the chevron that opened it.</summary>
