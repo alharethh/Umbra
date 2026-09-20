@@ -12,6 +12,8 @@
 
         Background="#FF000000"
 
+        ToolTipService.InitialShowDelay="2400"
+
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Grayscale"
         UseLayoutRounding="False"
@@ -69,7 +71,7 @@
             surface the glyph sits on — it is brightest where it meets the bar, which is the wrong
             way round.
         -->
-        <SolidColorBrush x:Key="HoverChipBrush" Color="#FF343434" />
+        <SolidColorBrush x:Key="HoverChipBrush" Color="#FF232323" />
 
         <Style x:Key="TrailingHoverChip" TargetType="Border">
             <Setter Property="CornerRadius" Value="5" />
@@ -866,6 +868,7 @@
                PopupAnimation="None">
 
             <Border Background="#F21C1C18"
+                    ToolTipService.InitialShowDelay="2400"
                     BorderBrush="#FF3A3A33"
                     BorderThickness="1"
                     CornerRadius="8"
