@@ -5,3 +5,7 @@ obj/
 *.suo
 TestResults/
 artifacts/
+
+# Screen recordings the GIFs are cut from. Kept out: the repo carries the cuts, not the source.
+*.mkv
+*.mp4

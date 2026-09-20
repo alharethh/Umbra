@@ -20,7 +20,8 @@ how long?*
 
 ![The bar waking as the pointer approaches](docs/media/wake.gif)
 
-<sub>Resting, waking, and fully engaged. Recorded from the bar itself — a build that walks through its own states on a timer, so the capture needed no pointer.</sub>
+<sub>Resting, then waking as the pointer arrives: the icons take their colour back, grow to full
+size, and the clock gains its seconds and date.</sub>
 
 ## Why it exists
 
@@ -45,25 +46,32 @@ own, and this is aimed squarely at it.
 
 ## What it does
 
-![Hover feedback on the notification area](docs/media/hover.gif)
-
-<sub>Each control lights as the pointer reaches it — the overflow chevron, the volume and network cluster, the input language, the clock, and the show-desktop corner.</sub>
-
 - **Any edge, live.** Move the bar between edges from the settings window; the desktop reflows.
 - **The row is one order.** Pinned and running icons share it, and any icon can be dragged anywhere.
   Pin to make a position stick.
 - **Live window previews.** Hover an icon for a thumbnail of every window it has open, with
   per-window close.
+
+  ![Live thumbnails as the pointer moves along the row](docs/media/preview.gif)
 - **Real jump lists.** Right-click an icon for the application's own published tasks — "New private
   window", "New Code Session" — read from the same files Explorer reads.
 - **Notification area** with an overflow flyout, volume and network as one cluster, and an input
-  language indicator.
-- **Show desktop** in the trailing corner, where it has always been.
+  language indicator. Volume and network open Quick Settings together, as they do on the real
+  taskbar; the clock opens the calendar and notifications.
+
+  ![The overflow flyout, then Quick Settings](docs/media/panels.gif)
+- **Show desktop** in the trailing corner, where it has always been. Click once to clear the
+  screen, again to put everything back.
+
+  ![Clicking the corner brings the windows back](docs/media/desktop.gif)
 - **A wear heatmap.** Umbra records how much light every pixel of its own rectangle has emitted,
   weighted the way burn-in actually accumulates, and will draw you the map. No other taskbar can
   tell you what it has been doing to your screen.
 - **Hover feedback you can colour**, on a holographic pane or a plain chip, your choice — capped so
-  the colour is a choice about hue and never about how much light the panel emits.
+  the colour is a choice about hue and never about how much light the panel emits. Start takes the
+  same treatment: a band of light crosses the button and paints the logo blue behind it.
+
+  ![The Start logo lighting under the pointer](docs/media/start.gif)
 
 ## Install
 
