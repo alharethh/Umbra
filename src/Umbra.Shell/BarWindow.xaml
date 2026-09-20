@@ -117,12 +117,23 @@
                             </Border.Effect>
 
                             <!--
-                                Oversized on purpose: rotated 45 degrees it has to cover the pane's
-                                diagonal at both ends of its travel, and the pane clips the rest.
+                                <b>On a Canvas, and that is load-bearing.</b> The sweep is oversized
+                                on purpose — rotated 45 degrees it has to cover the pane's diagonal
+                                at both ends of its travel — and ClipToBounds clips what is
+                                *rendered*, not what is *measured*. As a direct child it asked
+                                layout for 150 px and got it: the two controls with no fixed width,
+                                the language indicator and the clock, grew to fit a rectangle
+                                nobody can see, and the trailing group came apart. A Canvas reports
+                                no desired size of its own, so the pane sizes to its host again.
+
+                                Placed from the top-left rather than centred for the same reason:
+                                centring is an alignment, and alignment needs a measured size.
                             -->
+                            <Canvas ClipToBounds="True">
                             <Rectangle x:Name="Sweep"
                                        Width="150" Height="150"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Canvas.Left="-58" Canvas.Top="-58"
+                                       RenderTransformOrigin="0.5,0.5"
                                        Opacity="0.75">
                                 <Rectangle.RenderTransform>
                                     <TransformGroup>
@@ -140,6 +151,7 @@
                                     </LinearGradientBrush>
                                 </Rectangle.Fill>
                             </Rectangle>
+                            </Canvas>
                         </Border>
 
                         <ControlTemplate.Triggers>
