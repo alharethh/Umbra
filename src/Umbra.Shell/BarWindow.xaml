@@ -51,6 +51,45 @@
             One tray icon. Shared by the strip on the bar and by the overflow flyout, so an icon
             looks and behaves identically wherever it happens to be sitting.
         -->
+        <!--
+            Hover feedback for the small controls at the trailing end: a rounded wash that fades
+            in under whatever is drawn, the same idea as the icon row's hover chip.
+
+            Driven off the parent panel's IsMouseOver rather than its own, because the chip is
+            not hit-testable — it sits behind the glyph and would otherwise fight it for the
+            pointer. Faster in than out: appearing late reads as lag, and vanishing instantly
+            reads as a flicker when the pointer crosses between two of them.
+
+            It costs nothing that lasts. The wash is only ever drawn while the pointer is on the
+            bar, which is Tier 2, and nothing is left lit when it fades.
+        -->
+        <Style x:Key="TrailingHoverChip" TargetType="Border">
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Background" Value="#FFFFFFFF" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Panel}}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.10"
+                                                 Duration="0:0:0.12" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0"
+                                                 Duration="0:0:0.20" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <DataTemplate x:Key="TrayIconTemplate">
             <Grid Background="Transparent"
                   ToolTip="{Binding Title}"
@@ -62,6 +101,8 @@
                   MouseLeave="OnTrayIconMouseLeave"
                   Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                   Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+
+                <Border Style="{StaticResource TrailingHoverChip}" Margin="2" />
 
                 <Image Width="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
                        Height="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -505,13 +546,24 @@
               Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
               Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
-            <Path x:Name="TrayChevronGlyph"
-                  HorizontalAlignment="Center" VerticalAlignment="Center"
-                  Data="M 0,4 L 4.5,0 L 9,4"
-                  StrokeThickness="1.4"
-                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                  Stroke="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ClockBrush}}"
-                  RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}" />
+            <Border Style="{StaticResource TrailingHoverChip}" Margin="2" />
+
+            <Grid RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <ScaleTransform x:Name="TrayChevronScale" />
+                </Grid.RenderTransform>
+
+                <Path x:Name="TrayChevronGlyph"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Data="M 0,4 L 4.5,0 L 9,4"
+                      Stretch="Uniform"
+                      Width="{Binding TrayChevronWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                      Height="{Binding TrayChevronHeight, RelativeSource={RelativeSource AncestorType=Window}}"
+                      StrokeThickness="1.4"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      Stroke="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ClockBrush}}"
+                      RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}" />
+            </Grid>
         </Grid>
 
         <!--
@@ -548,12 +600,23 @@
                   Width="{Binding TraySlotWidth}"
                   Height="{Binding TraySlotHeight}">
 
-                <Path Data="{Binding NetworkGlyph}"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                      StrokeThickness="1.2"
-                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                      Stroke="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
-                      RenderTransform="{Binding NetworkOffset}" />
+                <Border Style="{StaticResource TrailingHoverChip}" Margin="2" />
+
+                <Grid RenderTransformOrigin="0.5,0.5">
+                    <Grid.RenderTransform>
+                        <ScaleTransform x:Name="NetworkScale" />
+                    </Grid.RenderTransform>
+
+                    <Path Data="{Binding NetworkGlyph}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Stretch="Uniform"
+                          Width="{Binding TrayIconExtent}"
+                          Height="{Binding TrayIconExtent}"
+                          StrokeThickness="1.5"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                          Stroke="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
+                          RenderTransform="{Binding NetworkOffset}" />
+                </Grid>
             </Grid>
 
             <!--
@@ -572,12 +635,21 @@
                   VerticalAlignment="Center"
                   Margin="8,0,0,0">
 
-                <TextBlock Text="{Binding LanguageName}"
-                           FontSize="12"
-                           VerticalAlignment="Center"
-                           HorizontalAlignment="Center"
-                           Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
-                           RenderTransform="{Binding LanguageOffset}" />
+                <Border Style="{StaticResource TrailingHoverChip}" Margin="0,4" />
+
+                <Grid RenderTransformOrigin="0.5,0.5">
+                    <Grid.RenderTransform>
+                        <ScaleTransform x:Name="LanguageScale" />
+                    </Grid.RenderTransform>
+
+                    <TextBlock Text="{Binding LanguageName}"
+                               FontSize="12"
+                               Margin="6,0"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
+                               RenderTransform="{Binding LanguageOffset}" />
+                </Grid>
             </Grid>
 
             <!--
@@ -588,12 +660,21 @@
                 Drifts with everything else but jitters on its own frequencies, because digits
                 change while digit *positions* do not, and the colon never changes at all.
             -->
-            <StackPanel VerticalAlignment="Center"
+            <Grid Background="Transparent"
+                  ToolTip="Open notifications"
+                  MouseLeftButtonUp="OnClockClick"
+                  Margin="{Binding ClockMargin}"
+                  VerticalAlignment="Center">
+
+                <Border Style="{StaticResource TrailingHoverChip}" Margin="-6,4" />
+
+                <Grid RenderTransformOrigin="0.5,0.5">
+                    <Grid.RenderTransform>
+                        <ScaleTransform x:Name="ClockScale" />
+                    </Grid.RenderTransform>
+
+                <StackPanel VerticalAlignment="Center"
                         HorizontalAlignment="Center"
-                        Background="Transparent"
-                        ToolTip="Open notifications"
-                        MouseLeftButtonUp="OnClockClick"
-                        Margin="{Binding ClockMargin}"
                         MinWidth="{Binding ClockMinWidth}"
                         RenderTransform="{Binding ClockOffset}">
 
@@ -619,7 +700,9 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-            </StackPanel>
+                </StackPanel>
+                </Grid>
+            </Grid>
         </StackPanel>
 
         <!--
@@ -642,6 +725,13 @@
               Width="{Binding ShowDesktopHitWidth}"
               Height="{Binding ShowDesktopHitHeight}">
 
+            <Border Style="{StaticResource TrailingHoverChip}" Margin="2,6" />
+
+            <Grid RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <ScaleTransform x:Name="ShowDesktopScale" />
+                </Grid.RenderTransform>
+
             <Rectangle Width="{Binding ShowDesktopLineWidth}"
                        Height="{Binding ShowDesktopLineHeight}"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -658,6 +748,7 @@
                     </Style>
                 </Rectangle.Style>
             </Rectangle>
+            </Grid>
         </Grid>
 
         <!--

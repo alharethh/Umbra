@@ -353,7 +353,10 @@ internal partial class BarWindow : AppBarWindow
         if (MotionEnabled)
         {
             _motion = new MotionDriver(() => CurrentMetrics);
-            double trayRatio = Metrics.TrayDriftRatio;
+
+            // The bar's own ratio, not the spec's: the tray is drawn at 20-in-28 rather than
+            // §7.1's 16-in-24. See TrayPitchExtent for why the two have to move together.
+            double trayRatio = TrayDriftRatio;
 
             _motion.OffsetChanged += (dx, dy) =>
             {
@@ -734,14 +737,89 @@ internal partial class BarWindow : AppBarWindow
     /// </summary>
     public TranslateTransform TrayOffset { get; } = new();
 
+    /// <summary>
+    /// Drawn extent of notification-area content — tray icons, the network glyph, the chevron.
+    /// </summary>
+    /// <remarks>
+    /// <b>A deliberate deviation from §7.1's 16 px</b>, in the same spirit as the icon row's
+    /// dormant size: 16 px was measured against Windows 10's notification area and reads as small
+    /// beside a 24 px task icon on this panel. The project owner asked for larger, so 20 px.
+    /// </remarks>
+    internal const double TrayGlyphExtent = 20.0;
+
+    /// <summary>
+    /// Pitch of a tray slot, enlarged with the glyph so the gutter is unchanged.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Moving the pitch by exactly what the glyph gained keeps the gutter at §7.1's 4 px, and the
+    /// gutter is what §6.2 derives drift amplitude from — so the notification area still travels
+    /// as far as it did, and the wear argument for moving it at all is unchanged. Growing the
+    /// glyph inside the old pitch would have left 2 px of gutter and halved the travel.
+    /// </para>
+    /// <para>
+    /// <b>It does not, on its own, protect P5</b> — that was the first reason written here and it
+    /// was wrong. Amplitude is derived from the gutter, so a cramped slot asks for less travel and
+    /// still contains it. What breaks containment is reading an amplitude derived from a slot we
+    /// are not drawing: <see cref="BarMetrics.TrayDriftRatio"/> is computed from 16-in-24, and
+    /// applying it to a 20 px glyph in a 24 px pitch puts about 2.4 px of travel into 2 px of
+    /// gutter. That is why <see cref="TrayDriftRatio"/> here is derived from
+    /// <see cref="TraySlotMetrics"/>, and why the test pins the ratio rather than the sizes.
+    /// </para>
+    /// </remarks>
+    internal const double TrayPitchExtent = BarMetrics.BaseTrayPitch + (TrayGlyphExtent - BarMetrics.BaseTrayIconExtent);
+
+    /// <summary>The notification area's slot, at the size this bar actually draws it.</summary>
+    private SlotMetrics TraySlotMetrics =>
+        new(TrayPitchExtent * Metrics.Scale, TrayGlyphExtent * Metrics.Scale);
+
+    /// <summary>
+    /// How much less the notification area drifts than the icon row.
+    /// </summary>
+    /// <remarks>
+    /// Derived from the slot we draw rather than from <see cref="BarMetrics.TrayDriftRatio"/>,
+    /// which is derived from the spec's. They agree today, because the pitch grew with the glyph;
+    /// reading the spec's would stop being correct the moment someone changed one without the
+    /// other, which is exactly the mistake worth making impossible.
+    /// </remarks>
+    public double TrayDriftRatio => TrayDriftRatioFor(Metrics);
+
+    /// <summary>
+    /// The tray's share of the row's drift, for the slot this bar actually draws.
+    /// </summary>
+    /// <remarks>
+    /// Static so it can be asserted without a window — a <c>BarWindow</c> needs a shell host, and
+    /// this is the number that decides whether the notification area stays inside its slots.
+    /// </remarks>
+    internal static double TrayDriftRatioFor(BarMetrics metrics)
+    {
+        SlotMetrics drawn = new(TrayPitchExtent * metrics.Scale, TrayGlyphExtent * metrics.Scale);
+
+        return metrics.Slot.MaxAmplitude <= 0.0
+            ? 0.0
+            : drawn.MaxAmplitude / metrics.Slot.MaxAmplitude;
+    }
+
     /// <summary>Tray slot size along the bar's long axis.</summary>
-    public double TraySlotWidth => IsVertical ? Metrics.ContentBand : Metrics.TraySlot.Pitch;
+    public double TraySlotWidth => IsVertical ? Metrics.ContentBand : TraySlotMetrics.Pitch;
 
     /// <inheritdoc cref="TraySlotWidth"/>
-    public double TraySlotHeight => IsVertical ? Metrics.TraySlot.Pitch : Metrics.ContentBand;
+    public double TraySlotHeight => IsVertical ? TraySlotMetrics.Pitch : Metrics.ContentBand;
 
     /// <summary>Drawn extent of a tray icon.</summary>
-    public double TrayIconExtent => Metrics.TraySlot.IconExtent;
+    public double TrayIconExtent => TraySlotMetrics.IconExtent;
+
+    /// <summary>
+    /// Width of the overflow chevron's glyph.
+    /// </summary>
+    /// <remarks>
+    /// Narrower than the square glyphs beside it, because a chevron is a wide shallow shape and
+    /// matching its <i>width</i> to theirs would make it the largest thing in the group.
+    /// </remarks>
+    public double TrayChevronWidth => TrayGlyphExtent * 0.7;
+
+    /// <inheritdoc cref="TrayChevronWidth"/>
+    public double TrayChevronHeight => TrayChevronWidth * 4.0 / 9.0;
 
     /// <summary>The notification area sits at the trailing end, opposite the icon row (§7.1).</summary>
     public HorizontalAlignment TrayHorizontalAlignment =>
@@ -849,7 +927,16 @@ internal partial class BarWindow : AppBarWindow
     /// taking any from the clock. Like the Start button (§6.5) its hit area runs into the screen
     /// corner while its drawn content stays inboard of the drift inset, where it cannot clip.
     /// </remarks>
-    public double ShowDesktopHitExtent => Metrics.RowInset + TrailingEdgePadding;
+    public double ShowDesktopHitExtent => Metrics.RowInset + TrailingEdgePadding + ShowDesktopWidth;
+
+    /// <summary>
+    /// How much of the control's width is its own, beyond the margin the row already held back.
+    /// </summary>
+    /// <remarks>
+    /// Windows' own sliver is about this wide. The first cut claimed only the existing trailing
+    /// margin, which made it about 19 px on this machine and easy to miss entirely.
+    /// </remarks>
+    internal const double ShowDesktopWidth = 16.0;
 
     /// <inheritdoc cref="ShowDesktopHitExtent"/>
     public double ShowDesktopHitWidth => IsVertical ? Metrics.ContentBand : ShowDesktopHitExtent;
@@ -907,6 +994,7 @@ internal partial class BarWindow : AppBarWindow
     {
         e.Handled = true;
 
+        PlayPress(NetworkScale);
         ClearPanelsFor(BarPanel.None);
         ManagedShell.Common.Helpers.ShellHelper.ShowActionCenter();
     }
@@ -923,6 +1011,7 @@ internal partial class BarWindow : AppBarWindow
     {
         e.Handled = true;
 
+        PlayPress(ClockScale);
         ClearPanelsFor(BarPanel.None);
         ManagedShell.Common.Helpers.ShellHelper.ShowNotificationCenter();
     }
@@ -949,6 +1038,7 @@ internal partial class BarWindow : AppBarWindow
     {
         e.Handled = true;
 
+        PlayPress(ShowDesktopScale);
         ClearPanelsFor(BarPanel.None);
         DismissWindowsSurfaces();
 
@@ -989,6 +1079,7 @@ internal partial class BarWindow : AppBarWindow
     {
         e.Handled = true;
 
+        PlayPress(LanguageScale);
         ClearPanelsFor(BarPanel.None);
         _language.CycleForeground(GetForegroundWindow());
     }
@@ -1029,8 +1120,19 @@ internal partial class BarWindow : AppBarWindow
     internal const double TrailingEdgePadding = 8.0;
 
     public Thickness TrayMargin => IsVertical
-        ? new Thickness(0, Metrics.RowInset + TrailingEdgePadding, 0, 0)
-        : new Thickness(0, 0, Metrics.RowInset + TrailingEdgePadding, 0);
+        ? new Thickness(0, TrailingReserved, 0, 0)
+        : new Thickness(0, 0, TrailingReserved, 0);
+
+    /// <summary>
+    /// Everything held back at the trailing end: the drift inset, the breathing room, and the
+    /// show-desktop control.
+    /// </summary>
+    /// <remarks>
+    /// The show-desktop control is a sibling of the trailing group rather than a member of it, so
+    /// the group has to be moved inboard by its width or the two would overlap — the clock would
+    /// be drawn under a transparent hit area, and clicking the time would show the desktop.
+    /// </remarks>
+    private double TrailingReserved => Metrics.RowInset + TrailingEdgePadding + ShowDesktopWidth;
 
     /// <summary>Slot pitch — the hit target's extent along the bar's long axis. 44 DIP.</summary>
     public double SlotPitch => Metrics.Slot.Pitch;
@@ -1344,6 +1446,46 @@ internal partial class BarWindow : AppBarWindow
     /// stop the drift.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Press feedback for the small controls at the trailing end of the bar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same dip and spring the Start button and the application icons already play, at a
+    /// smaller amplitude because these are smaller things: a 22% squash reads as a stumble on a
+    /// 20 px glyph.
+    /// </para>
+    /// <para>
+    /// <b>It costs nothing in wear terms</b>, which is the question any animation on this bar has
+    /// to answer. It runs for 320 ms while the pointer is necessarily on the bar, so the whole
+    /// group is at Tier 2 regardless, and nothing is left lit when it ends.
+    /// </para>
+    /// <para>
+    /// The scale lives on a wrapper rather than on the drawn element, because the drawn element's
+    /// <c>RenderTransform</c> is already the drift offset. One transform property, two owners, is
+    /// the failure that stopped the running indicator rendering at all.
+    /// </para>
+    /// </remarks>
+    private static void PlayPress(ScaleTransform scale)
+    {
+        if (!SystemParameters.ClientAreaAnimation) return;
+
+        QuadraticEase down = new() { EasingMode = EasingMode.EaseOut };
+        BackEase back = new() { EasingMode = EasingMode.EaseOut, Amplitude = 0.7 };
+
+        DoubleAnimationUsingKeyFrames Squash() => new()
+        {
+            KeyFrames =
+            {
+                new EasingDoubleKeyFrame(0.86, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(90)), down),
+                new EasingDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)), back),
+            },
+        };
+
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, Squash());
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Squash());
+    }
+
     private void PlayStartPress()
     {
         if (!SystemParameters.ClientAreaAnimation) return;
@@ -1843,6 +1985,8 @@ internal partial class BarWindow : AppBarWindow
     private void OnTrayChevronClick(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
+
+        PlayPress(TrayChevronScale);
 
         bool opening = !TrayOverflowPopup.IsOpen;
 
