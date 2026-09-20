@@ -241,7 +241,12 @@
                   Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                   Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
-                <Control Style="{StaticResource HolographicChip}" Margin="2,6" />
+                <Control Style="{StaticResource HolographicChip}" Margin="2,6">
+                    <Control.RenderTransform>
+                        <TranslateTransform X="{Binding TrayOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            Y="{Binding TrayOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    </Control.RenderTransform>
+                </Control>
 
                 <Image Width="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
                        Height="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -304,52 +309,26 @@
               Width="{Binding StartHitWidth}"
               Height="{Binding StartHitHeight}">
 
-            <Grid.Triggers>
-                <EventTrigger RoutedEvent="Grid.MouseEnter">
-                    <BeginStoryboard>
-                        <Storyboard>
-                            <DoubleAnimation Storyboard.TargetName="StartChip"
-                                             Storyboard.TargetProperty="Opacity"
-                                             To="1" Duration="0:0:0.12">
-                                <DoubleAnimation.EasingFunction>
-                                    <QuadraticEase EasingMode="EaseOut" />
-                                </DoubleAnimation.EasingFunction>
-                            </DoubleAnimation>
-                        </Storyboard>
-                    </BeginStoryboard>
-                </EventTrigger>
-                <EventTrigger RoutedEvent="Grid.MouseLeave">
-                    <BeginStoryboard>
-                        <Storyboard>
-                            <DoubleAnimation Storyboard.TargetName="StartChip"
-                                             Storyboard.TargetProperty="Opacity"
-                                             To="0" Duration="0:0:0.4">
-                                <DoubleAnimation.EasingFunction>
-                                    <QuadraticEase EasingMode="EaseIn" />
-                                </DoubleAnimation.EasingFunction>
-                            </DoubleAnimation>
-                        </Storyboard>
-                    </BeginStoryboard>
-                </EventTrigger>
-            </Grid.Triggers>
-
             <!--
-                The same hover chip the application icons get, centred on the glyph rather than on
-                the hit rect — §6.5 deliberately extends the Start hit area to the screen corner, and
-                a chip that filled it would be a large lit rectangle advertising invisible geometry.
+                The same holographic pane the trailing controls get, centred on the glyph rather
+                than on the hit rect — §6.5 deliberately extends the Start hit area to the screen
+                corner, and a pane that filled it would be a large lit rectangle advertising
+                invisible geometry.
+
+                It drifts with the glyph, through its own TranslateTransform fed from the content
+                offset. Its hover is the style's own, so the button no longer carries storyboards
+                of its own; what stays the button's is the press animation and the Windows blue it
+                takes while the menu is open, which happens after this and over the top of it.
             -->
-            <Rectangle x:Name="StartChip"
-                       Width="28" Height="28"
-                       RadiusX="5" RadiusY="5"
-                       Fill="#FF1F1F1A"
-                       Opacity="0"
-                       IsHitTestVisible="False"
-                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Margin="{Binding StartGlyphMargin}">
-                <Rectangle.RenderTransform>
+            <Control x:Name="StartChip"
+                     Style="{StaticResource HolographicChip}"
+                     Width="30" Height="30"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     Margin="{Binding StartGlyphMargin}">
+                <Control.RenderTransform>
                     <TranslateTransform X="{Binding ContentOffset.X}" Y="{Binding ContentOffset.Y}" />
-                </Rectangle.RenderTransform>
-            </Rectangle>
+                </Control.RenderTransform>
+            </Control>
 
             <Canvas Width="24" Height="24"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -685,7 +664,12 @@
               Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
               Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
-            <Control Style="{StaticResource HolographicChip}" Margin="2,6" />
+            <Control Style="{StaticResource HolographicChip}" Margin="2,6">
+                <Control.RenderTransform>
+                    <TranslateTransform X="{Binding TrayOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Y="{Binding TrayOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </Control.RenderTransform>
+            </Control>
 
             <Grid RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform>
@@ -721,7 +705,11 @@
               MouseLeftButtonUp="OnSystemClusterClick"
               VerticalAlignment="Center">
 
-            <Control Style="{StaticResource HolographicChip}" Margin="1,6" />
+            <Control Style="{StaticResource HolographicChip}" Margin="1,6">
+                <Control.RenderTransform>
+                    <TranslateTransform X="{Binding TrayOffset.X}" Y="{Binding TrayOffset.Y}" />
+                </Control.RenderTransform>
+            </Control>
 
             <Grid RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform>
@@ -793,7 +781,11 @@
                     was as short as the glyphs are tall and half again as wide, so the chip came
                     out a letterbox rather than a key.
                 -->
-                <Control Style="{StaticResource HolographicChip}" Margin="0,6" />
+                <Control Style="{StaticResource HolographicChip}" Margin="0,6">
+                    <Control.RenderTransform>
+                        <TranslateTransform X="{Binding LanguageOffset.X}" Y="{Binding LanguageOffset.Y}" />
+                    </Control.RenderTransform>
+                </Control>
 
                 <Grid RenderTransformOrigin="0.5,0.5">
                     <Grid.RenderTransform>
@@ -831,7 +823,11 @@
                     the pointer arrives, so the chip was always one layout pass behind the thing
                     it was meant to be behind.
                 -->
-                <Control Style="{StaticResource HolographicChip}" Margin="-7,6" />
+                <Control Style="{StaticResource HolographicChip}" Margin="-7,6">
+                    <Control.RenderTransform>
+                        <TranslateTransform X="{Binding ClockOffset.X}" Y="{Binding ClockOffset.Y}" />
+                    </Control.RenderTransform>
+                </Control>
 
                 <Grid RenderTransformOrigin="0.5,0.5">
                     <Grid.RenderTransform>
