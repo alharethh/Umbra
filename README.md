@@ -97,13 +97,13 @@ And the rest of what a taskbar owes you:
 
 ## Install
 
-**Download the [latest release](https://github.com/alharethh/Umbra/releases/latest)**, unzip it
-anywhere, and run `Umbra.exe`. Two downloads, and the difference is only what you have installed:
+**Download the [latest release](https://github.com/alharethh/Umbra/releases/latest)** and run it.
+Two downloads, and the difference is only what your machine already has:
 
 | | |
 | :---- | :---- |
-| `win-x64` · 1.2 MB | Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). If Umbra does not start, that is what is missing. |
-| `win-x64-selfcontained` · 71 MB | Carries its own runtime. Nothing to install. |
+| **`Umbra-0.1.0-win-x64.exe`** · 73 MB | One file. Double-click it. Nothing to install. |
+| `Umbra-0.1.0-win-x64.zip` · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
 
 Or build it, which needs the [.NET 10 SDK](https://dotnet.microsoft.com/download):
 

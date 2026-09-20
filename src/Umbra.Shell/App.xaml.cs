@@ -54,6 +54,9 @@ public partial class App : Application
             BringUpLog.Write("the single-instance lock was abandoned: the previous exit was not clean");
 
         Settings = UmbraSettings.Load();
+
+        // Beside the settings, because the single-file download has no files beside it.
+        Shell.LicenceFiles.EnsureWritten(UmbraSettings.DefaultPath);
         ApplyCommandLineOverrides(Settings, e.Args);
 
         // Tray hosting works (docs/measurements.md step 7), but runs a permanent 100 ms timer,

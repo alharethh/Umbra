@@ -24,6 +24,17 @@
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
   </ItemGroup>
 
+  <!--
+    The licences travel inside the binary, because one of the downloads is a single .exe with
+    no files beside it. ManagedShell is Apache 2.0 and its assemblies are bundled into that
+    file, and Apache 2.0 asks that whoever receives them receives the licence too — a link in
+    a release note is not a copy. App writes them out beside the settings on first run.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\LICENSE" LogicalName="Umbra.LICENSE" />
+    <EmbeddedResource Include="..\..\THIRD-PARTY-NOTICES.md" LogicalName="Umbra.THIRD-PARTY-NOTICES.md" />
+  </ItemGroup>
+
   <PropertyGroup>
     <AssemblyName>Umbra</AssemblyName>
     <RootNamespace>Umbra.Shell</RootNamespace>
