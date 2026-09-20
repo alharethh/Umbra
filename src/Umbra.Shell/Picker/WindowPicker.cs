@@ -45,19 +45,25 @@ internal sealed partial class WindowPicker : Window
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The bar's own fall, so the two go together.</b> It used to sit at full opacity for 600 ms
-    /// and then vanish in a single frame, while the bar underneath had already been dimming the
-    /// whole time — the preview outlived the thing it belonged to, and the disappearance was a cut
-    /// rather than a fade.
+    /// <b>One tier step, which is what the bar's dim actually looks like.</b> The first attempt
+    /// used two — the full Tier 2 to Tier 0 fall — on the reasoning that the picker should last
+    /// exactly as long as the bar takes to go dark. It still read as lagging behind, and the
+    /// reason is that the two steps are not equally visible: the bar loses its colour in the
+    /// first, which is the moment the eye reads as "it went away", and merely gets darker in the
+    /// second.
     /// </para>
     /// <para>
-    /// <see cref="TierController.ReleaseSeconds"/> is one tier <i>step</i>, and the bar falls two
-    /// of them — Tier 2 to Tier 0 — so the picker's fade is twice it. Taking the number from the
-    /// tier system rather than writing 800 here means the two cannot drift apart later.
+    /// <b>Ease-out rather than the tier's ease-in</b>, for the same reason. Matching the curve
+    /// mathematically meant a preview that held at full brightness and then dropped, which is what
+    /// "unnatural" was describing; leaving immediately and slowing as it goes reads as prompt.
+    /// </para>
+    /// <para>
+    /// Still taken from <see cref="TierController.ReleaseSeconds"/> rather than written down, so
+    /// retuning the tier system carries the picker with it.
     /// </para>
     /// </remarks>
     private static readonly TimeSpan FadeOut =
-        TimeSpan.FromSeconds(TierController.ReleaseSeconds * 2.0);
+        TimeSpan.FromSeconds(TierController.ReleaseSeconds);
 
     /// <summary>How long it takes to come back if the pointer returns mid-fade.</summary>
     /// <remarks>
@@ -84,6 +90,17 @@ internal sealed partial class WindowPicker : Window
     private readonly List<Column> _columns = [];
     private readonly TaskbarSlot _slot;
     private readonly WpfRect _barScreenDip;
+
+    /// <summary>
+    /// The icon this preview belongs to.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not the whole bar.</b> The dismissal test used to count anywhere on the bar as still
+    /// inside, so sliding off the icon and along the row left the preview up showing an
+    /// application the pointer had left — reported exactly that way. A preview belongs to one
+    /// icon, and leaving that icon is leaving it.
+    /// </remarks>
+    private readonly WpfRect _anchorScreenDip;
     private readonly double _dpiScale;
     private readonly DispatcherTimer _watch;
 
@@ -95,6 +112,7 @@ internal sealed partial class WindowPicker : Window
     {
         _slot = slot;
         _barScreenDip = barScreenDip;
+        _anchorScreenDip = anchorScreenDip;
         _dpiScale = dpiScale <= 0 ? 1.0 : dpiScale;
 
         InitializeComponent();
@@ -461,9 +479,12 @@ internal sealed partial class WindowPicker : Window
         var cursor = new Point(native.X / _dpiScale, native.Y / _dpiScale);
         var self = new WpfRect(Left, Top, Width, Height);
 
-        // A margin around the picker so a pointer skimming its edge on the way in does not dismiss
-        // it, and around the bar so travelling between the two is not a dismissal either.
-        bool inside = Inflate(self, 12).Contains(cursor) || Inflate(_barScreenDip, 12).Contains(cursor);
+        // A margin around each, so a pointer skimming an edge on the way in does not dismiss the
+        // picker and the short trip from the icon up to it is not a dismissal either. The icon's
+        // own rectangle, not the bar's: the rest of the row belongs to other applications, and
+        // what is under the pointer there is their preview or none.
+        bool inside = Inflate(self, 12).Contains(cursor)
+                      || Inflate(_anchorScreenDip, 12).Contains(cursor);
 
         if (inside)
         {
@@ -513,9 +534,9 @@ internal sealed partial class WindowPicker : Window
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Quadratic ease-in, which is <see cref="TierEasing.Release"/>'s curve — the bar dims on that
-    /// shape, and a linear fade beside it reads as two things leaving at different speeds even
-    /// when they finish together.
+    /// See <see cref="FadeOut"/> for why this is not <see cref="TierEasing.Release"/>'s own
+    /// ease-in: matching the curve exactly produced a preview that hung at full brightness before
+    /// dropping.
     /// </para>
     /// <para>
     /// <b>Closed from the animation's completion rather than from a second timer.</b> One clock
@@ -533,7 +554,7 @@ internal sealed partial class WindowPicker : Window
         {
             To = 0.0,
             Duration = FadeOut,
-            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn },
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
         };
 
         fade.Completed += (_, _) =>
