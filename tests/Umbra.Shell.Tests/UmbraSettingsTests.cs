@@ -40,7 +40,7 @@ public class UmbraSettingsTests : IDisposable
             "The dormant size must be below the full size, or nothing shrinks.");
         Assert.True(settings.Motion);
 
-        // Collects nothing on Windows 11 25H2 and costs a timer, so it is off until asked for.
+        // Works, but costs a permanent 100 ms timer, so it is off until asked for.
         Assert.False(settings.Tray);
         Assert.Equal(string.Empty, settings.Monitor);
     }
@@ -163,9 +163,8 @@ public class UmbraSettingsTests : IDisposable
     {
         UmbraSettings baseline = new();
 
-        // Tray hosting is the only one left. It is built into the shell host at startup, and
-        // unlike the placement settings there is no live path for it \u2014 nor much point building
-        // one, since it collects nothing on Windows 11 25H2.
+        // Tray hosting is the only one left: it is built into the shell host at startup, and
+        // unlike the placement settings there is no live path for it.
         Assert.True(baseline.NeedsRestartToReach(new UmbraSettings { Tray = true }));
 
         // Properties of what is drawn.

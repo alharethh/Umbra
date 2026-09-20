@@ -81,11 +81,15 @@ internal partial class BarWindow : AppBarWindow
 
         _tasks = new TaskbarModel(Windows, Pins);
 
-        // Null when tray hosting is switched off, which is the default — see ShellHost. Pinned
-        // rather than all: the unpinned ones belong behind an overflow chevron, which is §7.1's
-        // "tray overflow flyout" and is not built yet.
+        // Null when tray hosting is switched off — see ShellHost.
+        //
+        // All icons, not the pinned ones. §7.1's "tray overflow flyout" is what would justify
+        // showing a subset, and it is not built — so binding to PinnedIcons means binding to a
+        // collection that is empty unless the user has pinned something, and there is no UI to
+        // pin with. Measured: nine icons collected, PinnedIcons held none of them. Narrow this
+        // again when the overflow chevron exists, not before.
         _notificationArea = host.ShellManager.NotificationArea;
-        TrayIcons = _notificationArea?.PinnedIcons;
+        TrayIcons = _notificationArea?.AllIcons;
 
         DataContext = this;
         InitializeComponent();

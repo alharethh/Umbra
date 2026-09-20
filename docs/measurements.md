@@ -232,64 +232,116 @@ hand-authored glyphs would have been, and busy artwork stayed busy, but the band
 question is withdrawn in v4 along with the feature — the outlines were good enough, and it was not
 enough to save them.
 
-## Step 7 — tray hosting: the interception works, the icons do not arrive
+## Step 7 — tray hosting: it works, and the original diagnosis was wrong
 
-**Unresolved on this machine.** Windows 11 25H2, build 26200, ManagedShell 0.0.370 (the newest
-published).
+**Resolved 2026-09-20.** Windows 11 25H2, build 26200, ManagedShell 0.0.370. Umbra collects
+notification icons. It always could.
 
-What works, verified by enumerating windows while Umbra runs:
+> **The earlier conclusion recorded here — "Windows 11 25H2 does not route notification icons to
+> whichever window claims `Shell_TrayWnd`" — was wrong.** It is kept below, because how a careful,
+> well-instrumented investigation reached a confident and incorrect answer is more useful than the
+> answer was.
+
+### What was actually happening
+
+Four links in the chain. The first two were verified correct and reported as such; the failure was
+in the third, and the fourth is why nobody could see it.
 
 | | |
 | :---- | :---- |
-| Umbra's `Shell_TrayWnd` | exists, `WS_EX_TOPMOST` set |
-| Explorer's `Shell_TrayWnd` | still there, topmost cleared |
-| `FindWindow("Shell_TrayWnd")` | returns Umbra's |
-| `NotificationArea` | initialised, `IsFailed` false, valid handle |
+| Windows resolves `FindWindow("Shell_TrayWnd")` and sends `WM_COPYDATA` | **Works.** Unchanged on this build |
+| ManagedShell's tray window receives it | **Works.** `dwData=1`, `NIM_ADD`, valid owner |
+| `NotificationArea.SysTrayCallback` adds the icon | **Threw**, on every single icon |
+| The exception is reported | To `ShellLogger` — **which nothing was attached to** |
 
-So the Z-order interception shell-integration §2.2 describes does exactly what it claims. What does
-not happen is any icon arriving: `TrayIcons` stays at 0 across a 14 s startup, and stays at 0 after
-broadcasting `TaskbarCreated` by hand to force every running application to re-register.
-
-Ruled out along the way:
-
-- **Not a double-initialise.** `AutoStartTrayService` already initialises the area; calling
-  `Initialize()` again is harmless and changes neither the handle nor the count.
-- **Not a missing broadcast.** Broadcasting `TaskbarCreated` from outside the process produced no
-  icons either.
-- **Not a stale dependency.** 0.0.370 is the latest ManagedShell on nuget.org.
-- **Not a pinned/unpinned filter.** The unfiltered `TrayIcons` collection is empty, not just
-  `PinnedIcons`.
-
-**Now ruled in, by controlled experiment.** A throwaway program registered a notification icon the
-ordinary way (`Shell_NotifyIcon` via `NotifyIcon`) while Umbra was running, and the tray window
-ownership was sampled before, during and after:
+The throw:
 
 ```
-before probe : FindWindow -> Umbra's window, topmost = True
-during probe : FindWindow -> Umbra's window, topmost = True
-still        : FindWindow -> Umbra's window, topmost = True
-icons received: 0
+System.NullReferenceException: Object reference not set to an instance of an object.
+   at ManagedShell.WindowsTray.NotifyIcon.SetPinValues()
+   at ManagedShell.WindowsTray.NotificationArea.SysTrayCallback(UInt32 message, SafeNotifyIconData nicData)
 ```
 
-A brand-new registration, with Umbra demonstrably holding the window that `FindWindow` returns,
-delivers nothing. **Windows 11 25H2 does not route notification icons to whichever window claims
-`Shell_TrayWnd`.** The interception is not losing a race and the wiring is not wrong; the mechanism
-it depends on is no longer the one Windows uses.
+`SetPinValues` is called for every arriving icon and does this:
 
-This is the risk shell-integration §2.3 named exactly — `FindWindow` returning the topmost match was
-never contractual, and neither was squatting the class name — arriving on schedule.
+```csharp
+for (int i = 0; i < _notificationArea.PinnedNotifyIcons.Length; i++)
+```
 
-Also ruled out: elevation. UIPI blocks messages travelling from lower to higher integrity, so
-running Umbra as administrator would place it *above* the ordinary applications whose icons it
-wants and could only reduce what reaches it.
+`PinnedNotifyIcons` is a `string[]` **the host application must supply**. Umbra never set it, so it
+was null, so `.Length` threw — and `SysTrayCallback` wraps its whole body in `catch (Exception ex)`,
+logs to `ShellLogger`, and returns. No crash, no return value, no property, no icon. The tray was
+empty and completely silent about why.
 
-**Tray hosting is therefore off by default**, behind `--tray`. The code is kept rather than deleted:
-it may work on earlier Windows 11 builds, and the finding is specific to build 26200. Running it
-costs a permanent 100 ms timer, which is why it does not run for nothing.
+**One line fixes it:** `PinnedNotifyIcons = []` in `ShellConfig`.
 
-The rendering side is complete and untested against real data: tray icons bind to the notification
-area, draw at the trailing end through the tier system, forward mouse events back to the owning
-application, and report their host rectangle so flyouts anchor correctly.
+### Why the wrong answer was so convincing
+
+Every observation in the original investigation was correct. `FindWindow` really did return Umbra's
+window. `NotificationArea` really was initialised and not failed. A brand-new `Shell_NotifyIcon`
+registration really did produce no icon. Double-initialisation, a missing `TaskbarCreated`
+broadcast, a stale dependency, a pinned/unpinned filter and elevation really were all eliminated.
+
+**The gap was that every one of those measurements sampled the two ends of the pipe and never the
+middle.** `FindWindow` is the outside; `TrayIcons.Count` is the far end. Both are consistent with
+"Windows stopped sending" *and* with "we receive it and throw it away", and nothing distinguished
+them. That is this project's own rule — *measure the thing, then check the measurement could have
+detected it* — failing on the one question where it mattered most.
+
+### What actually distinguished them
+
+Three experiments, each isolating one link, none of them expensive:
+
+1. **A standalone spy window**, 60 lines, no AppBar and no Explorer suppression: claimed
+   `Shell_TrayWnd`, won `FindWindow` without even having to demote Explorer's, and logged
+   `NIM_ADD` / `NIM_DELETE` arriving. That alone disproves the recorded conclusion.
+2. **ManagedShell alone**, no Umbra: held the window, received the message — and still collected
+   nothing. That moves the fault inside ManagedShell and clears Umbra's environment entirely.
+3. **`ShellLogger.Attach`**, one interface with one method. The exception had been printed on every
+   icon since the day the tray was first switched on.
+
+Experiment 3 was the whole investigation. Everything before it was working out where to look.
+
+### The second bug, found on the way out
+
+With icons collecting, the bar still showed none:
+
+```
+TrayIcons=9   AllIcons=9   PinnedIcons=0   UnpinnedIcons=9
+```
+
+`BarWindow` bound the tray to `PinnedIcons`, on the reasoning that unpinned icons belong behind
+§7.1's overflow chevron. But nothing is pinned unless the user pins it, and **there is no UI to pin
+with** — so the bound collection was structurally empty. Now bound to `AllIcons`; narrow it again
+when the chevron exists.
+
+### What is genuinely dead on Windows 11
+
+`ExplorerTrayService` — ManagedShell's other tray source, which recovers icons that were registered
+*before* we started. It walks `Shell_TrayWnd → TrayNotifyWnd → SysPager → ToolbarWindow32` inside
+Explorer and reads `TBBUTTON` structures out of its memory with `ReadProcessMemory`. **Windows 11's
+notification area is XAML; that window chain does not exist**, so the walk fails at the third step
+and returns nothing.
+
+This costs less than it sounds. The second `NotificationArea.Initialize()` broadcasts
+`TaskbarCreated`, and well-behaved applications re-register in response — measured, that is where
+all eight icons come from. Applications that ignore the broadcast stay invisible until they next
+update their icon, which matches the "some icons missing" reports against every other shell
+replacement on Windows 11.
+
+There is a native replacement if it ever matters: **`HKCU\Control Panel\NotifyIconSettings`**, which
+is Windows 11's own per-icon store. 96 entries on this machine, each carrying `ExecutablePath`,
+`InitialTooltip`, `IsPromoted`, and `IconSnapshot` — **a raw PNG of the icon** (verified: the blobs
+begin `89 50 4E 47`). It has no `hWnd`, so an icon sourced from it could be drawn but not clicked,
+and liveness cannot be derived from it: cross-referencing `ExecutablePath` against running processes
+needs process paths that a non-elevated process mostly cannot read (38 of them visible here). A
+supplement, not a substitute.
+
+### Costs, unchanged
+
+Tray hosting still runs a permanent 100 ms timer to re-assert the tray window's Z-order, which is
+the second of the two timers §11.2 Q2 asks about. **That is now the only reason it is off by
+default** — a power question, not a functional one.
 
 ## Step 9 — window picker, drag-reorder, settings, monitor selection
 

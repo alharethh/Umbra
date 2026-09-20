@@ -71,7 +71,7 @@ internal sealed class UmbraSettings
     /// </summary>
     /// <remarks>
     /// Off by default. The interception works but Windows 11 25H2 does not deliver icons that way,
-    /// so it collects nothing while costing a permanent 100 ms timer — docs/measurements.md step 7.
+    /// It works; it costs a permanent 100 ms timer — docs/measurements.md step 7.
     /// </remarks>
     public bool Tray { get; set; }
 
@@ -199,7 +199,7 @@ internal sealed class UmbraSettings
         "# The drift and micro-jitter layer.",
         $"motion = {Motion.ToString().ToLowerInvariant()}",
         "",
-        "# Notification area hosting. Collects nothing on Windows 11 25H2 and costs a 100 ms timer.",
+        "# Notification area hosting. Works; costs a permanent 100 ms timer, so it is off by default.",
         $"tray = {Tray.ToString().ToLowerInvariant()}",
         "",
         @"# Device name of the monitor to occupy, e.g. \\.\DISPLAY1. Empty means the primary.",

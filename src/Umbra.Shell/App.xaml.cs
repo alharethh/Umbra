@@ -56,8 +56,8 @@ public partial class App : Application
         Settings = UmbraSettings.Load();
         ApplyCommandLineOverrides(Settings, e.Args);
 
-        // Tray hosting collects nothing on Windows 11 25H2 while still costing a permanent 100 ms
-        // timer (docs/measurements.md step 7), so it stays off unless asked for.
+        // Tray hosting works (docs/measurements.md step 7), but runs a permanent 100 ms timer,
+        // and whether those timers defeat display idle is unmeasured -- so it waits to be asked for.
         _host = new ShellHost(enableTray: Settings.Tray);
 
         if (_host.RecoveredFromUncleanExit)

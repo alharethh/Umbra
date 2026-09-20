@@ -176,7 +176,7 @@
 
         <CheckBox x:Name="TrayBox" Content="Host the notification area" Margin="0,0,0,2" />
         <TextBlock Style="{StaticResource Hint}"
-                   Text="Collects nothing on Windows 11 25H2 — Windows no longer routes notification icons this way — and costs a permanent 100 ms timer. Off unless you are testing it." />
+                   Text="Shows the notification icons next to the clock. Costs a permanent 100 ms timer, which is the only reason it is off by default. Applications that were already running appear once they next update their icon." />
 
         <Border Height="1" Background="#FF2E2E28" Margin="0,6,0,12" />
 

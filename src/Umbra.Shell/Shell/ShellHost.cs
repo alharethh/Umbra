@@ -1,5 +1,7 @@
 using ManagedShell;
 using ManagedShell.Common.Enums;
+using ManagedShell.Common.Logging;
+using Umbra.Shell.Diagnostics;
 
 namespace Umbra.Shell.Shell;
 
@@ -18,14 +20,24 @@ internal sealed class ShellHost : IDisposable
     private bool _disposed;
 
     /// <param name="enableTray">
-    /// Off by default. The tray interception works — Umbra holds the topmost <c>Shell_TrayWnd</c>
-    /// and <c>FindWindow</c> returns it — but Windows 11 25H2 (build 26200) does not deliver
-    /// notification icons that way, so it collects nothing while still costing a permanent 100 ms
-    /// timer. Kept switchable rather than deleted: it may well work on earlier builds, and a future
-    /// Windows update could restore it. See docs/measurements.md, step 7.
+    /// <b>This works.</b> It was believed not to — recorded as "Windows 11 25H2 does not deliver
+    /// notification icons this way" — and that was wrong. Windows routes them correctly; the icons
+    /// were being thrown away inside ManagedShell by a null <c>PinnedNotifyIcons</c>, silently. See
+    /// docs/measurements.md step 7 for the full chain and how it was finally caught.
+    /// <para>
+    /// Still off by default, for the one reason that survived: it costs a permanent 100 ms timer,
+    /// and §11.2 Q2 — whether ManagedShell's timers defeat display idle — is unmeasured. That is a
+    /// power question, not a functional one.
+    /// </para>
     /// </param>
     public ShellHost(bool enableTray = false)
     {
+        // Before anything else. ManagedShell reports its own failures to ShellLogger and carries
+        // on, so an unattached logger turns every internal fault into silence — which is exactly
+        // how a null PinnedNotifyIcons cost this project its tray and a long investigation. There
+        // is no reason ever to run it deaf.
+        ShellLogger.Attach(new BringUpLogBridge());
+
         ShellConfig config = new()
         {
             EnableTasksService = true,
@@ -45,6 +57,14 @@ internal sealed class ShellHost : IDisposable
             // on §11.2 Q2, whether they prevent the display from ever idling.
             EnableTrayService = enableTray,
             AutoStartTrayService = enableTray,
+
+            // <b>Load-bearing, and its absence is silent.</b> ManagedShell 0.0.370 leaves this
+            // null unless the host sets it, and NotifyIcon.SetPinValues() dereferences it for
+            // every icon that arrives — so every icon threw a NullReferenceException that
+            // SysTrayCallback caught and reported only to ShellLogger, which nothing was
+            // listening to. The tray collected nothing and said nothing, for months. Empty
+            // because Umbra has no pin-a-tray-icon UI yet and shows the whole set.
+            PinnedNotifyIcons = [],
 
             EnableWin11DpiWorkaround = false,
         };
@@ -69,14 +89,18 @@ internal sealed class ShellHost : IDisposable
         if (enableTray)
         {
             // Claims the tray and broadcasts TaskbarCreated, which is what makes every running
-            // application re-add its notification icon. AutoStartTrayService has already done this;
-            // repeating it is harmless and makes the intent explicit.
+            // application re-add its notification icon. AutoStartTrayService has already done this,
+            // and the repeat is not merely harmless — TrayService.Initialize is guarded, so the
+            // second call costs nothing but the second TaskbarCreated broadcast, which is what
+            // actually populates the tray. Measured: zero icons after the constructor, eight after
+            // this call.
             ShellManager.NotificationArea.Initialize();
 
             Diagnostics.BringUpLog.Write(
                 $"tray: handle=0x{ShellManager.NotificationArea.Handle.ToInt64():X} " +
                 $"failed={ShellManager.NotificationArea.IsFailed} " +
                 $"icons={ShellManager.NotificationArea.TrayIcons.Count}");
+
         }
     }
 
