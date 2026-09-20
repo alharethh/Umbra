@@ -17,12 +17,10 @@
 
 ---
 
-Windows 11 pins its taskbar to the bottom of the screen and draws it as a bright, permanently
-static strip. On an LCD that costs nothing. On an OLED it is the most burn-in-prone thing on your
-display: the same pixels, the same colours, every hour the machine is on.
-
-Umbra is a replacement built the other way round. It goes on **any** edge, and every decision inside
-it starts from one question — *how much light does this put on a fixed pixel, and for how long?*
+**Umbra is a replacement for the Windows 11 taskbar.** It does what you expect one to do — pinned
+and running applications, window previews, jump lists, a notification area, a clock — and two
+things Windows 11's will not: it sits on **any** screen edge, and it is built from the ground up to
+put as little light as possible on a fixed pixel.
 
 ![The bar waking as the pointer approaches](docs/media/wake.gif)
 
@@ -36,9 +34,12 @@ at. The colour is yours to choose.</sub>
 
 ## Why it exists
 
-**1. It goes where you want it.** Left, right, top or bottom, switchable while it is running.
-Windows 11 took that away; this puts it back, as a real space-reserving AppBar that maximised
-windows respect.
+Windows 11 pins its taskbar to the bottom of the screen and draws it as a bright, permanently
+static strip. On an LCD that costs nothing. On an OLED it is the most burn-in-prone thing on your
+display: the same pixels, the same colours, every hour the machine is on. And you cannot move it.
+
+**1. It goes where you want it.** Left, right, top or bottom, switchable while it is running, as a
+real space-reserving AppBar that maximised windows respect.
 
 **2. It is designed against OLED wear, not decorated with a dark theme.** Three mechanisms, all
 running at once:
