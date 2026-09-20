@@ -576,9 +576,10 @@
                         -->
                         <Rectangle x:Name="HoverChip"
                                    RadiusX="5" RadiusY="5"
-                                   Fill="#FF1F1F1A"
+                                   Fill="{Binding AppIconHoverBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Opacity="0"
                                    IsHitTestVisible="False"
+                                   Visibility="{Binding AppIconChipVisibility, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Width="{Binding HoverChipExtent, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Height="{Binding HoverChipExtent, RelativeSource={RelativeSource AncestorType=Window}}">
                             <Rectangle.RenderTransform>
@@ -587,6 +588,26 @@
                                     Y="{Binding ContentOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
                             </Rectangle.RenderTransform>
                         </Rectangle>
+
+                        <!--
+                            The other choice: the notification area's holographic pane, on the row.
+
+                            Both are built for every slot and one of them is collapsed, so changing
+                            the setting is a visibility flip rather than a retemplate. Retemplating
+                            would rebuild the slot containers, and a container that is destroyed and
+                            recreated has nowhere to slide from — which is what makes drag-reorder
+                            animate at all.
+                        -->
+                        <Control Style="{StaticResource HolographicChip}"
+                                 Visibility="{Binding AppIconPaneVisibility, RelativeSource={RelativeSource AncestorType=Window}}"
+                                 Width="{Binding HoverChipExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                                 Height="{Binding HoverChipExtent, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <Control.RenderTransform>
+                                <TranslateTransform
+                                    X="{Binding ContentOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Y="{Binding ContentOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
+                            </Control.RenderTransform>
+                        </Control>
 
                         <!--
                             The icon is rebuilt for the current tier level: monochrome and

@@ -1,4 +1,4 @@
-<Window x:Class="Umbra.Shell.Settings.SettingsWindow"
+﻿<Window x:Class="Umbra.Shell.Settings.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:ClassModifier="internal"
@@ -177,6 +177,70 @@
         <CheckBox x:Name="TrayBox" Content="Host the notification area" Margin="0,0,0,2" />
         <TextBlock Style="{StaticResource Hint}"
                    Text="Shows the notification icons next to the clock. Costs a permanent 100 ms timer, which is the only reason it is off by default. Applications that were already running appear once they next update their icon." />
+
+        <TextBlock Text="Hover" FontWeight="SemiBold" Margin="0,8,0,6" />
+
+        <Grid Margin="0,0,0,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" Text="Accent colour" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1" x:Name="AccentBox" />
+            <Border Grid.Column="2" x:Name="AccentSwatch"
+                    Width="26" Height="18" Margin="8,0,0,0"
+                    CornerRadius="3" BorderThickness="1" BorderBrush="#FF3A3A33" />
+        </Grid>
+
+        <Grid Margin="0,4,0,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" Text="Or a hex value" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" x:Name="AccentHex"
+                     Background="#FF1B1B18" Foreground="#FFE8E4DA"
+                     BorderBrush="#FF3A3A33" BorderThickness="1"
+                     Padding="6,3" FontFamily="Consolas" />
+        </Grid>
+
+        <TextBlock Style="{StaticResource Hint}"
+                   Text="The colour of the sweep, the glow and the edge on the notification area, the clock and the Start button. Whatever you choose is capped to the brightest a hover is allowed to be, so this picks the hue and not the amount of light. Applies immediately." />
+
+        <Grid Margin="0,4,0,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" Text="Application icons" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1" x:Name="AppHoverBox" />
+        </Grid>
+
+        <Grid Margin="0,4,0,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" Text="Chip colour" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" x:Name="AppHoverHex"
+                     Background="#FF1B1B18" Foreground="#FFE8E4DA"
+                     BorderBrush="#FF3A3A33" BorderThickness="1"
+                     Padding="6,3" FontFamily="Consolas" />
+            <Border Grid.Column="2" x:Name="AppHoverSwatch"
+                    Width="26" Height="18" Margin="8,0,0,0"
+                    CornerRadius="3" BorderThickness="1" BorderBrush="#FF3A3A33" />
+        </Grid>
+
+        <TextBlock Style="{StaticResource Hint}"
+                   Text="The row can keep its plain chip or take the same holographic pane the notification area uses. The chip is the cheaper of the two by a wide margin — it is one dim rounded rectangle, where the pane is a lit surface with a glow — but both are only ever drawn while you are pointing at the bar. The chip colour applies to the plain one. Applies immediately." />
 
         <Border Height="1" Background="#FF2E2E28" Margin="0,6,0,12" />
 

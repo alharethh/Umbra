@@ -516,6 +516,8 @@ internal partial class BarWindow : AppBarWindow
         OnPropertyChanged(nameof(IconExtent));
         OnPropertyChanged(nameof(HoverChipExtent));
 
+        ApplyHoverSettings(settings);
+
         ApplyPlacement(settings.Edge, settings.Alignment, ResolveScreen(settings.Monitor));
 
         _motion?.SetEnabled(settings.Motion);
@@ -523,7 +525,31 @@ internal partial class BarWindow : AppBarWindow
 
         BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
             $"settings applied live: dormant icon {_dormantIconExtent:F0} px, " +
-            $"motion {settings.Motion}, edge {Metrics.Edge}, alignment {Metrics.Alignment}"));
+            $"motion {settings.Motion}, edge {Metrics.Edge}, alignment {Metrics.Alignment}, " +
+            $"hover {settings.AppIconHover} {settings.HoverAccent}"));
+    }
+
+    /// <summary>
+    /// Applies the hover colours and the row's hover treatment.
+    /// </summary>
+    /// <remarks>
+    /// Live, like everything else that only changes what is drawn. The templates bind to these,
+    /// and both treatments are built for every slot with one of them collapsed — switching is a
+    /// visibility change rather than a retemplate, so the row does not rebuild its containers.
+    /// Rebuilding them would be visible for a different reason: a container that is destroyed and
+    /// recreated has nowhere to slide from, which is what makes reordering animate at all.
+    /// </remarks>
+    public void ApplyHoverSettings(Settings.UmbraSettings settings)
+    {
+        AccentColor = CappedColour(settings.HoverAccent);
+        AppIconHoverBrush = CappedBrush(settings.AppIconHoverColour);
+        AppIconsUseHolographicHover = settings.AppIconHover == Settings.AppIconHover.Holographic;
+
+        OnPropertyChanged(nameof(AccentColor));
+        OnPropertyChanged(nameof(AppIconHoverBrush));
+        OnPropertyChanged(nameof(AppIconsUseHolographicHover));
+        OnPropertyChanged(nameof(AppIconChipVisibility));
+        OnPropertyChanged(nameof(AppIconPaneVisibility));
     }
 
     /// <summary>
@@ -1386,14 +1412,58 @@ internal partial class BarWindow : AppBarWindow
     /// be unpacked in XAML, which cannot be done.
     /// </para>
     /// </remarks>
-    public System.Windows.Media.Color AccentColor { get; } = CreateAccentColor();
+    public System.Windows.Media.Color AccentColor { get; private set; } =
+        CappedColour(Settings.UmbraSettings.DefaultHoverAccent);
 
-    private static System.Windows.Media.Color CreateAccentColor()
+    /// <summary>The plain chip behind a hovered application icon, when that is the choice.</summary>
+    public System.Windows.Media.Brush AppIconHoverBrush { get; private set; } =
+        CappedBrush(Settings.UmbraSettings.DefaultAppIconHoverColour);
+
+    /// <summary>Whether the application icons use the holographic pane rather than the chip.</summary>
+    public bool AppIconsUseHolographicHover { get; private set; }
+
+    /// <inheritdoc cref="AppIconsUseHolographicHover"/>
+    public Visibility AppIconChipVisibility =>
+        AppIconsUseHolographicHover ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <inheritdoc cref="AppIconsUseHolographicHover"/>
+    public Visibility AppIconPaneVisibility =>
+        AppIconsUseHolographicHover ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>
+    /// A colour from the settings, capped to what Tier 2 is allowed to emit.
+    /// </summary>
+    /// <remarks>
+    /// <b>The cap is the whole reason a colour setting is safe to offer.</b> §2.3's budget is
+    /// about light, not hue, and a picker with no ceiling is an invitation to put a full-intensity
+    /// white behind every icon on an OLED panel. Capping leaves the user the choice that is
+    /// genuinely theirs — what colour it is — and keeps the one that is not.
+    /// </remarks>
+    private static System.Windows.Media.Color CappedColour(string hex)
     {
-        Umbra.Core.Color.Rgb capped = Umbra.Core.Color.Srgb.CapLuminance(
-            Umbra.Core.Color.Rgb.FromHex("#53E7FF"), TierPalette.Tier2LuminanceCap);
+        try
+        {
+            Umbra.Core.Color.Rgb capped = Umbra.Core.Color.Srgb.CapLuminance(
+                Umbra.Core.Color.Rgb.FromHex(hex), TierPalette.Tier2LuminanceCap);
 
-        return System.Windows.Media.Color.FromRgb(capped.R, capped.G, capped.B);
+            return System.Windows.Media.Color.FromRgb(capped.R, capped.G, capped.B);
+        }
+        catch (Exception e) when (e is FormatException or ArgumentException)
+        {
+            // The settings reader validates the shape, so this is the hand-edited file that got
+            // past it. The default is a better answer than a crash on the way to first paint.
+            BringUpLog.Write($"settings: '{hex}' is not a colour; using the default");
+
+            return CappedColour(Settings.UmbraSettings.DefaultHoverAccent);
+        }
+    }
+
+    private static System.Windows.Media.Brush CappedBrush(string hex)
+    {
+        System.Windows.Media.SolidColorBrush brush = new(CappedColour(hex));
+        brush.Freeze();
+
+        return brush;
     }
 
     private static System.Windows.Media.Brush CreateStartAccent()

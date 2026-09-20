@@ -5,6 +5,17 @@ using Umbra.Shell.Diagnostics;
 
 namespace Umbra.Shell.Settings;
 
+/// <summary>What an application icon does when the pointer is on it.</summary>
+internal enum AppIconHover
+{
+    /// <summary>The plain rounded chip the row has always had (§3.2).</summary>
+    Chip,
+
+    /// <summary>The holographic pane the notification area uses.</summary>
+    Holographic,
+}
+
+
 /// <summary>
 /// Umbra's configuration, as stored on disk.
 /// </summary>
@@ -87,6 +98,43 @@ internal sealed class UmbraSettings
     public bool Tray { get; set; } = true;
 
     /// <summary>
+    /// Colour of the holographic hover animation on the notification area and the trailing
+    /// controls.
+    /// </summary>
+    /// <remarks>
+    /// <b>Whatever is chosen is capped to the Tier 2 luminance ceiling before it is drawn</b>
+    /// (<c>BarWindow.AccentColor</c>). A hover effect is the easiest place in a design to put
+    /// something brighter than §2.3 allows, and a colour picker is an invitation to do exactly
+    /// that; capping means the choice is about hue, which is taste, and not about how much light
+    /// the panel emits, which is not.
+    /// </remarks>
+    public string HoverAccent { get; set; } = DefaultHoverAccent;
+
+    /// <summary>The shipping hover accent: a cyan that reads as light passing over a surface.</summary>
+    public const string DefaultHoverAccent = "#53E7FF";
+
+    /// <summary>
+    /// Which hover treatment the application icons use.
+    /// </summary>
+    /// <remarks>
+    /// The row is the one place where the two defensible answers disagree. The plain chip is
+    /// nearly free — <c>#1F1F1A</c> is L = 1.2%, about a thousandth of the wear of a white hover —
+    /// while the holographic pane is a lit surface with a glow. Both are Tier 2 only, so neither
+    /// is on the duty budget; the difference is how much light a hovered icon throws while the
+    /// pointer rests on it, and that is the user's call rather than ours.
+    /// </remarks>
+    public AppIconHover AppIconHover { get; set; } = AppIconHover.Chip;
+
+    /// <summary>Colour of the plain chip behind a hovered application icon.</summary>
+    /// <remarks>
+    /// Capped like the accent. The default is the §3.2 value the row was measured at.
+    /// </remarks>
+    public string AppIconHoverColour { get; set; } = DefaultAppIconHoverColour;
+
+    /// <inheritdoc cref="AppIconHoverColour"/>
+    public const string DefaultAppIconHoverColour = "#1F1F1A";
+
+    /// <summary>
     /// Device name of the monitor to occupy, or empty for the primary.
     /// </summary>
     /// <remarks>
@@ -166,10 +214,47 @@ internal sealed class UmbraSettings
                 Monitor = value;
                 break;
 
+            case "hoveraccent":
+                if (IsColour(value)) HoverAccent = value;
+                else Unusable(key, value);
+                break;
+
+            case "appiconhover":
+                if (Enum.TryParse(value, ignoreCase: true, out AppIconHover appHover)) AppIconHover = appHover;
+                else Unusable(key, value);
+                break;
+
+            case "appiconhovercolour":
+            case "appiconhovercolor":
+                if (IsColour(value)) AppIconHoverColour = value;
+                else Unusable(key, value);
+                break;
+
             default:
                 BringUpLog.Write($"settings: ignoring unknown key '{key}'");
                 break;
         }
+    }
+
+    /// <summary>
+    /// Whether a value is a colour this can hand to WPF.
+    /// </summary>
+    /// <remarks>
+    /// Checked here rather than left to the renderer, because a bad colour in
+    /// <c>ColorConverter</c> throws, and a settings file is a text file someone may well edit by
+    /// hand. The rule is the one the file's own comment states: a hex triplet, with or without
+    /// alpha.
+    /// </remarks>
+    private static bool IsColour(string value)
+    {
+        if (value.Length is not (7 or 9) || value[0] != '#') return false;
+
+        for (int i = 1; i < value.Length; i++)
+        {
+            if (!Uri.IsHexDigit(value[i])) return false;
+        }
+
+        return true;
     }
 
     private static void Unusable(string key, string value) =>
@@ -215,6 +300,16 @@ internal sealed class UmbraSettings
         "",
         @"# Device name of the monitor to occupy, e.g. \\.\DISPLAY1. Empty means the primary.",
         $"monitor = {Monitor}",
+        "",
+        "# Colour of the holographic hover animation, as #RRGGBB or #AARRGGBB. Capped to the",
+        "# Tier 2 luminance ceiling whatever you pick, so this chooses the hue and not the light.",
+        $"hoverAccent = {HoverAccent}",
+        "",
+        "# chip | holographic -- what the application icons do on hover.",
+        $"appIconHover = {AppIconHover}",
+        "",
+        "# Colour of the plain chip behind a hovered application icon.",
+        $"appIconHoverColour = {AppIconHoverColour}",
     ];
 
     /// <summary>A copy, so a settings window can be cancelled without having mutated anything.</summary>
@@ -226,6 +321,9 @@ internal sealed class UmbraSettings
         Motion = Motion,
         Tray = Tray,
         Monitor = Monitor,
+        HoverAccent = HoverAccent,
+        AppIconHover = AppIconHover,
+        AppIconHoverColour = AppIconHoverColour,
     };
 
     /// <summary>
