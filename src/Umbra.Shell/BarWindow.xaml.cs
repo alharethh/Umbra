@@ -650,7 +650,7 @@ internal partial class BarWindow : AppBarWindow
             nameof(PillWidth), nameof(PillHeight), nameof(PillMargin),
             nameof(PillHorizontalAlignment), nameof(PillVerticalAlignment),
             nameof(IconExtent), nameof(HoverChipExtent),
-            nameof(ClockDate), nameof(ClockMargin),
+            nameof(ClockDate), nameof(ClockMargin), nameof(TooltipPlacement),
         ])
         {
             OnPropertyChanged(name);
@@ -1126,6 +1126,35 @@ internal partial class BarWindow : AppBarWindow
         ClearPanelsFor(BarPanel.None);
         _language.CycleForeground(GetForegroundWindow());
     }
+
+    /// <summary>
+    /// Which side of a control its tooltip opens on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Off the bar, whichever edge the bar is on.</b> WPF's default is
+    /// <see cref="PlacementMode.Mouse"/>, which puts the tooltip under the pointer — and the
+    /// pointer is on the icon, so the label covered the thing it was labelling. Windows puts its
+    /// own above the taskbar for the same reason.
+    /// </para>
+    /// <para>
+    /// It has to follow the edge rather than being a constant: <c>Top</c> on a top-edge bar would
+    /// open the tooltip off the screen, and on a vertical bar it would lie along the bar covering
+    /// the icons above.
+    /// </para>
+    /// <para>
+    /// Set per control rather than once on the window. The <c>ToolTipService</c> delays inherit
+    /// down the visual tree and this one does not, which is the sort of asymmetry that is only
+    /// discoverable by trying it.
+    /// </para>
+    /// </remarks>
+    public PlacementMode TooltipPlacement => Metrics.Edge switch
+    {
+        CoreBarEdge.Top => PlacementMode.Bottom,
+        CoreBarEdge.Left => PlacementMode.Right,
+        CoreBarEdge.Right => PlacementMode.Left,
+        _ => PlacementMode.Top,
+    };
 
     /// <summary>The Start button sits at the aligned end, ahead of the icon row.</summary>
     public HorizontalAlignment StartHorizontalAlignment =>

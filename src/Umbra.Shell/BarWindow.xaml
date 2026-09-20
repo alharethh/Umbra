@@ -209,6 +209,7 @@
         <DataTemplate x:Key="SystemIndicatorTemplate">
             <Grid Background="Transparent"
                   ToolTip="{Binding Title}"
+                  ToolTipService.Placement="{Binding TooltipPlacement, RelativeSource={RelativeSource AncestorType=Window}}"
                   MouseRightButtonDown="OnTrayIconMouseDown"
                   MouseRightButtonUp="OnTrayIconMouseUp"
                   MouseEnter="OnTrayIconMouseEnter"
@@ -233,6 +234,7 @@
         <DataTemplate x:Key="TrayIconTemplate">
             <Grid Background="Transparent"
                   ToolTip="{Binding Title}"
+                  ToolTipService.Placement="{Binding TooltipPlacement, RelativeSource={RelativeSource AncestorType=Window}}"
                   MouseLeftButtonDown="OnTrayIconMouseDown"
                   MouseLeftButtonUp="OnTrayIconMouseUp"
                   MouseRightButtonDown="OnTrayIconMouseDown"
@@ -303,6 +305,7 @@
         <Grid x:Name="StartButton"
               Background="Transparent"
               ToolTip="Start"
+              ToolTipService.Placement="{Binding TooltipPlacement}"
               MouseLeftButtonUp="OnStartClick"
               MouseRightButtonUp="OnStartContextMenu"
               HorizontalAlignment="{Binding StartHorizontalAlignment}"
@@ -709,6 +712,7 @@
         <Grid x:Name="TrayChevron"
               Background="Transparent"
               ToolTip="Show hidden icons"
+              ToolTipService.Placement="{Binding TooltipPlacement}"
               Visibility="{Binding TrayOverflowVisibility}"
               MouseLeftButtonUp="OnTrayChevronClick"
               VerticalAlignment="Center"
@@ -753,6 +757,7 @@
         <Grid x:Name="SystemCluster"
               Background="Transparent"
               ToolTip="{Binding NetworkDescription}"
+              ToolTipService.Placement="{Binding TooltipPlacement}"
               MouseLeftButtonUp="OnSystemClusterClick"
               VerticalAlignment="Center">
 
@@ -821,6 +826,7 @@
             <Grid x:Name="LanguageIndicator"
                   Background="Transparent"
                   ToolTip="Switch input language"
+                  ToolTipService.Placement="{Binding TooltipPlacement}"
                   Visibility="{Binding LanguageVisibility}"
                   MouseLeftButtonUp="OnLanguageClick"
                   VerticalAlignment="Center"
@@ -863,6 +869,7 @@
             -->
             <Grid Background="Transparent"
                   ToolTip="Open notifications"
+                  ToolTipService.Placement="{Binding TooltipPlacement}"
                   MouseLeftButtonUp="OnClockClick"
                   Margin="{Binding ClockMargin}"
                   Height="{Binding TraySlotHeight}"
@@ -931,6 +938,7 @@
         <Grid x:Name="ShowDesktop"
               Background="Transparent"
               ToolTip="Show desktop"
+              ToolTipService.Placement="{Binding TooltipPlacement}"
               MouseLeftButtonUp="OnShowDesktopClick"
               HorizontalAlignment="{Binding ShowDesktopHorizontalAlignment}"
               VerticalAlignment="{Binding ShowDesktopVerticalAlignment}"
