@@ -52,7 +52,47 @@ internal sealed class ForeignMenuDismisser
         if (!GetCursorPos(out NativePoint cursor)) return false;
         if (!barBounds.Contains(cursor.X, cursor.Y)) return false;
 
+        // Logged on every press that lands on the bar, which is rare enough to afford and is the
+        // only way to see what a tray menu actually is. Four fixes were aimed at this by
+        // reasoning about it; none of them were aimed at a measurement, and none of them worked.
+        // If MenuOwner is 0 here while a tray menu is plainly on screen, the menu is not a Win32
+        // menu at all and WM_CANCELMODE was never going to reach it.
+        BringUpLog.Write(
+            $"bar press | cursor {cursor.X},{cursor.Y} | menu owner 0x{MenuOwner():X} | " +
+            $"gui flags 0x{Flags():X} | foreground {ForegroundDescription()}");
+
         return Cancel();
+    }
+
+    /// <summary>The raw <c>GUITHREADINFO</c> flags, for the diagnostic above.</summary>
+    private static uint Flags()
+    {
+        GuiThreadInfo info = new() { Size = Marshal.SizeOf<GuiThreadInfo>() };
+        return GetGUIThreadInfo(0, ref info) ? info.Flags : 0;
+    }
+
+    /// <summary>The foreground window's class and owning process, for the diagnostic above.</summary>
+    private static string ForegroundDescription()
+    {
+        IntPtr window = GetForegroundWindow();
+        if (window == IntPtr.Zero) return "none";
+
+        System.Text.StringBuilder name = new(256);
+        GetClassName(window, name, name.Capacity);
+
+        string process = "?";
+
+        try
+        {
+            GetWindowThreadProcessId(window, out uint pid);
+            using System.Diagnostics.Process owner = System.Diagnostics.Process.GetProcessById((int)pid);
+            process = owner.ProcessName;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        {
+        }
+
+        return $"{name} / {process}";
     }
 
     /// <summary>
@@ -154,4 +194,13 @@ internal sealed class ForeignMenuDismisser
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out NativePoint point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int capacity);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 }

@@ -52,6 +52,9 @@ internal static class WindowOrder
     [DllImport("user32.dll")]
     private static extern bool AttachThreadInput(uint attach, uint attachTo, bool join);
 
+    [DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(uint processId);
+
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
 
@@ -109,6 +112,54 @@ internal static class WindowOrder
 
         window.Show();
         BringToFront(window);
+    }
+
+    /// <summary>
+    /// Lets the process owning <paramref name="window"/> take the foreground for itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is what a tray icon's menu needs, and why one misbehaves under this bar.</b> An
+    /// application showing a menu from its notification icon is required to make its own window
+    /// the foreground first — Microsoft has documented that since KB135788 — because a menu whose
+    /// owner is not foreground does not dismiss when the user clicks away, and closes on its own
+    /// a few seconds later. Both symptoms were reported here, together.
+    /// </para>
+    /// <para>
+    /// The application does make that call; Windows refuses it. A process may only take the
+    /// foreground if the process that currently holds it grants permission, and clicking our bar
+    /// never moves the foreground at all, so nobody ever grants anything. On the real taskbar the
+    /// click hands Explorer the foreground and Explorer hands it on.
+    /// </para>
+    /// <para>
+    /// So we do what Explorer does. <c>AllowSetForegroundWindow</c> is the documented way to pass
+    /// that right to another process, and it may only be called by whoever holds the foreground —
+    /// which we do not, hence the same <c>AttachThreadInput</c> borrow used above. <b>We are not
+    /// raising the application ourselves</b>: this only makes its own call legal, so an
+    /// application that would not have come forward still does not.
+    /// </para>
+    /// </remarks>
+    public static bool AllowForeground(IntPtr window)
+    {
+        if (window == IntPtr.Zero) return false;
+
+        uint target = GetWindowThreadProcessId(window, out uint targetProcess);
+        if (target == 0 || targetProcess == 0) return false;
+
+        IntPtr foreground = GetForegroundWindow();
+        uint theirs = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, out _);
+        uint ours = GetCurrentThreadId();
+
+        bool attached = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, true);
+
+        try
+        {
+            return AllowSetForegroundWindow(targetProcess);
+        }
+        finally
+        {
+            if (attached) AttachThreadInput(ours, theirs, false);
+        }
     }
 
     /// <summary>

@@ -135,8 +135,12 @@ internal partial class BarWindow : AppBarWindow
             // bar does not close it for the same reason nothing else does — the foreground never
             // moves. Polled here rather than handled on a mouse event, because a Win32 menu may
             // hold the mouse capture, in which case the press never reaches us at all.
+            // Guarded like every other use of DpiScale in this file. Unguarded it can be 0 before
+            // the window has a source, which collapses the rectangle and silently stops the poll.
+            double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
+
             _foreignMenus.Poll(new System.Windows.Rect(
-                Left * DpiScale, Top * DpiScale, Width * DpiScale, Height * DpiScale));
+                Left * dpi, Top * dpi, Width * dpi, Height * dpi));
 
             bool justPressed = DateTime.UtcNow - _startPressedAt < StartPressGrace;
             StartActive = _startMenu.IsOpen || justPressed;
@@ -2982,6 +2986,8 @@ internal partial class BarWindow : AppBarWindow
     {
         if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
 
+        AllowIconOwnerForeground(icon);
+
         // Ours go now, before the owner is told: whatever it raises belongs in front of them, and
         // a jump list left open would be over the top of it.
         //
@@ -3010,6 +3016,8 @@ internal partial class BarWindow : AppBarWindow
 
         if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
 
+        AllowIconOwnerForeground(icon);
+
         icon.IconMouseUp(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);
         e.Handled = true;
     }
@@ -3024,6 +3032,28 @@ internal partial class BarWindow : AppBarWindow
     {
         if (sender is FrameworkElement { DataContext: NotifyIcon icon })
             icon.IconMouseLeave(PackedCursorPosition());
+    }
+
+    /// <summary>
+    /// Lets a notification icon's owner take the foreground before it is told about the click.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is what makes a tray menu behave.</b> An application putting up a menu from its
+    /// icon must make its own window foreground first, or the menu does not dismiss when you
+    /// click away and closes by itself a few seconds later — both reported here. The application
+    /// makes that call and Windows refuses it, because nobody granted it the right: clicking our
+    /// bar never moves the foreground, so there is nothing to hand on. Explorer's taskbar has the
+    /// foreground to give; we have to borrow it. See <see cref="WindowOrder.AllowForeground"/>.
+    /// </para>
+    /// <para>
+    /// Done on the way down as well as the way up, because applications differ on which one they
+    /// raise the menu from, and granting twice costs nothing.
+    /// </para>
+    /// </remarks>
+    private static void AllowIconOwnerForeground(NotifyIcon icon)
+    {
+        if (icon.HWnd != IntPtr.Zero) WindowOrder.AllowForeground(icon.HWnd);
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
