@@ -3057,9 +3057,16 @@ internal partial class BarWindow : AppBarWindow
 
     private void OnTrayIconMouseUp(object sender, MouseButtonEventArgs e)
     {
-        // Acting on an icon dismisses the panel it was in, or the flyout sits over whatever the
-        // click just raised.
-        if (TrayOverflowPopup.IsOpen) SetTrayOverflowOpen(false);
+        // A left click on an icon dismisses the panel it was in, or the flyout sits over whatever
+        // window the click just raised.
+        //
+        // <b>A right click does not.</b> It opens the application's own menu beside the icon, and
+        // taking the flyout away underneath it leaves that menu floating next to nothing —
+        // reported against Steam. Windows' own overflow behaves the same way: the menu appears
+        // and the panel stays. The flyout then closes on the next press outside it, which is the
+        // press that dismisses the application's menu too.
+        if (e.ChangedButton == MouseButton.Left && TrayOverflowPopup.IsOpen)
+            SetTrayOverflowOpen(false);
 
         if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
 
