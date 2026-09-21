@@ -21,6 +21,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Checked before anything is built rather than at the step that needs it. A bar running out of
+# artifacts\Umbra holds Umbra.exe open, and being told that after three minutes of publishing is
+# a worse way to find out than being told straight away.
+$runnable = Join-Path $Repo "artifacts\Umbra"
+$holding = @(Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($runnable, [StringComparison]::OrdinalIgnoreCase) })
+
+if ($holding.Count -gt 0) {
+    $pid0 = $holding[0].Id
+    throw "Umbra is running from artifacts\Umbra (pid $pid0). Exit it - right-click the bar, Exit - then run this again."
+}
+
 $out = Join-Path $Repo "artifacts\release"
 Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $out | Out-Null
@@ -62,4 +74,21 @@ Remove-Item -Recurse -Force $folder
 
 "{0,-38} {1,7:N1} MB" -f (Split-Path $zip -Leaf), ((Get-Item $zip).Length / 1MB)
 
-Write-Host "`nBoth built. Attach them to the release for the matching tag."
+# --- and the runnable copy, because it is the one anybody actually launches ----------------------
+#
+# artifacts\Umbra is the path the README and the project notes tell you to run, and this script used to
+# leave it alone. So a release build produced two fresh downloads beside a stale Umbra.exe, and
+# testing "the new build" ran the previous day's -- silently, because the exe is still there and
+# still starts. That cost a round of "I tried it and it still doesn't work" against a fix that was
+# fine. Same publish the docs describe, so the copy that gets launched is never older than the
+# ones that get uploaded.
+Remove-Item -Recurse -Force $runnable -ErrorAction SilentlyContinue
+
+& dotnet publish $project -c Release -o $runnable --nologo -v q
+if ($LASTEXITCODE -ne 0) { throw "runnable publish failed" }
+
+$stamp = (Get-Item (Join-Path $runnable "Umbra.exe")).LastWriteTime.ToString("HH:mm:ss")
+"{0,-38} {1,7}" -f "artifacts\Umbra\Umbra.exe", $stamp
+
+Write-Host "`nBoth downloads built, and artifacts\Umbra refreshed to match."
+Write-Host "Attach the two in artifacts\release to the release for the matching tag."
