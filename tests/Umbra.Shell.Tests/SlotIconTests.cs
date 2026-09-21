@@ -1,32 +1,35 @@
+using System.Diagnostics;
 using System.IO;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Umbra.Shell.Shell;
 using Umbra.Shell.Tasks;
 
 namespace Umbra.Shell.Tests;
 
 /// <summary>
-/// Which slots are allowed to synthesise an icon, and why widening it froze the whole bar.
+/// What a slot is allowed to do to find its icon, and what it must never do on the UI thread.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A pinned application is the one thing on the row that can exist with no window to take an icon
-/// from, so it — and only it — gets one read out of its executable. Extending that to any slot
-/// lacking a live icon looks harmless and is not.
+/// <b>This file used to guard a different invariant, and that invariant is deliberately gone.</b>
+/// It asserted that only a <i>pinned</i> slot would ever synthesise an icon, because
+/// <c>GetImageFromAssociatedIcon</c> was called straight from the <c>Icon</c> getter and never
+/// returns for <c>C:\Program Files\Ascent\Ascent.exe</c> on the development machine — the bar
+/// froze before its window was ever shown. Narrowing which slots could reach a blocking call was
+/// a way of making the freeze rarer, not of fixing it, and it cost every unpinned application
+/// with no window icon its artwork. Measured, that is most of them: seven of ten visible windows
+/// return nothing from <c>WM_GETICON</c>.
 /// </para>
 /// <para>
-/// <b><c>GetImageFromAssociatedIcon</c> is a synchronous shell call made on the UI thread, and it
-/// can never return.</b> On the development machine it hangs indefinitely for
-/// <c>C:\Program Files\Ascent\Ascent.exe</c>. The bar froze before its window was ever shown: no
-/// icons, no clock, no Start button, no error and nothing in the log, because nothing had thrown.
-/// It reproduced only with the tray switched off, which is pure timing — the tray's extra startup
-/// work delays the first layout long enough for the live icon to arrive, so the fallback is never
-/// reached. That made it look like a tray bug for an hour.
+/// The invariant now is the stronger one: <b>the getter never touches the shell at all</b>. So
+/// these tests assert that it answers immediately however badly the shell behaves, and that the
+/// icon arrives afterwards on its own.
 /// </para>
 /// <para>
-/// <b>These tests need a shortcut that actually resolves.</b> The first version of this file used
-/// an empty Start Menu, so the resolver found nothing and the slot returned null whether the guard
-/// was there or not — it passed against a build with the guard deleted. A real <c>.lnk</c> is what
-/// makes the widened version observably produce an icon.
+/// <b>These tests need a shortcut that actually resolves.</b> The first version of the old file
+/// used an empty Start Menu, so nothing resolved and it passed against a build with the guard
+/// deleted. A real <c>.lnk</c> to a real executable is what makes the assertions discriminate.
 /// </para>
 /// </remarks>
 public class SlotIconTests : IDisposable
@@ -59,11 +62,24 @@ public class SlotIconTests : IDisposable
     /// Keyed "whatever", not a path. An unpinned slot with no windows has no executable path, so
     /// the only name it can offer the resolver is its own key — exactly the case of an
     /// AUMID-keyed application. Keying it with a path would leave the resolver unable to match,
-    /// and these tests would then pass because nothing resolved rather than because the guard
-    /// held. That is the trap the first two versions of this file fell into.
+    /// and these tests would then pass because nothing resolved rather than because the behaviour
+    /// held. That is the trap the first two versions of the old file fell into.
     /// </remarks>
-    private static TaskbarSlot Slot(PinnedApp? pin, ShortcutResolver resolver) =>
-        new("whatever", pin, resolver);
+    private TaskbarSlot Slot(PinnedApp? pin, AppIconResolver? icons = null) =>
+        new("whatever", pin, Resolver(), icons);
+
+    private static bool Eventually(Func<bool> condition, int milliseconds = 5000)
+    {
+        Stopwatch watch = Stopwatch.StartNew();
+
+        while (watch.ElapsedMilliseconds < milliseconds)
+        {
+            if (condition()) return true;
+            Thread.Sleep(10);
+        }
+
+        return condition();
+    }
 
     /// <summary>The shortcut really does resolve — without this the rest proves nothing.</summary>
     [Fact]
@@ -78,49 +94,98 @@ public class SlotIconTests : IDisposable
     }
 
     /// <summary>
-    /// An unpinned slot with no window never reaches the shell.
+    /// The icon arrives, from the Start Menu, for a slot that is <b>not</b> pinned.
     /// </summary>
     /// <remarks>
-    /// The shortcut above resolves to a real executable with a perfectly good icon, so a build that
-    /// asks the shell here returns one and fails this. That is the point: the assertion is "null",
-    /// but what it guards is "did not go looking".
+    /// The case the old guard broke. This slot has no pin and no windows, so under the previous
+    /// rule it drew nothing for as long as it was on the bar.
     /// </remarks>
     [Fact]
-    public void AnUnpinnedSlotDoesNotSynthesiseAnIcon()
+    public void AnUnpinnedSlotStillGetsItsApplicationIcon()
     {
-        TaskbarSlot slot = Slot(pin: null, Resolver());
+        TaskbarSlot slot = Slot(pin: null);
 
         Assert.False(slot.IsPinned);
-        Assert.Null(slot.Icon);
+
+        // First read kicks off resolution and returns whatever is known so far, which is nothing.
+        _ = slot.Icon;
+        Assert.True(Eventually(() => slot.Icon is not null));
     }
 
-    /// <summary>The same slot, pinned, is allowed to and does.</summary>
+    /// <summary>And a pinned one does too, from its recorded path.</summary>
+    [Fact]
+    public void APinnedSlotGetsItsIconFromTheRecordedPath()
+    {
+        PinnedApp pin = new(Target, Target, "whatever");
+        TaskbarSlot slot = Slot(pin);
+
+        _ = slot.Icon;
+        Assert.True(Eventually(() => slot.Icon is not null));
+    }
+
+    /// <summary>
+    /// The getter answers immediately even when every extraction hangs forever.
+    /// </summary>
     /// <remarks>
-    /// The other half of the pair. Without it the guard could be "never synthesise anything", which
-    /// would pass the test above and quietly cost every pinned application its icon.
+    /// <b>This is the freeze, reproduced.</b> Put a blocking call back into the <c>Icon</c> getter
+    /// and this test stops returning rather than failing — which is precisely what the bar did.
     /// </remarks>
     [Fact]
-    public void APinnedSlotDoesSynthesiseOne()
+    public void TheIconGetterAnswersImmediatelyWhileTheShellIsWedged()
     {
-        PinnedApp pin = new(@"C:\Program Files\Whatever\whatever.exe", @"C:\nowhere\gone.exe", "whatever");
-        TaskbarSlot slot = Slot(pin, Resolver());
+        using ManualResetEventSlim release = new(false);
+        AppIconResolver icons = new(
+            new BlockingSource(release), timeout: TimeSpan.FromMilliseconds(200));
 
-        Assert.True(slot.IsPinned);
-        Assert.NotNull(slot.Icon);
-    }
+        TaskbarSlot slot = Slot(pin: null, icons);
 
-    /// <summary>And it must answer immediately when it is not going to look.</summary>
-    [Fact]
-    public void AnUnpinnedSlotAnswersImmediately()
-    {
-        TaskbarSlot slot = Slot(pin: null, Resolver());
-
-        System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
-        _ = slot.Icon;
+        Stopwatch watch = Stopwatch.StartNew();
+        for (int i = 0; i < 50; i++) _ = slot.Icon;
         watch.Stop();
 
         Assert.True(watch.ElapsedMilliseconds < 200,
-            $"an unpinned slot took {watch.ElapsedMilliseconds} ms to report no icon, so it went to the shell");
+            $"fifty reads took {watch.ElapsedMilliseconds} ms, so the getter is reaching the shell");
+
+        release.Set();
+    }
+
+    /// <summary>
+    /// A slot whose icon genuinely cannot be found draws a placeholder rather than a gap.
+    /// </summary>
+    /// <remarks>
+    /// An empty slot reads as a layout fault — that is how the stale Discord pin was reported, as
+    /// "a weird logo to the right of firefox". A placeholder is visibly a placeholder.
+    /// </remarks>
+    [Fact]
+    public void AnUnresolvableSlotFallsBackToThePlaceholder()
+    {
+        AppIconResolver icons = new(new EmptySource(), maxAttempts: 1);
+        TaskbarSlot slot = Slot(pin: null, icons);
+
+        Assert.True(Eventually(() =>
+        {
+            _ = slot.Icon;
+            return icons.Exhausted(slot.Key);
+        }));
+
+        Assert.Same(Umbra.Shell.Rendering.PlaceholderIcon.Get(), slot.Icon);
+    }
+
+    /// <summary>
+    /// But not before it has given up — a row of placeholders on every start would look broken.
+    /// </summary>
+    [Fact]
+    public void ThePlaceholderDoesNotAppearWhileResolutionIsStillPlausible()
+    {
+        using ManualResetEventSlim release = new(false);
+        AppIconResolver icons = new(new BlockingSource(release), timeout: TimeSpan.FromSeconds(30));
+
+        TaskbarSlot slot = Slot(pin: null, icons);
+
+        Assert.Null(slot.Icon);
+        Assert.False(icons.Exhausted(slot.Key));
+
+        release.Set();
     }
 
     /// <summary>
@@ -133,15 +198,46 @@ public class SlotIconTests : IDisposable
     [Fact]
     public void TheLaunchPathStillResolvesForAnUnpinnedSlot()
     {
-        TaskbarSlot slot = Slot(pin: null, Resolver());
+        TaskbarSlot slot = Slot(pin: null);
 
         Assert.NotNull(slot.LaunchTarget);
         Assert.Equal(Target, slot.LaunchTarget!.Value.Path, ignoreCase: true);
     }
 
+    private sealed class BlockingSource(ManualResetEventSlim release) : IIconSource
+    {
+        public ImageSource? Extract(IconCandidate candidate)
+        {
+            release.Wait();
+            return null;
+        }
+    }
+
+    private sealed class EmptySource : IIconSource
+    {
+        public ImageSource? Extract(IconCandidate candidate) => null;
+    }
+
+    /// <remarks>
+    /// Retried, because several of these tests deliberately leave a resolution in flight and that
+    /// worker may still have the <c>.lnk</c> open when the test method returns. Failing teardown
+    /// on that race would make the suite flaky for a reason unrelated to anything it asserts.
+    /// </remarks>
     public void Dispose()
     {
-        if (Directory.Exists(_startMenu)) Directory.Delete(_startMenu, recursive: true);
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(_startMenu)) Directory.Delete(_startMenu, recursive: true);
+                break;
+            }
+            catch (IOException)
+            {
+                Thread.Sleep(25);
+            }
+        }
+
         GC.SuppressFinalize(this);
     }
 }

@@ -46,6 +46,12 @@ public class UmbraSettingsTests : IDisposable
         // unmeasured; the default does not settle it.
         Assert.True(settings.Tray);
         Assert.Equal(string.Empty, settings.Monitor);
+
+        // A deviation from Windows 11, recorded in design-spec §8. Windows draws File Explorer's
+        // current folder on its taskbar button and offers no way to stop it; measured, two
+        // Explorer windows on Downloads and Videos really do answer WM_GETICON with different
+        // icons. A taskbar whose icons change as you work is a worse taskbar.
+        Assert.True(settings.ApplicationIcons);
     }
 
     [Fact]
@@ -67,6 +73,7 @@ public class UmbraSettingsTests : IDisposable
             Alignment = Alignment.Center,
             DormantIconSize = 16,
             Motion = false,
+            ApplicationIcons = false,
             Tray = true,
             Monitor = @"\\.\DISPLAY2",
         };
@@ -78,6 +85,7 @@ public class UmbraSettingsTests : IDisposable
         Assert.Equal(original.Alignment, reloaded.Alignment);
         Assert.Equal(original.DormantIconSize, reloaded.DormantIconSize);
         Assert.Equal(original.Motion, reloaded.Motion);
+        Assert.Equal(original.ApplicationIcons, reloaded.ApplicationIcons);
         Assert.Equal(original.Tray, reloaded.Tray);
         Assert.Equal(original.Monitor, reloaded.Monitor);
     }

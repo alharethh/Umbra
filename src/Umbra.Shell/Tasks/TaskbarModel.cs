@@ -28,6 +28,7 @@ internal sealed class TaskbarModel : IDisposable
     private readonly PinSettings _pins;
     private readonly BarOrder _order = new();
     private readonly ShortcutResolver _shortcuts = new();
+    private readonly AppIconResolver _icons = new();
 
     public TaskbarModel(ICollectionView windows, PinSettings pins)
     {
@@ -43,6 +44,24 @@ internal sealed class TaskbarModel : IDisposable
 
     /// <summary>The bar's slots, in display order.</summary>
     public ObservableCollection<TaskbarSlot> Slots { get; } = [];
+
+    /// <summary>
+    /// Icon resolution, shared by every slot so that one cache and one wedged-path list serve the
+    /// whole row. Exposed for the icon-source setting, which applies live.
+    /// </summary>
+    public AppIconResolver Icons => _icons;
+
+    /// <summary>
+    /// Tells every slot to re-pick its icon. For when the icon-source setting changes.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is re-resolved — both answers are already cached — so this is a repaint rather
+    /// than a round of shell calls.
+    /// </remarks>
+    public void RefreshIcons()
+    {
+        foreach (TaskbarSlot slot in Slots) slot.RaiseIconChanged();
+    }
 
     /// <summary>
     /// Refreshes which slot owns the foreground window. Called from the bar's existing tick rather
@@ -113,7 +132,7 @@ internal sealed class TaskbarModel : IDisposable
 
             if (existing is null)
             {
-                TaskbarSlot slot = new(key, pin, _shortcuts);
+                TaskbarSlot slot = new(key, pin, _shortcuts, _icons);
                 slot.SetWindows(windows);
                 Slots.Insert(Math.Min(index, Slots.Count), slot);
                 continue;

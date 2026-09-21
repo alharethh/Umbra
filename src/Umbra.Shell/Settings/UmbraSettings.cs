@@ -78,6 +78,24 @@ internal sealed class UmbraSettings
     public bool Motion { get; set; } = true;
 
     /// <summary>
+    /// Whether a slot shows its application's icon rather than its current window's.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A deviation from Windows 11, recorded in design-spec §8.</b> File Explorer answers
+    /// <c>WM_GETICON</c> with the icon of the folder it is showing — measured, two windows on
+    /// Downloads and Videos return different icons — and since mid-2025 Windows 11 draws exactly
+    /// that on the taskbar button, with no setting to stop it. A slot that groups several windows
+    /// then has to pick one, and the icon changes as windows come and go.
+    /// </para>
+    /// <para>
+    /// On by default: a taskbar exists so applications are where you expect them, and an icon that
+    /// changes while you work undermines that for no benefit. Off restores Windows' behaviour.
+    /// </para>
+    /// </remarks>
+    public bool ApplicationIcons { get; set; } = true;
+
+    /// <summary>
     /// Whether to host the notification area.
     /// </summary>
     /// <remarks>
@@ -205,6 +223,11 @@ internal sealed class UmbraSettings
                 else Unusable(key, value);
                 break;
 
+            case "applicationicons":
+                if (bool.TryParse(value, out bool applicationIcons)) ApplicationIcons = applicationIcons;
+                else Unusable(key, value);
+                break;
+
             case "tray":
                 if (bool.TryParse(value, out bool tray)) Tray = tray;
                 else Unusable(key, value);
@@ -295,6 +318,10 @@ internal sealed class UmbraSettings
         "# The drift and micro-jitter layer.",
         $"motion = {Motion.ToString().ToLowerInvariant()}",
         "",
+        "# Show each application's own icon rather than its current window's. Windows 11 shows",
+        "# File Explorer the folder you are in; false restores that.",
+        $"applicationIcons = {ApplicationIcons.ToString().ToLowerInvariant()}",
+        "",
         "# Notification area hosting. On by default; costs a permanent 100 ms timer.",
         $"tray = {Tray.ToString().ToLowerInvariant()}",
         "",
@@ -319,6 +346,7 @@ internal sealed class UmbraSettings
         Alignment = Alignment,
         DormantIconSize = DormantIconSize,
         Motion = Motion,
+        ApplicationIcons = ApplicationIcons,
         Tray = Tray,
         Monitor = Monitor,
         HoverAccent = HoverAccent,

@@ -38,6 +38,14 @@ internal sealed record AppShortcut(string Target, string Arguments, string IconP
 internal sealed class ShortcutResolver
 {
     private readonly string[] _roots;
+
+    /// <summary>
+    /// Guards the lazy index. Icon resolution runs on worker threads and several slots ask at
+    /// once on the first layout, so without this the first few would each build their own
+    /// dictionary and race to publish it.
+    /// </summary>
+    private readonly Lock _gate = new();
+
     private Dictionary<string, AppShortcut>? _shortcuts;
 
     public ShortcutResolver(params string[] roots) =>
@@ -95,15 +103,27 @@ internal sealed class ShortcutResolver
 
     /// <summary>Every Start Menu shortcut, by name, read once.</summary>
     /// <remarks>
-    /// Cached for the life of the process rather than watched. This is consulted only for pins
-    /// whose recorded path has gone missing, which is rare; a shortcut appearing mid-session for an
-    /// application that was already broken is not worth a file watcher.
+    /// <para>
+    /// Cached for the life of the process rather than watched. A shortcut appearing mid-session
+    /// for an application whose icon or path was already broken is not worth a file watcher.
+    /// </para>
+    /// <para>
+    /// <b>Building this reads every <c>.lnk</c> under both Start Menus and must never happen on
+    /// the UI thread.</b> It used to be reached only for a pin whose path had gone missing, which
+    /// is rare; since <see cref="AppIconResolver"/> it is reached for every slot's icon, which is
+    /// not. The resolver builds its candidate list on a worker for exactly this reason.
+    /// </para>
     /// </remarks>
     private Dictionary<string, AppShortcut> Shortcuts()
     {
         if (_shortcuts is not null) return _shortcuts;
 
-        _shortcuts = new Dictionary<string, AppShortcut>(StringComparer.OrdinalIgnoreCase);
+        lock (_gate) return _shortcuts ??= Index();
+    }
+
+    private Dictionary<string, AppShortcut> Index()
+    {
+        Dictionary<string, AppShortcut> found = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (string root in _roots)
         {
@@ -127,13 +147,13 @@ internal sealed class ShortcutResolver
 
                 // First writer wins, and the per-user Start Menu is searched first: a shortcut the
                 // user has is a better answer than one the machine has.
-                if (_shortcuts.ContainsKey(name)) continue;
-                if (Read(file) is { } shortcut) _shortcuts[name] = shortcut;
+                if (found.ContainsKey(name)) continue;
+                if (Read(file) is { } shortcut) found[name] = shortcut;
             }
         }
 
-        BringUpLog.Write($"shortcuts: indexed {_shortcuts.Count} Start Menu entries");
-        return _shortcuts;
+        BringUpLog.Write($"shortcuts: indexed {found.Count} Start Menu entries");
+        return found;
     }
 
     private static AppShortcut? Read(string file)

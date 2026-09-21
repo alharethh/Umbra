@@ -481,6 +481,7 @@ Complete list. Anything not here should match Windows 11.
 | **Start button hit rect extends to the screen corner** | §6.5 — Win11 insets its Start button and loses the Fitts corner target. P5 lets us draw at the Win11 inset while claiming the corner in hit geometry only. Free, and strictly better |
 | **Start button at the bottom of vertical bars** | §7.3 — puts it adjacent to where the Start menu will actually open |
 | **`TaskbarAl` is written on startup and restored on exit** | §7.0 — required for the default configuration to be coherent |
+| **A slot draws its application's icon, not its current window's** | Windows 11 draws File Explorer's *current folder* on the taskbar button and gives no way to turn it off. Measured: two Explorer windows return different icons from `WM_GETICON`, and `explorer.exe` has one stable icon. A taskbar exists so applications are where you expect them; an icon that changes as you work undermines that. Settable — `applicationIcons = false` restores Windows' behaviour. `docs/measurements.md` step 11 |
 
 ---
 

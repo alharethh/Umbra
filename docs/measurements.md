@@ -452,6 +452,72 @@ The three-letter name is the **ISO** one, not .NET's `ThreeLetterWindowsLanguage
 disagree on exactly this machine's languages, `NOB` against `NOR`. English agrees under both, so a
 check written against English alone would have passed either way.
 
+## Step 11 — where icons actually come from, and why two of them were broken
+
+Two faults reported together: File Explorer's icon changing with the folder, and icons that
+sometimes never appear. Measured with a read-only probe over every visible top-level window —
+`WM_GETICON` via `SendMessageTimeout` with `ABORTIFHUNG`, `SHGetPropertyStoreForWindow` for the
+App User Model properties, `SHGetFileInfo` for the executable, each under its own timeout.
+
+### Most windows have no icon of their own
+
+| Process | Class | `WM_GETICON` | Exe icon | AUMID |
+| :---- | :---- | :---- | :---- | :---- |
+| LeagueClientUx | `RCLIENT` | yes | ok | `c:iot games\...\leagueclient.exe` |
+| explorer | `CabinetWClass` | yes | ok | — |
+| firefox | `MozillaWindowClass` | yes | ok | `308046B0AF4A39CB` |
+| packaged app | `Chrome_WidgetWin_1` | **none** | ok | — |
+| Riot Client | `Chrome_WidgetWin_1` | **none** | ok | — |
+| steamwebhelper | `SDL_app` | **none** | ok | `Valve.Steam.Client` |
+| JagexLauncher | `..._SSNSkinWindow` | **none** | ok | — |
+| SystemSettings | `Windows.UI.Core.CoreWindow` | **none** | ok | — |
+| ApplicationFrameHost | `ApplicationFrameWindow` | **none** | ok | `windows.immersivecontrolpanel_...` |
+| TextInputHost | `Windows.UI.Core.CoreWindow` | **none** | ok | — |
+
+**Seven of ten return nothing**, every one of them Electron, CEF, SDL or UWP. So the executable
+fallback was not a fallback at all — it was the main path for most of the row, and it was the path
+with no timeout, no retry and a global lock around it.
+
+**`System.AppUserModel.RelaunchIconResource` is set by none of them.** It is the documented way for
+an application to tell a taskbar what its button icon is, and on this machine nothing uses it. It
+is therefore *not* implemented; it would be the correct first source if a real application were
+found using one, and it belongs on the worker rather than in the candidate list, because reading a
+window property store is itself a cross-process call.
+
+### Explorer advertises the folder, not itself
+
+Two windows open, same process, icons hashed straight out of the returned `HICON`:
+
+| Source | Icon |
+| :---- | :---- |
+| "Downloads — File Explorer", `WM_GETICON ICON_BIG` | `2A9B2950B140` |
+| "Videos — File Explorer", `WM_GETICON ICON_BIG` | `BC9E6FED7231` |
+| class icon, `GCL_HICON` | none |
+| `explorer.exe` via `SHGetFileInfo` | `F04B987E9EBB` |
+
+Three different icons, and only the last one is stable. **Windows 11 does the same thing
+deliberately** — a dynamic taskbar icon added around mid-2025, with no setting to disable it — so
+this is a fidelity question rather than a plain bug. What *was* a plain bug is that a slot grouping
+several windows took whichever came first in ManagedShell's collection, so the icon also changed
+when an unrelated Explorer window opened or closed.
+
+### Verified on hardware, both ways
+
+The bar run with two folders open, captured at Tier 0 with a 4× gain so the monochrome row is
+legible, and then run again with the new `applicationIcons` setting off:
+
+| `applicationIcons` | Fourth slot draws |
+| :---- | :---- |
+| `true` (default) | the File Explorer application icon, unchanged as windows opened and closed |
+| `false` | the **Videos folder** icon — the fault, reproduced on demand |
+
+One setting apart, same machine, same windows. The diagnostic line also shows the icon arriving at
+`48x48` rather than ManagedShell's 32, which is the new extraction path being the one in use.
+
+**And the freeze did not recur.** `Ascent.exe` — the executable `SHGetFileInfo` never returns for —
+was running and in the notification area throughout, and the bar came up normally. It is reached on
+a worker now, abandoned after four seconds, and never asked again.
+
 ## Still open
 
 - **§11.2 Q2 — do ManagedShell's 100 ms timers defeat display idle?** Not yet measured. Only the

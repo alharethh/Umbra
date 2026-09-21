@@ -519,6 +519,7 @@ internal partial class BarWindow : AppBarWindow
         OnPropertyChanged(nameof(HoverChipExtent));
 
         ApplyHoverSettings(settings);
+        ApplyIconSourceSetting(settings);
 
         ApplyPlacement(settings.Edge, settings.Alignment, ResolveScreen(settings.Monitor));
 
@@ -528,7 +529,23 @@ internal partial class BarWindow : AppBarWindow
         BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
             $"settings applied live: dormant icon {_dormantIconExtent:F0} px, " +
             $"motion {settings.Motion}, edge {Metrics.Edge}, alignment {Metrics.Alignment}, " +
-            $"hover {settings.AppIconHover} {settings.HoverAccent}"));
+            $"hover {settings.AppIconHover} {settings.HoverAccent}, " +
+            $"applicationIcons {settings.ApplicationIcons}"));
+    }
+
+    /// <summary>
+    /// Applies whether slots draw their application's icon or their current window's.
+    /// </summary>
+    /// <remarks>
+    /// Both answers are already cached by the resolver, so this picks between them and repaints.
+    /// No shell call happens here, which is why it is live rather than on the restart list.
+    /// </remarks>
+    public void ApplyIconSourceSetting(Settings.UmbraSettings settings)
+    {
+        if (_tasks.Icons.PreferApplicationIcon == settings.ApplicationIcons) return;
+
+        _tasks.Icons.PreferApplicationIcon = settings.ApplicationIcons;
+        _tasks.RefreshIcons();
     }
 
     /// <summary>

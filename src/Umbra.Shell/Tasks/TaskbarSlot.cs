@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Windows.Media;
-using ManagedShell.Common.Enums;
-using ManagedShell.Common.Helpers;
+using System.Windows.Threading;
 using ManagedShell.WindowsTasks;
+using Umbra.Shell.Rendering;
 
 namespace Umbra.Shell.Tasks;
 
@@ -19,15 +19,26 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 {
     private readonly List<ApplicationWindow> _windows = [];
     private readonly ShortcutResolver _shortcuts;
+    private readonly AppIconResolver _icons;
+    private readonly Dispatcher _dispatcher;
     private ImageSource? _icon;
     private AppShortcut? _shortcut;
     private bool _shortcutChecked;
 
-    public TaskbarSlot(string key, PinnedApp? pin, ShortcutResolver? shortcuts = null)
+    public TaskbarSlot(
+        string key,
+        PinnedApp? pin,
+        ShortcutResolver? shortcuts = null,
+        AppIconResolver? icons = null)
     {
         Key = key;
         Pin = pin;
         _shortcuts = shortcuts ?? new ShortcutResolver();
+        _icons = icons ?? new AppIconResolver();
+
+        // Captured here rather than reached for later: the resolver calls back from a worker, and
+        // Dispatcher.CurrentDispatcher on that worker would create a second one that nothing pumps.
+        _dispatcher = Dispatcher.CurrentDispatcher;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -123,60 +134,99 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     };
 
     /// <summary>
-    /// The icon. Taken from a live window where there is one, because that is the icon the
-    /// application chose to advertise; read from the executable otherwise, which is the only source
-    /// available for a pinned application that is not running.
+    /// The icon — the <em>application's</em>, not any one window's.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A window's own icon is the last resort here, and that inverts what this used to do.</b>
+    /// Measured on the development machine: two File Explorer windows, one on Downloads and one
+    /// on Videos, answer <c>WM_GETICON</c> with different icons, because Explorer advertises the
+    /// folder rather than itself. This slot groups both windows, so it drew whichever happened to
+    /// be first in ManagedShell's collection and changed when an unrelated window opened.
+    /// <c>explorer.exe</c> has exactly one icon and that is the right thing to draw. See
+    /// <see cref="AppIconResolver"/> for the rest of the reasoning and
+    /// <see cref="AppIconResolver.PreferApplicationIcon"/> for the setting that restores Windows'
+    /// behaviour.
+    /// </para>
+    /// <para>
+    /// <b>Nothing in this getter touches the shell.</b> It is a dictionary lookup and a list read;
+    /// the resolution it kicks off happens on a worker with a timeout. The old version called
+    /// <c>GetImageFromAssociatedIcon</c> here, which never returns for at least one executable on
+    /// this machine and froze the bar before its window was ever shown. That is also why the
+    /// former "only a pinned slot may synthesise an icon" guard is gone: it existed solely to keep
+    /// a blocking call off the critical path, and there is no longer a blocking call to keep off.
+    /// </para>
+    /// </remarks>
     public ImageSource? Icon
     {
         get
         {
+            ImageSource? application = _icons.Lookup(Key);
+            if (application is null) RequestApplicationIcon();
+
             ImageSource? live = _windows.Select(w => w.Icon).FirstOrDefault(i => i is not null);
 
-            if (live is not null)
-            {
-                // Remember it. When the last window closes, this is what keeps a pinned application
-                // visible: reading the icon back out of the executable does not always work — the
-                // recorded path can be empty, or point at something that is not a plain exe — and
-                // when it fails the slot renders as a gap rather than an icon.
-                _icon = live;
-                return live;
-            }
+            ImageSource? chosen = _icons.PreferApplicationIcon
+                ? application ?? live
+                : live ?? application;
 
+            // Remembered so that a pinned application whose last window just closed keeps the icon
+            // it had, rather than blinking to the placeholder while the executable is re-read.
+            if (chosen is not null) return _icon = chosen;
             if (_icon is not null) return _icon;
 
-            // <b>Only a pinned application gets an icon synthesised, and widening that hangs the
-            // bar.</b> A pin is the one thing that stays on the row with no window to take an icon
-            // from; a running application without one yet simply has not been given it by
-            // ManagedShell, and will raise PropertyChanged when it is.
-            //
-            // Asking for any slot without a live icon looks harmless and is not:
-            // GetImageFromAssociatedIcon is a synchronous shell call on the UI thread, and on this
-            // machine it <i>never returns</i> for C:\Program Files\Ascent\Ascent.exe. The bar
-            // froze before its window was ever shown -- no icons, no clock, no Start button, and
-            // no error, because nothing had thrown. It only reproduced with the tray switched off,
-            // which is pure timing: the tray's extra startup work delays the first layout long
-            // enough for the live icon to arrive, so the fallback is never reached.
-            if (!IsPinned) return null;
-
-            // The recorded path first: it is the executable this application's own window was
-            // running from, which beats a shortcut of the same name pointing somewhere else.
-            if (PathIsUsable(Pin?.Path))
-            {
-                _icon = IconImageConverter.GetImageFromAssociatedIcon(Pin!.Path, IconSize.Large);
-                if (_icon is not null) return _icon;
-            }
-
-            // The path has gone. Ask the Start Menu where the application went — see
-            // ShortcutResolver for why that is the answer rather than a guess.
-            if (Shortcut() is not { } shortcut) return null;
-
-            string source = PathIsUsable(shortcut.IconPath) ? shortcut.IconPath : shortcut.Target;
-            _icon = IconImageConverter.GetImageFromAssociatedIcon(source, IconSize.Large);
-
-            return _icon;
+            // Only once the resolver has actually given up. Drawing the placeholder while a real
+            // icon is still milliseconds away would flash a row of identical squares on every
+            // start, which looks more broken than the momentary gap it replaces.
+            return _icons.Exhausted(Key) ? PlaceholderIcon.Get() : null;
         }
     }
+
+    /// <summary>Asks for this application's icon. Idempotent; returns immediately.</summary>
+    /// <remarks>
+    /// The two strings are read here, on the UI thread, and captured. Everything the closure does
+    /// afterwards — including enumerating both Start Menus — happens on the resolver's worker.
+    /// </remarks>
+    private void RequestApplicationIcon()
+    {
+        string? executable = ExecutablePath;
+        string? name = Pin?.Name ?? DisplayName;
+
+        _icons.Request(Key, () => Candidates(executable, name), OnApplicationIconResolved);
+    }
+
+    /// <summary>Where this application's icon might be, best first. Runs on a worker.</summary>
+    private IReadOnlyList<IconCandidate> Candidates(string? executable, string? name)
+    {
+        List<IconCandidate> candidates = [];
+
+        // The executable a live window is actually running from, first: it beats a shortcut of the
+        // same name that happens to point somewhere else.
+        if (PathIsUsable(executable)) candidates.Add(new IconCandidate(executable!));
+
+        // Then the Start Menu, which is what survives an application updating into a new versioned
+        // directory — the Discord case ShortcutResolver exists for. Its declared icon location
+        // comes first because that is frequently a dedicated .ico while the target is a launcher
+        // stub with no artwork of its own.
+        if (_shortcuts.Resolve(name, executable) is { } shortcut)
+        {
+            IconCandidate declared = ShellIconSource.Parse(shortcut.IconPath);
+
+            if (!string.IsNullOrWhiteSpace(declared.Path)) candidates.Add(declared);
+            if (!string.IsNullOrWhiteSpace(shortcut.Target)) candidates.Add(new IconCandidate(shortcut.Target));
+        }
+
+        return candidates;
+    }
+
+    private void OnApplicationIconResolved()
+    {
+        if (_dispatcher.CheckAccess()) Raise(nameof(Icon));
+        else _dispatcher.BeginInvoke(() => Raise(nameof(Icon)));
+    }
+
+    /// <summary>Tells the view to re-read <see cref="Icon"/>.</summary>
+    public void RaiseIconChanged() => Raise(nameof(Icon));
 
     /// <summary>
     /// What to run when this slot is clicked and nothing is open, and what to pass it.
@@ -250,10 +300,12 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     public void RaisePinChanged()
     {
         // The pin may have been healed to a path that works, so any shortcut fallback found for the
-        // broken one is no longer the best answer.
+        // broken one is no longer the best answer — and neither is an icon read out of the path it
+        // used to hold.
         _shortcutChecked = false;
         _shortcut = null;
         _icon = null;
+        _icons.Invalidate(Key);
 
         Raise(nameof(Pin));
         Raise(nameof(IsPinned));

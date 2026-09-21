@@ -77,10 +77,11 @@ public partial class App : Application
         {
             MotionEnabled = Settings.Motion,
         };
-        // The hover colours and the row's hover treatment, before the first paint — they are
-        // ordinary drawn state rather than geometry, so they never go through the placement
-        // path that ApplyLiveSettings would otherwise drag in at startup.
+        // The hover colours, the row's hover treatment and where icons come from, before the first
+        // paint — all ordinary drawn state rather than geometry, so they never go through the
+        // placement path that ApplyLiveSettings would otherwise drag in at startup.
         _bar.ApplyHoverSettings(Settings);
+        _bar.ApplyIconSourceSetting(Settings);
 
         _bar.Closed += (_, _) => Shutdown();
         _bar.Show();
