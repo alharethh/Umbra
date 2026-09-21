@@ -4,7 +4,7 @@
 
 # Umbra
 
-**A Windows 11 taskbar that lives on any edge — and is built not to burn into your OLED panel.**
+**The Windows 11 taskbar burns into OLED panels. This one doesn't.**
 
 ![Windows 11](https://img.shields.io/badge/Windows%2011-0078D4?logo=windows11&logoColor=white)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
@@ -17,10 +17,16 @@
 
 ---
 
-**Umbra is a replacement for the Windows 11 taskbar.** It does what you expect one to do — pinned
-and running applications, window previews, jump lists, a notification area, a clock — and two
-things Windows 11's will not: it sits on **any** screen edge, and it is built from the ground up to
-put as little light as possible on a fixed pixel.
+Taskbar burn-in is the classic way an OLED desktop dies: the same icons, in the same place, every
+hour the machine is on, until their shapes are permanently etched into the panel. It shows up after
+roughly four to five thousand hours of ordinary desk work.
+
+**Umbra puts about 260× less light on those pixels than the Windows 11 taskbar does.** At that rate
+the same exposure takes several hundred years. Taskbar burn-in stops being something that will
+happen to you.
+
+It is otherwise a full replacement — pinned and running applications, window previews, jump lists,
+a notification area, a clock — and it will sit on **any** screen edge, which Windows 11's will not.
 
 ![The bar waking as the pointer approaches](docs/media/wake.gif)
 
@@ -34,31 +40,54 @@ at. The colour is yours to choose.</sub>
 
 ## Why it exists
 
-Windows 11 pins its taskbar to the bottom of the screen and draws it as a bright, permanently
-static strip. On an LCD that costs nothing. On an OLED it is the most burn-in-prone thing on your
-display: the same pixels, the same colours, every hour the machine is on. And you cannot move it.
+On an LCD a static taskbar costs nothing, so Windows 11 has never had a reason to care. On an OLED
+it is the worst-placed bet on the screen — and you cannot move it either.
 
-**1. It goes where you want it.** Left, right, top or bottom, switchable while it is running, as a
-real space-reserving AppBar that maximised windows respect.
-
-**2. It is designed against OLED wear, not decorated with a dark theme.** Three mechanisms, all
+**1. It is designed against OLED wear, not decorated with a dark theme.** Three mechanisms, all
 running at once:
 
 | | |
 | :---- | :---- |
-| **Three tiers of brightness** | At rest the bar is near-black with monochrome icons. It brightens as your pointer approaches, and reaches full colour only when you are on it. Most of the day it emits almost nothing. |
-| **Nothing sits still** | Everything drawn drifts slowly inside its own slot, with sub-pixel jitter on top, so no edge lives on one physical pixel. Constant velocity, no easing — an eased turnaround would burn two hot bands where it lingers. |
+| **Three tiers of brightness** | At rest the bar is near-black with monochrome icons. It brightens as your pointer approaches, and reaches full colour only when you are on it. Most of the day it emits almost nothing. This is where nearly all of the saving comes from. |
 | **Icons shrink while you are away** | Idle icons draw at 16 px and grow to full size as you approach, so they are at the Windows size for the whole of the time anyone is looking at them. |
+| **Nothing sits still** | Everything drawn drifts slowly inside its own slot, with sub-pixel jitter on top, so no edge lives on one physical pixel. Constant velocity, no easing — an eased turnaround would burn two hot bands where it lingers. The smallest of the three, and honestly so: see below. |
+
+**2. It goes where you want it.** Left, right, top or bottom, switchable while it is running, as a
+real space-reserving AppBar that maximised windows respect. [RetroBar](https://github.com/dremin/retrobar)
+does this too, and does it well — if a classic taskbar on any edge is all you are after, start there.
 
 **And it will show you its own damage.** Umbra records how much light every pixel of its own
 rectangle has emitted, weighted the way burn-in actually accumulates rather than linearly, and
 draws you the map. No other taskbar can tell you what it has been doing to your screen.
 
-> **Honest about the payoff.** Measured against real content, Umbra's bar emits **86–191×** less
-> than light-mode desktop content — and about **5.8× more** than a plain dark-mode application
-> surface. If you run Windows in light mode, the taskbar was never your panel's problem and this
-> buys you little. If you run dark mode with a bright taskbar, it is the brightest fixed thing you
-> own, and this is aimed squarely at it.
+### Where 260× comes from
+
+Captured off a running bar at 2560×1440, and off twelve real application icons as Windows draws
+them. Wear is accumulated as `L^1.7` in linear light, which is how OLED degradation actually
+scales — not as plain brightness.
+
+| | wear per pixel |
+| :---- | ----: |
+| Windows 11 taskbar icon, full colour | 0.2763 |
+| Umbra icon, duty-weighted over a normal day | 0.0011 |
+| **Reduction** | **262×** |
+
+The figure moves with how much of your day the pointer spends on the bar: **660×** if you barely
+touch it, **262×** at a quarter-hour a day, **71×** if you live on it. Across the whole reserved
+strip rather than the icons alone it is **276×** against a dark Windows taskbar and **9,880×**
+against a light one.
+
+**None of that comes from the drift.** At the amplitude slot containment permits, sliding the
+content around buys no reduction in peak wear at all — your panel's own pixel shift, at one pixel
+every few minutes, buys none either. The whole of the 262× is luminance and duty cycle: a black
+background, monochrome icons at rest, the shrink, and the brightness cap on hover. Drift is there
+for edge gradients and anti-aliasing, and it is the least valuable thing on this page.
+
+> **One honest cost.** A strip that never lights never ages, so over years it stays fresher than
+> the rest of the panel and can show as a faint bright band where the bar sits. Any reserved bar
+> has a version of this — Windows' own is smaller, because a lit taskbar ages closer to the screen
+> around it. The trade is a soft, uniform rectangle, which panel compensation cycles are good at,
+> in place of sharp icon silhouettes, which they cannot fix.
 
 ## What it does
 
