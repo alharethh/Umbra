@@ -50,7 +50,7 @@ running at once:
 | :---- | :---- |
 | **Three tiers of brightness** | At rest the bar is near-black with monochrome icons. It brightens as your pointer approaches, and reaches full colour only when you are on it. Most of the day it emits almost nothing. This is where nearly all of the saving comes from. |
 | **Icons shrink while you are away** | Idle icons draw at 16 px and grow to full size as you approach, so they are at the Windows size for the whole of the time anyone is looking at them. |
-| **Nothing sits still** | Everything drawn drifts slowly inside its own slot, with sub-pixel jitter on top, so no edge lives on one physical pixel. Constant velocity, no easing — an eased turnaround would burn two hot bands where it lingers. The smallest of the three, and honestly so: see below. |
+| **Nothing sits still** | Everything drawn drifts slowly inside its own slot, with sub-pixel jitter on top, so no edge lives on one physical pixel. Constant velocity, no easing — an eased turnaround would burn two hot bands where it lingers. This one does not lower the totals; it decides whether what is left has edges. |
 
 **2. It goes where you want it.** Left, right, top or bottom, switchable while it is running, as a
 real space-reserving AppBar that maximised windows respect. [RetroBar](https://github.com/dremin/retrobar)
@@ -77,11 +77,29 @@ touch it, **262×** at a quarter-hour a day, **71×** if you live on it. Across 
 strip rather than the icons alone it is **276×** against a dark Windows taskbar and **9,880×**
 against a light one.
 
-**None of that comes from the drift.** At the amplitude slot containment permits, sliding the
-content around buys no reduction in peak wear at all — your panel's own pixel shift, at one pixel
-every few minutes, buys none either. The whole of the 262× is luminance and duty cycle: a black
-background, monochrome icons at rest, the shrink, and the brightness cap on hover. Drift is there
-for edge gradients and anti-aliasing, and it is the least valuable thing on this page.
+**None of the 262× comes from the drift, and that is not the same as the drift doing nothing.**
+Brightness decides how much wear there is; drift decides what shape it is in. They are different
+axes and only the first one is a ratio.
+
+Sliding a 20 px icon by ±6.8 px cannot lower the wear at its centre — the middle is covered either
+way, which is why the spec puts the reduction at 1.00× and why your panel's own pixel shift, at one
+pixel every few minutes, does nothing there either. But two things the ratio cannot see:
+
+| | drifting vs static |
+| :---- | ----: |
+| Peak wear, centre of an icon | 1.00× |
+| Peak wear, a 1.9 px glyph stroke | **8.3× less** |
+| Peak wear, a 1 px anti-aliased edge | **18.1× less** |
+| Sharpness of the icon's own boundary | **20× softer** |
+| Width the boundary falls off over | 0.5 px → **11 px** |
+
+Anything narrower than the travel gets a real reduction, because it genuinely moves off itself.
+And the icon's *edge* — the part that makes a ghost legible as a shape rather than a haze — smears
+from a half-pixel cliff into an eleven-pixel shoulder. Total emitted light is unchanged to within
+0.1%; it is the same energy spread over more pixels.
+
+That matters because burn-in is noticed through contrast against its own surroundings, not through
+absolute level. The drift will not stop the bar wearing. It stops what is left from having edges.
 
 > **One honest cost.** A strip that never lights never ages, so over years it stays fresher than
 > the rest of the panel and can show as a faint bright band where the bar sits. Any reserved bar
