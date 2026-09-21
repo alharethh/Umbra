@@ -2145,10 +2145,16 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     private void OnBarPressed(object sender, MouseButtonEventArgs e)
     {
+        // Clicking a control that raises its own panel is that control's business.
+        if (OwnsShellDismissal(e.OriginalSource as DependencyObject)) return;
+
+        // An application's tray menu closes on <i>any</i> press inside Umbra, including one on a
+        // panel of ours: from the application's point of view the flyout is somewhere else just
+        // as much as the bar is. So this runs before the early return below.
+        _trayMenus.Close();
+
         // A press inside one of our own panels belongs to that panel, not to the bar underneath.
         if (PointerIsOnOwnPanel()) return;
-
-        if (OwnsShellDismissal(e.OriginalSource as DependencyObject)) return;
 
         // Everything the bar has open, including the overflow flyout and the window picker.
         //
@@ -2159,8 +2165,6 @@ internal partial class BarWindow : AppBarWindow
         // pointer sitting anywhere on the bar kept it open indefinitely, and the user had to
         // click off the bar entirely — which is exactly what was described.
         ClearPanelsFor(BarPanel.None);
-
-        _trayMenus.Close();
         DismissWindowsSurfaces();
     }
 
@@ -3073,7 +3077,7 @@ internal partial class BarWindow : AppBarWindow
         AllowIconOwnerForeground(icon);
 
         icon.IconMouseUp(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);
-        _trayMenus.Watch(icon.HWnd);
+        _trayMenus.Watch(icon.HWnd, menuGesture: e.ChangedButton == MouseButton.Right);
         e.Handled = true;
     }
 

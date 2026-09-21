@@ -50,6 +50,16 @@ internal sealed class TrayMenuWatcher
     /// <summary>The window most recently identified as a tray menu, if it is still up.</summary>
     private IntPtr _menu;
 
+    /// <summary>What had the foreground before the icon was clicked.</summary>
+    /// <remarks>
+    /// Recorded so it can be put back, which is the part that generalises. See
+    /// <see cref="Close"/>.
+    /// </remarks>
+    private IntPtr _foregroundBefore;
+
+    /// <summary>Whether the click being watched was a right click. See <see cref="Watch"/>.</summary>
+    private bool _menuGesture;
+
     public TrayMenuWatcher()
     {
         _sampler = new DispatcherTimer(DispatcherPriority.Background)
@@ -64,14 +74,27 @@ internal sealed class TrayMenuWatcher
     /// Called just after a tray icon's click has been forwarded to its owner.
     /// </summary>
     /// <param name="iconWindow">The window the icon registered with, which names the process.</param>
-    public void Watch(IntPtr iconWindow)
+    /// <param name="menuGesture">
+    /// Whether this was the gesture that raises a menu — a right click. It gates the fallback in
+    /// <see cref="Close"/> that acts on the owner merely being in front, because a <i>left</i>
+    /// click on a tray icon usually restores the application's window instead, and treating that
+    /// as an open menu would yank the foreground back off the window the user just asked for.
+    /// </param>
+    public void Watch(IntPtr iconWindow, bool menuGesture)
     {
         if (iconWindow == IntPtr.Zero) return;
 
         GetWindowThreadProcessId(iconWindow, out uint pid);
         if (pid == 0) return;
 
+        // Whatever the user was in before this click. Captured only if it is not already the
+        // application we are about to poke, or restoring it later would be a no-op.
+        IntPtr foreground = GetForegroundWindow();
+        GetWindowThreadProcessId(foreground, out uint foregroundPid);
+        _foregroundBefore = foregroundPid == pid ? IntPtr.Zero : foreground;
+
         _pid = pid;
+        _menuGesture = menuGesture;
         _menu = IntPtr.Zero;
         _samples = 0;
         _before = VisibleWindowsOf(pid);
@@ -85,20 +108,43 @@ internal sealed class TrayMenuWatcher
     /// <returns>True when something was closed.</returns>
     public bool Close()
     {
-        if (_menu == IntPtr.Zero) return false;
+        bool tracked = _menu != IntPtr.Zero && IsWindow(_menu) && IsWindowVisible(_menu);
+        if (!tracked) _menu = IntPtr.Zero;
 
-        if (!IsWindow(_menu) || !IsWindowVisible(_menu))
+        // Is the application we last forwarded a click to the one in front? If so it very likely
+        // has something open, whether or not the sampler managed to identify the window.
+        IntPtr foreground = GetForegroundWindow();
+        GetWindowThreadProcessId(foreground, out uint foregroundPid);
+        bool ownerInFront = _menuGesture && _pid != 0 && foregroundPid == _pid;
+
+        if (!tracked && !ownerInFront) return false;
+
+        // <b>Moving the foreground is the part that works for every application, and it is what
+        // clicking outside Umbra already does.</b> These menus close when their owner sees the
+        // user go somewhere else; the bar carries WS_EX_NOACTIVATE so clicking it moves nothing
+        // and the owner never finds out. Putting back whatever had the foreground before the
+        // icon was clicked delivers exactly the signal the owner is waiting for, without us
+        // having to recognise its menu at all — which matters because there is nothing to
+        // recognise: Steam's is a Win32 menu and Discord's is a Chromium window.
+        if (_foregroundBefore != IntPtr.Zero && IsWindow(_foregroundBefore))
+            Shell.WindowOrder.ForceForeground(_foregroundBefore);
+
+        // And the window itself where one was identified, for an application that ignores the
+        // activation change. Posted rather than sent: it is another UI thread and we have no
+        // business blocking on it.
+        if (tracked)
         {
-            _menu = IntPtr.Zero;
-            return false;
+            PostMessage(_menu, WmClose, IntPtr.Zero, IntPtr.Zero);
+            BringUpLog.Write($"tray menu closed: 0x{_menu.ToInt64():X}");
+        }
+        else
+        {
+            BringUpLog.Write($"tray menu: no window identified, foreground restored for pid {_pid}");
         }
 
-        // Posted rather than sent: it is another application's UI thread and we have no business
-        // blocking on it. WM_CLOSE is what the window would get if the user dismissed it.
-        PostMessage(_menu, WmClose, IntPtr.Zero, IntPtr.Zero);
-        BringUpLog.Write($"tray menu closed: 0x{_menu.ToInt64():X}");
-
         _menu = IntPtr.Zero;
+        _pid = 0;
+        _menuGesture = false;
         return true;
     }
 
@@ -199,6 +245,9 @@ internal sealed class TrayMenuWatcher
 
     [DllImport("user32.dll")]
     private static extern bool IsWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr window);
