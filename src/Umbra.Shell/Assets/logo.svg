@@ -7,6 +7,12 @@
     sizes rather than downscaling this, because 2.05% of 16 px is a third of a pixel and a
     resampled ring is a grey smudge. Change a number here and re-run that.
 
+    The corona is faint on purpose. It was twice this and the mark read as out of focus at the
+    96 px the README shows it at — the bloom swallowed the ring's own edge. It is a glow around a
+    sharp ring, never a substitute for one. The stroke likewise follows the RADIUS (7.01% of it,
+    the artwork's proportion) rather than the canvas, or the larger circular field leaves the
+    ring proportionally thinner than the reference.
+
     The disc is opaque black and load-bearing. It is what keeps the inside of the ring dark on a
     light background; without it a pale Explorer window fills the middle and the eclipse becomes
     a cyan donut on white. The ring sits ON the disc's rim rather than floating inside a larger
@@ -17,14 +23,14 @@
   <defs>
     <filter id="corona" x="-40%" y="-40%" width="180%" height="180%"
             filterUnits="objectBoundingBox" color-interpolation-filters="sRGB">
-      <feGaussianBlur stdDeviation="5.1" />
+      <feGaussianBlur stdDeviation="3.1" />
     </filter>
   </defs>
 
   <circle cx="128" cy="128" r="99.84" fill="#000000" />
 
   <g fill="none" stroke="#B0F7FB">
-    <circle cx="128" cy="128" r="99.84" stroke-width="7.4" opacity="0.5" filter="url(#corona)" />
-    <circle cx="128" cy="128" r="99.84" stroke-width="5.25" />
+    <circle cx="128" cy="128" r="99.84" stroke-width="9.2" opacity="0.32" filter="url(#corona)" />
+    <circle cx="128" cy="128" r="99.84" stroke-width="7.0" />
   </g>
 </svg>

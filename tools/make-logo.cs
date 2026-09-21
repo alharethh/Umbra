@@ -5,11 +5,11 @@
 //
 // The mark is an eclipse: a black disc with a pale cyan corona on its rim. Its colour and
 // proportions were measured off the approved artwork rather than guessed — ring #B0F7FB, stroke
-// 2.05% of the canvas, glow reaching about 4% further out. Only the radius differs from that
-// artwork, which placed the ring at 29.25% inside a square field; on a circular field the mark
-// is drawn larger, because nothing is eating the margin any more.
+// 7.01% of the radius. The artwork placed that ring at 29.25% of a square canvas; on a circular
+// field nothing eats the margin, so the mark is drawn larger and the stroke follows the radius
+// rather than the canvas, which is what keeps it looking like the reference.
 //
-// Two things here are deliberate and easy to "fix" wrongly:
+// Three things here are deliberate and easy to "fix" wrongly:
 //
 //  - EVERY SIZE IS DRAWN, never downscaled. Resampling a 1024 px ring to 16 turns a 0.3 px
 //    stroke into a grey smudge. The same reason the previous icon was built this way.
@@ -18,6 +18,9 @@
 //    middle, turning an eclipse into a cyan donut on white. Putting the ring on the rim rather
 //    than floating it inside a larger disc is what stops the mark reading as two concentric
 //    circles, and it is what a real eclipse looks like: the occluding body, and its corona.
+//  - THE CORONA IS FAINT ON PURPOSE. Its strokes composite, so a generous alpha per step stacks
+//    into a wide bright band that swallows the ring's edge and makes the mark look out of focus.
+//    Reported exactly that way, and halving the alpha was most of the fix.
 #:property TargetFramework=net10.0-windows
 #:property UseWindowsForms=true
 #:property PublishTrimmed=false
@@ -29,16 +32,19 @@ using System.Drawing.Imaging;
 
 // Measured from the approved artwork at 1024 px.
 var Ink = Color.FromArgb(0xB0, 0xF7, 0xFB);
-const double TrueStrokeFraction = 0.0205;    // 21 px at 1024
+const double StrokeOfRadius = 0.0701;        // 21 px on a 299.5 px radius, in the artwork
 const double TrueRadiusFraction = 0.390;     // the rim of the black disc, on a circular field
-const double GlowFraction = 0.040;           // 41 px at 1024
+const double GlowFraction = 0.024;           // a hint of bloom, not a haze — see Draw
 
 string repo = Directory.GetCurrentDirectory();
 string assets = Path.Combine(repo, "src", "Umbra.Shell", "Assets");
 if (!Directory.Exists(assets)) { Console.Error.WriteLine($"no {assets} — run from the repo root"); return 1; }
 
-// Windows asks for all of these; giving it every one stops it inventing its own.
-int[] sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
+// <b>Every size Windows asks for, and 96 is not optional.</b> Explorer's "Large icons" view wants
+// 96 exactly; without a frame at that size Windows rescales the 128 one, and a resampled ring
+// with a corona on it looks soft in the one view people judge an icon by. 72 and 80 are there for
+// the intermediate DPI scalings that would otherwise resample too.
+int[] sizes = [16, 20, 24, 32, 40, 48, 64, 72, 80, 96, 128, 256];
 
 Console.WriteLine($"{"size",5}{"radius",9}{"stroke",9}{"glow",8}");
 
@@ -66,12 +72,18 @@ return 0;
 
 Bitmap Draw(int size, out double radius, out double stroke, out double glow)
 {
-    // <b>The stroke is not simply proportional, and it cannot be.</b> 2.05% of 16 px is a third
-    // of a pixel: the ring would disappear. The fraction is interpolated geometrically against
-    // log2(size) between a legible 12.5% at 16 px and the artwork's true 2.05% at 256, which
-    // gives a smooth ramp rather than the dip a clamp produces in the middle sizes.
+    // <b>The stroke is not simply proportional, and it cannot be.</b> A third of a pixel at 16 px
+    // and the ring disappears. The fraction is interpolated geometrically against log2(size)
+    // between a legible 12.5% at 16 px and the artwork's proportion at 256, which ramps smoothly
+    // where a clamp leaves the middle sizes thinner in proportion than the smallest.
+    //
+    // The large end is the artwork's stroke measured against its RADIUS (7.01%), not against the
+    // canvas. The mark is drawn bigger on a circular field, so holding the canvas fraction
+    // instead made the ring proportionally thinner than the reference — which, with the corona
+    // over it, is what read as unsharp.
     double t = Math.Clamp((Math.Log2(size) - 4.0) / 4.0, 0.0, 1.0);
-    double strokeFraction = 0.125 * Math.Pow(TrueStrokeFraction / 0.125, t);
+    double largeEnd = TrueRadiusFraction * StrokeOfRadius;
+    double strokeFraction = 0.125 * Math.Pow(largeEnd / 0.125, t);
 
     // The measured artwork put the ring at 29.25% inside a square field. On a circular field
     // there is no square eating the margin, so the mark is drawn larger — it has to hold its own
@@ -103,17 +115,19 @@ Bitmap Draw(int size, out double radius, out double stroke, out double glow)
     using (SolidBrush shadow = new(Color.Black))
         g.FillEllipse(shadow, Circle(radius));
 
-    // The corona, built from concentric strokes fading outward. A real Gaussian would be nicer
-    // and is not worth a blur pass: at these radii the banding is below one 8-bit step.
+    // The corona, built from concentric strokes fading outward. Deliberately faint: these
+    // strokes composite, so a generous alpha per step stacks into a wide bright band that
+    // swallows the ring's edge and makes the whole mark look out of focus. It is a bloom around
+    // a sharp ring, never a substitute for one.
     if (glow > 0.5)
     {
-        const int Steps = 14;
+        const int Steps = 12;
 
         for (int i = Steps; i >= 1; i--)
         {
             double spread = glow * i / Steps;
-            double falloff = Math.Exp(-3.0 * Math.Pow(i / (double)Steps, 2.0));
-            int alpha = (int)Math.Round(58 * falloff);
+            double falloff = Math.Exp(-4.5 * Math.Pow(i / (double)Steps, 2.0));
+            int alpha = (int)Math.Round(26 * falloff);
             if (alpha <= 0) continue;
 
             using Pen halo = new(Color.FromArgb(alpha, Ink), (float)(stroke + spread * 2));
