@@ -1,25 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <title>Umbra</title>
+  <desc>A corona: a pale cyan ring around a void the same black as the field around it.</desc>
+
+  <!--
+    The canonical artwork. tools/make-logo.cs renders umbra.ico from these same numbers at nine
+    sizes rather than downscaling this, because 2.05% of 16 px is a third of a pixel and a
+    resampled ring is a grey smudge. Change a number here and re-run that.
+
+    The field is opaque black on purpose. The whole idea is that the inside of the ring is the
+    same nothing as the outside; make it transparent and a light background fills the middle,
+    turning an eclipse into a cyan donut.
+  -->
 
   <defs>
-    <!-- One gradient across the whole 2x2 block, not one per square. -->
-    <linearGradient id="tile" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#231B4E" />
-      <stop offset="1" stop-color="#A6DFDB" />
-    </linearGradient>
-
-    <radialGradient id="field" cx="128" cy="128" r="158.72" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0A0F12" />
-      <stop offset="1" stop-color="#020307" />
-    </radialGradient>
+    <filter id="corona" x="-40%" y="-40%" width="180%" height="180%"
+            filterUnits="objectBoundingBox" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="5.1" />
+    </filter>
   </defs>
 
-  <rect width="256" height="256" fill="url(#field)" />
+  <rect width="256" height="256" fill="#000000" />
 
-  <g fill="url(#tile)">
-    <rect x="10" y="10" width="110" height="110" rx="18" ry="18" />
-    <rect x="136" y="10" width="110" height="110" rx="18" ry="18" />
-    <rect x="10" y="136" width="110" height="110" rx="18" ry="18" />
-    <rect x="136" y="136" width="110" height="110" rx="18" ry="18" />
+  <g fill="none" stroke="#B0F7FB">
+    <circle cx="128" cy="128" r="74.88" stroke-width="7.4" opacity="0.5" filter="url(#corona)" />
+    <circle cx="128" cy="128" r="74.88" stroke-width="5.25" />
   </g>
 </svg>
