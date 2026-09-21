@@ -2,7 +2,7 @@
 
 <img src="src/Umbra.Shell/Assets/logo.png" width="128" alt="Umbra">
 
-# Umbra
+# Umbra – OLED Optimized taskbar
 
 **The Windows 11 taskbar burns into OLED panels. This one doesn't.**
 
