@@ -43,10 +43,13 @@ internal enum ShellSurface
 /// trusted from an earlier poll.
 /// </para>
 /// <para>
-/// <b>Third-party tray menus need nothing from us.</b> An application showing its menu through
-/// <c>TrackPopupMenu</c> holds a global mouse capture for as long as the menu is up, so the click
-/// that would have opened our panel is delivered to the menu, which dismisses itself. The Windows
-/// taskbar behaves the same way — the first click closes the menu and the second opens the panel.
+/// <b>Third-party tray menus were assumed to need nothing from us. They do</b> — see
+/// <see cref="Rendering.TrayMenuWatcher"/>. The assumption was that an application showing its
+/// menu through <c>TrackPopupMenu</c> holds a global mouse capture, so the click that would open
+/// our panel is delivered to the menu, which dismisses itself. Measured against Steam, Discord
+/// and OBS, none of that holds: the capture does not reach us, the menus stay open, and two of
+/// the three are not <c>TrackPopupMenu</c> at all. This note is kept because it is the reasoning
+/// that left the case unhandled, and it reads entirely plausible.
 /// </para>
 /// <para>
 /// <b>The class table is the part that has to be measured, and it says so when it cannot answer.</b>
