@@ -435,6 +435,13 @@ internal sealed partial class WindowPicker : Window
         {
             settle.Stop();
             column.Window.BringToFront();
+
+            // Past the foreground lock, for the same reason the row's own click path needs it:
+            // the picker never activates either, so ManagedShell's SetForegroundWindow is refused
+            // whenever anything else owns the foreground and the chosen window stays behind it.
+            if (column.Window.Handle != IntPtr.Zero)
+                Shell.WindowOrder.ForceForeground(column.Window.Handle);
+
             Dismiss();
         };
 

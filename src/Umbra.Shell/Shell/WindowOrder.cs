@@ -112,6 +112,49 @@ internal static class WindowOrder
     }
 
     /// <summary>
+    /// Puts a window belonging to <em>another process</em> in front, past the foreground lock.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Same trick as <see cref="BringToFront"/> and for the same reason, but aimed at the user's
+    /// own application rather than at one of ours. It exists because clicking an icon while one of
+    /// Windows' flyouts is open did nothing: the flyout owns the foreground, the bar carries
+    /// <c>WS_EX_NOACTIVATE</c> so clicking it never moves the foreground, and Windows then refuses
+    /// our activation of the user's window because we are not the foreground process. The icons
+    /// looked dead and the panel would not go away — one cause, two symptoms.
+    /// </para>
+    /// <para>
+    /// There is no <c>Topmost</c> fallback here. Forcing another application permanently to the
+    /// top of the ordinary band would outlive the click, and this is best-effort by design: the
+    /// caller dismisses the flyout first, which on its own restores the foreground in the ordinary
+    /// case.
+    /// </para>
+    /// </remarks>
+    /// <returns>True when the window took the foreground.</returns>
+    public static bool ForceForeground(IntPtr handle)
+    {
+        if (handle == IntPtr.Zero) return false;
+
+        IntPtr foreground = GetForegroundWindow();
+        if (foreground == handle) return true;
+
+        uint theirs = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, out _);
+        uint ours = GetCurrentThreadId();
+
+        bool attached = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, true);
+
+        try
+        {
+            BringWindowToTop(handle);
+            return SetForegroundWindow(handle);
+        }
+        finally
+        {
+            if (attached) AttachThreadInput(ours, theirs, false);
+        }
+    }
+
+    /// <summary>
     /// Brings an already-shown window to the front and gives it the keyboard.
     /// </summary>
     /// <remarks>

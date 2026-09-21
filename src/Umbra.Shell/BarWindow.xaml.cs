@@ -2595,6 +2595,18 @@ internal partial class BarWindow : AppBarWindow
                          $"{slot.Windows.Count} windows | running={slot.IsRunning}");
         PlayIconPress(element);
 
+        // A click on the row is the user choosing the bar over whatever Windows has open, and the
+        // real taskbar closes Quick Settings and the notification centre when you click a button
+        // on it. Neither closes itself for us: the bar carries WS_EX_NOACTIVATE, so clicking it
+        // never moves the foreground and neither surface is ever told it lost anything.
+        //
+        // <b>This is not only cosmetic, and that is what made it look like two bugs.</b> While one
+        // of those panels holds the foreground, our activation of the user's own window is refused
+        // by the foreground lock — so the panel stayed up *and* the icons underneath appeared
+        // dead. Reported exactly that way. Unlike the tray icons and the clock, an application
+        // icon is not a toggle for these panels, so dismissing first cannot undo itself.
+        DismissWindowsSurfaces();
+
         // Nothing running: this is a pinned application, so start it.
         if (!slot.IsRunning)
         {
@@ -2620,17 +2632,35 @@ internal partial class BarWindow : AppBarWindow
 
         if (active is null)
         {
-            slot.Windows[0].BringToFront();
+            Activate(slot.Windows[0]);
             return;
         }
 
         // Already looking at it: minimise, as the Windows taskbar does.
         if (!active.IsMinimized) active.Minimize();
-        else active.BringToFront();
+        else Activate(active);
 
         // The preview was of the window just acted on, so it has nothing left to show.
         _picker?.Dismiss();
         _picker = null;
+    }
+
+    /// <summary>
+    /// Brings one of the user's own windows forward, past the foreground lock.
+    /// </summary>
+    /// <remarks>
+    /// ManagedShell's <c>BringToFront</c> does the restore-and-activate correctly, but its
+    /// <c>SetForegroundWindow</c> is subject to the same refusal every other one is: we are never
+    /// the foreground process. Dismissing Windows' flyout first fixes the ordinary case, and that
+    /// dismissal is asynchronous — the panel animates away — so the activation that follows can
+    /// still land inside the lock. The attach in <see cref="WindowOrder.ForceForeground"/> does
+    /// not care who holds the foreground, so it closes that window.
+    /// </remarks>
+    private static void Activate(ApplicationWindow window)
+    {
+        window.BringToFront();
+
+        if (window.Handle != IntPtr.Zero) WindowOrder.ForceForeground(window.Handle);
     }
 
     /// <summary>
@@ -2656,8 +2686,10 @@ internal partial class BarWindow : AppBarWindow
         }
 
         // A click, unlike a hover, is the user choosing this panel over whatever Windows has open.
-        // The activate-and-minimise path needs no equivalent: it moves the foreground, which is
-        // what closes those surfaces by itself.
+        // OnSlotClick dismisses for the same reason before it does anything else — it used to be
+        // exempt here on the grounds that activating a window moves the foreground and closes
+        // those surfaces by itself, which is exactly backwards: the foreground lock refuses that
+        // activation for as long as the panel holds it.
         DismissWindowsSurfaces();
 
         ShowPreview(slot, element);
