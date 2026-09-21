@@ -131,6 +131,13 @@ internal partial class BarWindow : AppBarWindow
         {
             _startMenu.Poll();
 
+            // A tray icon's menu belongs to the application that owns the icon, and clicking the
+            // bar does not close it for the same reason nothing else does — the foreground never
+            // moves. Polled here rather than handled on a mouse event, because a Win32 menu may
+            // hold the mouse capture, in which case the press never reaches us at all.
+            _foreignMenus.Poll(new System.Windows.Rect(
+                Left * DpiScale, Top * DpiScale, Width * DpiScale, Height * DpiScale));
+
             bool justPressed = DateTime.UtcNow - _startPressedAt < StartPressGrace;
             StartActive = _startMenu.IsOpen || justPressed;
             StartHighlighted = StartActive || StartButton.IsMouseOver;
@@ -2098,6 +2105,9 @@ internal partial class BarWindow : AppBarWindow
     }
 
     private readonly ShellSurfaceWatcher _shellSurfaces = new();
+
+    /// <summary>Closes another application's menu when the user clicks the bar.</summary>
+    private readonly Rendering.ForeignMenuDismisser _foreignMenus = new();
 
     /// <summary>
     /// Keeps the chevron and an open flyout honest when icons arrive or leave.
