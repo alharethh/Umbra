@@ -61,23 +61,42 @@ internal sealed class ShellSurfaceWatcher
 {
     private readonly HashSet<string> _loggedUnknownClasses = [];
 
+    /// <summary>How long after a dismissal another one is ignored.</summary>
+    /// <remarks>
+    /// Long enough to cover the panel's close animation and the foreground moving off it, short
+    /// enough that a user deliberately opening and closing a panel twice is never swallowed.
+    /// </remarks>
+    private static readonly TimeSpan Cooldown = TimeSpan.FromMilliseconds(600);
+
+    private DateTime _lastDismissal = DateTime.MinValue;
+
     /// <summary>
     /// Closes Windows' flyout, if one we recognise is in front.
     /// </summary>
     /// <returns>True when a surface was closed.</returns>
     public bool Dismiss()
     {
+        // Two dismissals in quick succession would be worse than none. Closing is asynchronous —
+        // it is a synthesised Win+key and the panel animates away — so a second call arriving
+        // before the foreground has moved still sees the surface, sends the toggle again, and
+        // *reopens* what the first one closed. That is reachable now that a press on the bar
+        // dismisses as well as the handler the press then runs: show-desktop and the window
+        // picker both call this themselves.
+        if (DateTime.UtcNow - _lastDismissal < Cooldown) return false;
+
         (string? className, string? processName) = Foreground();
         if (className is null) return false;
 
         switch (SurfaceFor(className, processName))
         {
             case ShellSurface.QuickSettings:
+                _lastDismissal = DateTime.UtcNow;
                 ManagedShell.Common.Helpers.ShellHelper.ShowActionCenter();
                 BringUpLog.Write($"shell surface dismissed: quick settings ({className})");
                 return true;
 
             case ShellSurface.NotificationCentre:
+                _lastDismissal = DateTime.UtcNow;
                 ManagedShell.Common.Helpers.ShellHelper.ShowNotificationCenter();
                 BringUpLog.Write($"shell surface dismissed: notification centre ({className} / {processName})");
                 return true;

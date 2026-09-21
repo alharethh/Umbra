@@ -208,6 +208,7 @@
 
         <DataTemplate x:Key="SystemIndicatorTemplate">
             <Grid Background="Transparent"
+                  Tag="ShellToggle"
                   ToolTip="{Binding Title}"
                   ToolTipService.Placement="{Binding TooltipPlacement, RelativeSource={RelativeSource AncestorType=Window}}"
                   MouseRightButtonDown="OnTrayIconMouseDown"
@@ -233,6 +234,7 @@
 
         <DataTemplate x:Key="TrayIconTemplate">
             <Grid Background="Transparent"
+                  Tag="ShellToggle"
                   ToolTip="{Binding Title}"
                   ToolTipService.Placement="{Binding TooltipPlacement, RelativeSource={RelativeSource AncestorType=Window}}"
                   MouseLeftButtonDown="OnTrayIconMouseDown"
@@ -709,7 +711,7 @@
             The overflow chevron (§7.1). Hidden entirely when nothing is behind it, because a
             permanently lit affordance opening an empty panel is a lit pixel for nothing.
         -->
-        <Grid x:Name="TrayChevron"
+        <Grid x:Name="TrayChevron" Tag="ShellToggle"
               Background="Transparent"
               ToolTip="Show hidden icons"
               ToolTipService.Placement="{Binding TooltipPlacement}"
@@ -754,7 +756,7 @@
             Its slots are smaller than the icon row's, so it uses its own derived drift amplitude —
             applying the row's would push these out of their slots and break P5.
         -->
-        <Grid x:Name="SystemCluster"
+        <Grid x:Name="SystemCluster" Tag="ShellToggle"
               Background="Transparent"
               ToolTip="{Binding NetworkDescription}"
               ToolTipService.Placement="{Binding TooltipPlacement}"
@@ -868,6 +870,7 @@
                 change while digit *positions* do not, and the colon never changes at all.
             -->
             <Grid Background="Transparent"
+                  Tag="ShellToggle"
                   ToolTip="Open notifications"
                   ToolTipService.Placement="{Binding TooltipPlacement}"
                   MouseLeftButtonUp="OnClockClick"

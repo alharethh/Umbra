@@ -188,7 +188,7 @@ internal partial class BarWindow : AppBarWindow
         // handled or open something else over the top.
         AddHandler(
             PreviewMouseDownEvent,
-            new MouseButtonEventHandler((_, _) => _menuDismisser.CloseIfPointerOutside()),
+            new MouseButtonEventHandler(OnBarPressed),
             handledEventsToo: true);
 
         // A class handler rather than per-menu wiring: the slot menus are created by a
@@ -2108,6 +2108,58 @@ internal partial class BarWindow : AppBarWindow
 
     /// <summary>Closes another application's menu when the user clicks the bar.</summary>
     private readonly Rendering.ForeignMenuDismisser _foreignMenus = new();
+
+    /// <summary>
+    /// A press anywhere on the bar closes whatever is open over it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is the case every other dismissal path missed.</b> Clicking an icon, the chevron
+    /// or the show-desktop sliver each closed Windows' panels, because each of those has a
+    /// handler that says so. Clicking <i>empty space on the bar</i> ran no code at all, so the
+    /// notification centre, Quick Settings and a tray icon's own menu all stayed open — while
+    /// clicking the same empty space with our own context menu up closed that, because the one
+    /// handler here did call the menu dismisser. Hence the report that right-click menus were
+    /// fine and the other three were not.
+    /// </para>
+    /// <para>
+    /// <b>The controls tagged <c>ShellToggle</c> are excluded, and that exclusion is the whole
+    /// subtlety.</b> The clock, the volume and network cluster, the overflow chevron and the tray
+    /// icons all raise a panel by sending its <i>toggle</i>. Dismissing on the way down would
+    /// close the panel a moment before their own handler reopens it, or reopen one the user was
+    /// closing. They own their dismissal; everything else on the bar delegates it here.
+    /// </para>
+    /// </remarks>
+    private void OnBarPressed(object sender, MouseButtonEventArgs e)
+    {
+        _menuDismisser.CloseIfPointerOutside();
+
+        if (OwnsShellDismissal(e.OriginalSource as DependencyObject)) return;
+
+        DismissWindowsSurfaces();
+    }
+
+    /// <summary>Whether a press landed on a control that raises a shell surface itself.</summary>
+    private static bool OwnsShellDismissal(DependencyObject? source)
+    {
+        for (DependencyObject? node = source; node is not null; node = VisualTreeHelperParent(node))
+            if (node is FrameworkElement { Tag: "ShellToggle" }) return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// The visual parent, falling back to the logical one.
+    /// </summary>
+    /// <remarks>
+    /// A press inside a <c>ContextMenu</c> or a <c>Popup</c> originates in a separate visual tree
+    /// whose root has no visual parent, so walking visuals alone stops at the popup and never
+    /// reaches the control that owns it.
+    /// </remarks>
+    private static DependencyObject? VisualTreeHelperParent(DependencyObject node) =>
+        node is Visual or System.Windows.Media.Media3D.Visual3D
+            ? System.Windows.Media.VisualTreeHelper.GetParent(node) ?? LogicalTreeHelper.GetParent(node)
+            : LogicalTreeHelper.GetParent(node);
 
     /// <summary>
     /// Keeps the chevron and an open flyout honest when icons arrive or leave.
