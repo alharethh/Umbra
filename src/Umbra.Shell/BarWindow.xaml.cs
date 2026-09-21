@@ -2300,7 +2300,10 @@ internal partial class BarWindow : AppBarWindow
         }
 
         _trayOverflowWatch ??= CreateTrayOverflowWatch();
-        _trayOverflowAwaySince = null;
+
+        // The button that opened the flyout is still down. Seeding the watch with that fact is
+        // what stops its own opening press being read as the click that dismisses it.
+        _trayOverflowPressWasDown = true;
         _trayOverflowWatch.Start();
 
         LogTrayOverflowPlacement();
@@ -2366,22 +2369,36 @@ internal partial class BarWindow : AppBarWindow
             Interval = TimeSpan.FromMilliseconds(100),
         };
 
+        // <b>Closed by a click away from it, not by the pointer leaving it.</b> It used to close
+        // 600 ms after the pointer was no longer over the flyout or the chevron, which made it
+        // vanish a second or two after opening if the user did not keep the pointer on it —
+        // reported as exactly that. Windows' own overflow stays up until you click elsewhere,
+        // and so does every other panel the bar has.
+        //
+        // A press anywhere inside Umbra is handled in OnBarPressed, which has the event in hand;
+        // this watches for the presses we never see, which is every one outside our windows.
         timer.Tick += (_, _) =>
         {
-            if (!TrayOverflowPopup.IsOpen) { timer.Stop(); return; }
-
-            if (PointerIsOverTrayOverflow())
+            if (!TrayOverflowPopup.IsOpen)
             {
-                _trayOverflowAwaySince = null;
+                timer.Stop();
+                _trayOverflowPressWasDown = false;
                 return;
             }
 
-            // A grace period, because the pointer has to cross the gap between the chevron and
-            // the flyout to reach it, and closing mid-journey would make the panel unreachable.
-            _trayOverflowAwaySince ??= DateTime.UtcNow;
+            bool down = (GetAsyncKeyState(VkLeftButton) & 0x8000) != 0
+                     || (GetAsyncKeyState(VkRightButton) & 0x8000) != 0
+                     || (GetAsyncKeyState(VkMiddleButton) & 0x8000) != 0;
 
-            if (DateTime.UtcNow - _trayOverflowAwaySince >= TimeSpan.FromMilliseconds(600))
-                SetTrayOverflowOpen(false);
+            bool pressed = down && !_trayOverflowPressWasDown;
+            _trayOverflowPressWasDown = down;
+
+            // The edge, not the state — otherwise the press that opens the flyout is still down
+            // on the next tick and closes it again immediately.
+            if (!pressed) return;
+            if (PointerIsOverTrayOverflow()) return;
+
+            SetTrayOverflowOpen(false);
         };
 
         return timer;
@@ -2436,7 +2453,16 @@ internal partial class BarWindow : AppBarWindow
     }
 
     private DispatcherTimer? _trayOverflowWatch;
-    private DateTime? _trayOverflowAwaySince;
+
+    /// <summary>Whether a mouse button was already down on the previous overflow-watch tick.</summary>
+    private bool _trayOverflowPressWasDown;
+
+    private const int VkLeftButton = 0x01;
+    private const int VkRightButton = 0x02;
+    private const int VkMiddleButton = 0x04;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
 
     private static class TrayNative
     {
