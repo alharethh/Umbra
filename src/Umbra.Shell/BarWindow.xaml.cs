@@ -2114,6 +2114,15 @@ internal partial class BarWindow : AppBarWindow
     private readonly Rendering.ForeignMenuDismisser _foreignMenus = new();
 
     /// <summary>
+    /// Remembers the window a tray icon's owner puts up, so a press on the bar can close it.
+    /// </summary>
+    /// <remarks>
+    /// Measured rather than assumed: Discord's "menu" is an ordinary Chromium top-level window,
+    /// not a Win32 menu, so nothing generic recognises it. See <see cref="Rendering.TrayMenuWatcher"/>.
+    /// </remarks>
+    private readonly Rendering.TrayMenuWatcher _trayMenus = new();
+
+    /// <summary>
     /// A press anywhere on the bar closes whatever is open over it.
     /// </summary>
     /// <remarks>
@@ -2140,6 +2149,7 @@ internal partial class BarWindow : AppBarWindow
 
         if (OwnsShellDismissal(e.OriginalSource as DependencyObject)) return;
 
+        _trayMenus.Close();
         DismissWindowsSurfaces();
     }
 
@@ -3019,6 +3029,7 @@ internal partial class BarWindow : AppBarWindow
         AllowIconOwnerForeground(icon);
 
         icon.IconMouseUp(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);
+        _trayMenus.Watch(icon.HWnd);
         e.Handled = true;
     }
 
