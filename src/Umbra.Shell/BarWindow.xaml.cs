@@ -2145,9 +2145,20 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     private void OnBarPressed(object sender, MouseButtonEventArgs e)
     {
-        _menuDismisser.CloseIfPointerOutside();
+        // A press inside one of our own panels belongs to that panel, not to the bar underneath.
+        if (PointerIsOnOwnPanel()) return;
 
         if (OwnsShellDismissal(e.OriginalSource as DependencyObject)) return;
+
+        // Everything the bar has open, including the overflow flyout and the window picker.
+        //
+        // <b>This is the case the report was actually about, and it went unfixed for several
+        // rounds because "tray menu" was read as an application's menu rather than as ours.</b>
+        // Clicking the chevron opens our flyout; the only thing that closed it was the watcher
+        // that fires 600 ms after the pointer leaves <i>both</i> the flyout and the bar. So the
+        // pointer sitting anywhere on the bar kept it open indefinitely, and the user had to
+        // click off the bar entirely — which is exactly what was described.
+        ClearPanelsFor(BarPanel.None);
 
         _trayMenus.Close();
         DismissWindowsSurfaces();
