@@ -3,18 +3,21 @@
 //
 //   dotnet run tools/make-logo.cs
 //
-// The mark is a corona — a pale cyan ring around a void the same black as the
-// background, so the centre reads as absence rather than as a dark disc. Its numbers were
-// measured off the approved artwork rather than guessed: ring colour #B0F7FB, radius 29.25% of
-// the canvas, stroke 2.05%, glow reaching about 4% further out.
+// The mark is an eclipse: a black disc with a pale cyan corona on its rim. Its colour and
+// proportions were measured off the approved artwork rather than guessed — ring #B0F7FB, stroke
+// 2.05% of the canvas, glow reaching about 4% further out. Only the radius differs from that
+// artwork, which placed the ring at 29.25% inside a square field; on a circular field the mark
+// is drawn larger, because nothing is eating the margin any more.
 //
 // Two things here are deliberate and easy to "fix" wrongly:
 //
 //  - EVERY SIZE IS DRAWN, never downscaled. Resampling a 1024 px ring to 16 turns a 0.3 px
 //    stroke into a grey smudge. The same reason the previous icon was built this way.
-//  - THE BACKGROUND IS AN OPAQUE BLACK SQUARE, not transparency. The whole idea is that the
-//    inside of the ring is the same nothing as the outside; on a transparent icon a light
-//    Explorer background fills the middle and the mark inverts into a cyan donut on white.
+//  - THE FIELD IS AN OPAQUE BLACK DISC, and the ring sits ON ITS RIM. The disc is what keeps the
+//    inside of the ring black on a light background; drop it and a pale Explorer window fills the
+//    middle, turning an eclipse into a cyan donut on white. Putting the ring on the rim rather
+//    than floating it inside a larger disc is what stops the mark reading as two concentric
+//    circles, and it is what a real eclipse looks like: the occluding body, and its corona.
 #:property TargetFramework=net10.0-windows
 #:property UseWindowsForms=true
 #:property PublishTrimmed=false
@@ -27,7 +30,7 @@ using System.Drawing.Imaging;
 // Measured from the approved artwork at 1024 px.
 var Ink = Color.FromArgb(0xB0, 0xF7, 0xFB);
 const double TrueStrokeFraction = 0.0205;    // 21 px at 1024
-const double TrueRadiusFraction = 0.2925;    // 299.5 px at 1024
+const double TrueRadiusFraction = 0.390;     // the rim of the black disc, on a circular field
 const double GlowFraction = 0.040;           // 41 px at 1024
 
 string repo = Directory.GetCurrentDirectory();
@@ -70,9 +73,10 @@ Bitmap Draw(int size, out double radius, out double stroke, out double glow)
     double t = Math.Clamp((Math.Log2(size) - 4.0) / 4.0, 0.0, 1.0);
     double strokeFraction = 0.125 * Math.Pow(TrueStrokeFraction / 0.125, t);
 
-    // And the ring grows a little as it shrinks. At 16 px the artwork's generous margin leaves
-    // the mark looking timid beside other applications' full-bleed icons.
-    double radiusFraction = 0.335 + (TrueRadiusFraction - 0.335) * t;
+    // The measured artwork put the ring at 29.25% inside a square field. On a circular field
+    // there is no square eating the margin, so the mark is drawn larger — it has to hold its own
+    // beside other applications' full-bleed icons — and grows a little further as it shrinks.
+    double radiusFraction = 0.405 + (TrueRadiusFraction - 0.405) * t;
 
     radius = size * radiusFraction;
     stroke = size * strokeFraction;
@@ -88,11 +92,16 @@ Bitmap Draw(int size, out double radius, out double stroke, out double glow)
     g.PixelOffsetMode = PixelOffsetMode.HighQuality;
     g.InterpolationMode = InterpolationMode.HighQualityBicubic;
 
-    g.Clear(Color.Black);
+    g.Clear(Color.Transparent);
 
     float centre = size / 2f;
     RectangleF Circle(double r) => new(
         (float)(centre - r), (float)(centre - r), (float)(r * 2), (float)(r * 2));
+
+    // The umbra itself: an opaque black disc out to the ring's centreline. The ring is drawn over
+    // its edge afterwards, so the disc's own antialiased boundary never shows.
+    using (SolidBrush shadow = new(Color.Black))
+        g.FillEllipse(shadow, Circle(radius));
 
     // The corona, built from concentric strokes fading outward. A real Gaussian would be nicer
     // and is not worth a blur pass: at these radii the banding is below one 8-bit step.
