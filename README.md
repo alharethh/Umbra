@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src/Umbra.Shell/Assets/logo.png" width="96" alt="Umbra">
+<img src="src/Umbra.Shell/Assets/logo.png" width="128" alt="Umbra">
 
 # Umbra
 
