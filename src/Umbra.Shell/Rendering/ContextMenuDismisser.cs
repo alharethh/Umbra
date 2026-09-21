@@ -77,6 +77,26 @@ internal sealed class ContextMenuDismisser
         Release();
     }
 
+    /// <summary>
+    /// Closes the watched menu unless the pointer is on it.
+    /// </summary>
+    /// <remarks>
+    /// For a press the bar receives directly. The polling in <see cref="OnTick"/> is supposed to
+    /// catch this too and measurably does not for presses that land on the bar itself — clicking
+    /// in another application closes the menu, clicking the bar did not. Rather than depend on
+    /// working out why, the bar calls this from <c>PreviewMouseDown</c>, where the press is
+    /// already in hand.
+    /// </remarks>
+    /// <returns>True when a menu was closed.</returns>
+    public bool CloseIfPointerOutside()
+    {
+        if (_menu is not { IsOpen: true }) return false;
+        if (GetCursorPos(out NativePoint cursor) && InsideMenu(cursor)) return false;
+
+        Close();
+        return true;
+    }
+
     private void OnTick(object? sender, EventArgs e)
     {
         if (_menu is null || !_menu.IsOpen)

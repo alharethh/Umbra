@@ -39,4 +39,55 @@ public class ShellSurfaceTests
     [InlineData("")]
     public void An_Ordinary_Window_Is_Not_A_Surface(string className) =>
         Assert.Equal(ShellSurface.None, ShellSurfaceWatcher.SurfaceFor(className));
+
+    /// <summary>
+    /// The notification centre, which has no class of its own.
+    /// </summary>
+    /// <remarks>
+    /// Measured on 25H2 by opening it and reading the foreground window: class
+    /// <c>Windows.UI.Core.CoreWindow</c>, process <c>ShellExperienceHost</c>, title "Notification
+    /// Center". The table used to say <c>NotificationCenterWindow</c>, which nothing answers to,
+    /// so the clock's panel was never dismissed — it stayed in front and the tray flyout drew
+    /// underneath it, which is how this was reported.
+    /// </remarks>
+    [Fact]
+    public void The_Notification_Centre_Is_Recognised_By_Class_And_Host() =>
+        Assert.Equal(
+            ShellSurface.NotificationCentre,
+            ShellSurfaceWatcher.SurfaceFor("Windows.UI.Core.CoreWindow", "ShellExperienceHost"));
+
+    /// <summary>
+    /// <b>The dangerous half.</b> A bare <c>CoreWindow</c> must never match.
+    /// </summary>
+    /// <remarks>
+    /// <c>Windows.UI.Core.CoreWindow</c> is the generic UWP class — Settings, the input host and
+    /// every XAML island on the desktop carry it. Dismissal is a <i>toggle</i>, so a match here
+    /// would not merely fail to close something, it would <b>open</b> the notification centre on
+    /// top of whatever the user was working in. Drop the process from the pattern and these go
+    /// red while the test above still passes, which is the point of having both.
+    /// </remarks>
+    [Theory]
+    [InlineData("SystemSettings")]
+    [InlineData("TextInputHost")]
+    [InlineData("explorer")]
+    [InlineData("ShellHost")]
+    [InlineData(null)]
+    public void A_Bare_CoreWindow_Is_Not_The_Notification_Centre(string? processName) =>
+        Assert.Equal(
+            ShellSurface.None,
+            ShellSurfaceWatcher.SurfaceFor("Windows.UI.Core.CoreWindow", processName));
+
+    /// <summary>Quick Settings keeps its own class, and has changed host between builds.</summary>
+    /// <remarks>
+    /// It was <c>ShellExperienceHost</c> and is <c>ShellHost</c> on 25H2, so qualifying it by
+    /// process would break on the next move. Only the ambiguous one is qualified.
+    /// </remarks>
+    [Theory]
+    [InlineData("ShellHost")]
+    [InlineData("ShellExperienceHost")]
+    [InlineData(null)]
+    public void Quick_Settings_Does_Not_Depend_On_Its_Host(string? processName) =>
+        Assert.Equal(
+            ShellSurface.QuickSettings,
+            ShellSurfaceWatcher.SurfaceFor("ControlCenterWindow", processName));
 }

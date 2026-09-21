@@ -67,10 +67,10 @@ internal sealed class ShellSurfaceWatcher
     /// <returns>True when a surface was closed.</returns>
     public bool Dismiss()
     {
-        string? className = ForegroundClassName();
+        (string? className, string? processName) = Foreground();
         if (className is null) return false;
 
-        switch (SurfaceFor(className))
+        switch (SurfaceFor(className, processName))
         {
             case ShellSurface.QuickSettings:
                 ManagedShell.Common.Helpers.ShellHelper.ShowActionCenter();
@@ -79,29 +79,52 @@ internal sealed class ShellSurfaceWatcher
 
             case ShellSurface.NotificationCentre:
                 ManagedShell.Common.Helpers.ShellHelper.ShowNotificationCenter();
-                BringUpLog.Write($"shell surface dismissed: notification centre ({className})");
+                BringUpLog.Write($"shell surface dismissed: notification centre ({className} / {processName})");
                 return true;
 
             default:
-                LogUnknownOnce(className);
+                LogUnknownOnce($"{className} / {processName}");
                 return false;
         }
     }
 
     /// <summary>
-    /// Which surface a window class belongs to.
+    /// Which surface a foreground window belongs to.
     /// </summary>
     /// <remarks>
-    /// Pure, so the table can be asserted without a desktop in front of it. Matching is on the
-    /// class rather than on the owning process because the hosts have moved — Quick Settings was
-    /// <c>ShellExperienceHost</c> and is <c>ShellHost</c> on 25H2 — while the class has not.
+    /// <para>
+    /// Pure, so the table can be asserted without a desktop in front of it.
+    /// </para>
+    /// <para>
+    /// <b>The notification centre has no class of its own, and that is why it used to be missed.</b>
+    /// It was listed here as <c>NotificationCenterWindow</c>, which nothing on Windows 11 25H2
+    /// answers to. Measured, it is a plain <c>Windows.UI.Core.CoreWindow</c> — the generic UWP
+    /// class, shared with Settings, the input host and every XAML island on the desktop — hosted
+    /// by <c>ShellExperienceHost</c>. Quick Settings keeps a class of its own,
+    /// <c>ControlCenterWindow</c>, and has moved host between builds, so it is matched on class
+    /// alone exactly as before.
+    /// </para>
+    /// <para>
+    /// <b>So the ambiguous one, and only the ambiguous one, is qualified by its host process.</b>
+    /// Matching a bare <c>CoreWindow</c> would be actively dangerous rather than merely wrong:
+    /// every dismissal here is a toggle, so firing it at the Settings app — also a
+    /// <c>CoreWindow</c> — would <i>open</i> the notification centre on top of whatever the user
+    /// was doing. The title would be the other discriminator and is worse, because it is
+    /// localised.
+    /// </para>
     /// </remarks>
-    public static ShellSurface SurfaceFor(string className) => className switch
-    {
-        "ControlCenterWindow" => ShellSurface.QuickSettings,
-        "NotificationCenterWindow" => ShellSurface.NotificationCentre,
-        _ => ShellSurface.None,
-    };
+    public static ShellSurface SurfaceFor(string className, string? processName = null) =>
+        (className, processName) switch
+        {
+            ("ControlCenterWindow", _) => ShellSurface.QuickSettings,
+
+            // Kept for older builds, which did have a class of their own.
+            ("NotificationCenterWindow", _) => ShellSurface.NotificationCentre,
+
+            ("Windows.UI.Core.CoreWindow", "ShellExperienceHost") => ShellSurface.NotificationCentre,
+
+            _ => ShellSurface.None,
+        };
 
     /// <summary>
     /// Records a foreground class we were asked to close and did not know, once per class.
@@ -119,15 +142,39 @@ internal sealed class ShellSurfaceWatcher
         BringUpLog.Write($"foreground window class not a known shell surface: {className}");
     }
 
-    private static string? ForegroundClassName()
+    /// <summary>The foreground window's class and the process hosting it.</summary>
+    /// <remarks>
+    /// The process is read because one of the two surfaces has no distinctive class; see
+    /// <see cref="SurfaceFor"/>. It is looked up rather than cached because the hosts change
+    /// between builds, and a wrong answer here sends a toggle at the wrong window.
+    /// </remarks>
+    private static (string? ClassName, string? ProcessName) Foreground()
     {
         IntPtr foreground = NativeMethods.GetForegroundWindow();
-        if (foreground == IntPtr.Zero) return null;
+        if (foreground == IntPtr.Zero) return (null, null);
 
         StringBuilder name = new(256);
         int length = NativeMethods.GetClassName(foreground, name, name.Capacity);
+        if (length <= 0) return (null, null);
 
-        return length > 0 ? name.ToString() : null;
+        return (name.ToString(), ProcessNameOf(foreground));
+    }
+
+    private static string? ProcessNameOf(IntPtr window)
+    {
+        try
+        {
+            NativeMethods.GetWindowThreadProcessId(window, out uint pid);
+            if (pid == 0) return null;
+
+            using System.Diagnostics.Process process = System.Diagnostics.Process.GetProcessById((int)pid);
+            return process.ProcessName;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        {
+            // The window's process has gone between the two calls, which is ordinary for a flyout.
+            return null;
+        }
     }
 
     private static class NativeMethods
@@ -137,5 +184,8 @@ internal sealed class ShellSurfaceWatcher
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         internal static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
+
+        [DllImport("user32.dll")]
+        internal static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     }
 }

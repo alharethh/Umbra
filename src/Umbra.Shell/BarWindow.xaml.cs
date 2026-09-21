@@ -170,6 +170,20 @@ internal partial class BarWindow : AppBarWindow
             }),
             handledEventsToo: true);
 
+        // A press anywhere on the bar closes an open menu, before anything else looks at it.
+        //
+        // The pointer watcher in ContextMenuDismisser was supposed to cover this and does not:
+        // reported as "clicking off the menu within the bar still doesn't close the context menu",
+        // while clicking outside Umbra closes it fine. So the press that lands on the bar is not
+        // reaching that poll, and the bar is the one surface where the user is most likely to
+        // click next. Handling it here needs no theory about why — the press is routed to us, and
+        // PreviewMouseDown with handledEventsToo sees it before any slot handler can mark it
+        // handled or open something else over the top.
+        AddHandler(
+            PreviewMouseDownEvent,
+            new MouseButtonEventHandler((_, _) => _menuDismisser.CloseIfPointerOutside()),
+            handledEventsToo: true);
+
         // A class handler rather than per-menu wiring: the slot menus are created by a
         // DataTemplate, so there is no single place to attach to, and a menu added later would
         // silently miss out.
