@@ -60,6 +60,9 @@ internal sealed class TrayMenuWatcher
     /// <summary>Whether the click being watched was a right click. See <see cref="Watch"/>.</summary>
     private bool _menuGesture;
 
+    /// <summary>The icon owner's UI thread, which is the thread any Win32 menu of its belongs to.</summary>
+    private uint _thread;
+
     public TrayMenuWatcher()
     {
         _sampler = new DispatcherTimer(DispatcherPriority.Background)
@@ -84,14 +87,18 @@ internal sealed class TrayMenuWatcher
     {
         if (iconWindow == IntPtr.Zero) return;
 
-        GetWindowThreadProcessId(iconWindow, out uint pid);
+        uint thread = GetWindowThreadProcessId(iconWindow, out uint pid);
         if (pid == 0) return;
+
+        _thread = thread;
 
         // Whatever the user was in before this click. Captured only if it is not already the
         // application we are about to poke, or restoring it later would be a no-op.
         IntPtr foreground = GetForegroundWindow();
         GetWindowThreadProcessId(foreground, out uint foregroundPid);
         _foregroundBefore = foregroundPid == pid ? IntPtr.Zero : foreground;
+
+        BringUpLog.Write($"tray menu watch: pid {pid}, thread {thread}, gesture={(menuGesture ? "right" : "left")}");
 
         _pid = pid;
         _menuGesture = menuGesture;
@@ -111,13 +118,45 @@ internal sealed class TrayMenuWatcher
         bool tracked = _menu != IntPtr.Zero && IsWindow(_menu) && IsWindowVisible(_menu);
         if (!tracked) _menu = IntPtr.Zero;
 
+        // <b>Ask the owner's thread about menu mode, not the foreground thread.</b> Steam's tray
+        // menu is a real Win32 menu, and this is why two earlier attempts could not see it:
+        // GetGUIThreadInfo(0) reports the <i>foreground</i> thread, and a tray menu does not put
+        // its owner in front — measured, the foreground stayed on the user's own application the
+        // whole time the menu was up, so the flags always read zero. Asked about the owner's own
+        // thread, the same call answers correctly.
+        IntPtr menuOwner = IntPtr.Zero;
+
+        if (_thread != 0)
+        {
+            GuiThreadInfo info = new() { Size = Marshal.SizeOf<GuiThreadInfo>() };
+
+            if (GetGUIThreadInfo(_thread, ref info)
+                && (info.Flags & (GuiInMenuMode | GuiPopupMenuMode)) != 0)
+            {
+                menuOwner = info.MenuOwner;
+            }
+        }
+
         // Is the application we last forwarded a click to the one in front? If so it very likely
         // has something open, whether or not the sampler managed to identify the window.
         IntPtr foreground = GetForegroundWindow();
         GetWindowThreadProcessId(foreground, out uint foregroundPid);
         bool ownerInFront = _menuGesture && _pid != 0 && foregroundPid == _pid;
 
-        if (!tracked && !ownerInFront) return false;
+        if (!tracked && !ownerInFront && menuOwner == IntPtr.Zero)
+        {
+            BringUpLog.Write($"tray menu close: nothing open for pid {_pid} (thread {_thread})");
+            return false;
+        }
+
+        // A genuine Win32 menu unwinds on WM_CANCELMODE, which is what Windows itself sends.
+        // Posted, because the owner is inside its own modal loop and a blocking call would wait
+        // on the very loop we are trying to end.
+        if (menuOwner != IntPtr.Zero)
+        {
+            PostMessage(menuOwner, WmCancelMode, IntPtr.Zero, IntPtr.Zero);
+            BringUpLog.Write($"tray menu cancelled: Win32 menu owned by 0x{menuOwner.ToInt64():X}");
+        }
 
         // <b>Moving the foreground is the part that works for every application, and it is what
         // clicking outside Umbra already does.</b> These menus close when their owner sees the
@@ -144,6 +183,7 @@ internal sealed class TrayMenuWatcher
 
         _menu = IntPtr.Zero;
         _pid = 0;
+        _thread = 0;
         _menuGesture = false;
         return true;
     }
@@ -227,12 +267,24 @@ internal sealed class TrayMenuWatcher
     }
 
     private const uint WmClose = 0x0010;
+    private const uint WmCancelMode = 0x001F;
+    private const uint GuiInMenuMode = 0x00000004;
+    private const uint GuiPopupMenuMode = 0x00000010;
     private const int GwlStyle = -16;
     private const int GwlExStyle = -20;
     private const int WsPopup = unchecked((int)0x80000000);
     private const int WsExAppWindow = 0x00040000;
 
     private delegate bool EnumWindowsProc(IntPtr window, IntPtr param);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        public int Size;
+        public uint Flags;
+        public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public NativeRect CaretRect;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
@@ -248,6 +300,9 @@ internal sealed class TrayMenuWatcher
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
 
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr window);
