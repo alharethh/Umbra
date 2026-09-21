@@ -3077,7 +3077,12 @@ internal partial class BarWindow : AppBarWindow
         AllowIconOwnerForeground(icon);
 
         icon.IconMouseUp(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);
-        _trayMenus.Watch(icon.HWnd, menuGesture: e.ChangedButton == MouseButton.Right);
+        double trayDpi = DpiScale <= 0 ? 1.0 : DpiScale;
+        _trayMenus.Watch(
+            icon.HWnd,
+            menuGesture: e.ChangedButton == MouseButton.Right,
+            barBounds: new System.Windows.Rect(
+                Left * trayDpi, Top * trayDpi, Width * trayDpi, Height * trayDpi));
         e.Handled = true;
     }
 

@@ -63,6 +63,9 @@ internal sealed class TrayMenuWatcher
     /// <summary>The icon owner's UI thread, which is the thread any Win32 menu of its belongs to.</summary>
     private uint _thread;
 
+    /// <summary>The bar, in physical pixels, for <see cref="NearTheBar"/>.</summary>
+    private System.Windows.Rect _bar;
+
     public TrayMenuWatcher()
     {
         _sampler = new DispatcherTimer(DispatcherPriority.Background)
@@ -83,7 +86,7 @@ internal sealed class TrayMenuWatcher
     /// click on a tray icon usually restores the application's window instead, and treating that
     /// as an open menu would yank the foreground back off the window the user just asked for.
     /// </param>
-    public void Watch(IntPtr iconWindow, bool menuGesture)
+    public void Watch(IntPtr iconWindow, bool menuGesture, System.Windows.Rect barBounds)
     {
         if (iconWindow == IntPtr.Zero) return;
 
@@ -104,7 +107,14 @@ internal sealed class TrayMenuWatcher
         _menuGesture = menuGesture;
         _menu = IntPtr.Zero;
         _samples = 0;
-        _before = VisibleWindowsOf(pid);
+        _bar = barBounds;
+
+        // <b>System-wide, not the icon owner's process.</b> Steam's tray icon belongs to
+        // steam.exe and its menu does not: the menu is drawn by another Steam process entirely,
+        // so a snapshot scoped to the icon's pid found nothing, every time, and the close
+        // silently declined to act. Measured from the log — "nothing open for pid 25768" on
+        // every press while the menu was plainly on screen.
+        _before = VisibleWindows();
 
         _sampler.Start();
     }
@@ -124,18 +134,12 @@ internal sealed class TrayMenuWatcher
         // its owner in front — measured, the foreground stayed on the user's own application the
         // whole time the menu was up, so the flags always read zero. Asked about the owner's own
         // thread, the same call answers correctly.
-        IntPtr menuOwner = IntPtr.Zero;
+        IntPtr menuOwner = MenuOwnerOn(_thread);
 
-        if (_thread != 0)
-        {
-            GuiThreadInfo info = new() { Size = Marshal.SizeOf<GuiThreadInfo>() };
-
-            if (GetGUIThreadInfo(_thread, ref info)
-                && (info.Flags & (GuiInMenuMode | GuiPopupMenuMode)) != 0)
-            {
-                menuOwner = info.MenuOwner;
-            }
-        }
+        // The menu may belong to a different thread, and for Steam a different process entirely,
+        // so the window we found is asked about too.
+        if (menuOwner == IntPtr.Zero && tracked)
+            menuOwner = MenuOwnerOn(GetWindowThreadProcessId(_menu, out _));
 
         // Is the application we last forwarded a click to the one in front? If so it very likely
         // has something open, whether or not the sampler managed to identify the window.
@@ -188,6 +192,17 @@ internal sealed class TrayMenuWatcher
         return true;
     }
 
+    private static IntPtr MenuOwnerOn(uint thread)
+    {
+        if (thread == 0) return IntPtr.Zero;
+
+        GuiThreadInfo info = new() { Size = Marshal.SizeOf<GuiThreadInfo>() };
+
+        if (!GetGUIThreadInfo(thread, ref info)) return IntPtr.Zero;
+
+        return (info.Flags & (GuiInMenuMode | GuiPopupMenuMode)) != 0 ? info.MenuOwner : IntPtr.Zero;
+    }
+
     private void OnSample(object? sender, EventArgs e)
     {
         if (++_samples > SamplesAfterClick)
@@ -196,17 +211,20 @@ internal sealed class TrayMenuWatcher
             return;
         }
 
-        foreach (IntPtr window in VisibleWindowsOf(_pid))
+        foreach (IntPtr window in VisibleWindows())
         {
             if (_before.Contains(window)) continue;
+            if (IsOurs(window)) continue;
             if (!LooksLikeAMenu(window)) continue;
+            if (!NearTheBar(window)) continue;
 
             _menu = window;
             _sampler.Stop();
 
             GetWindowRect(window, out NativeRect r);
+            GetWindowThreadProcessId(window, out uint owningPid);
             BringUpLog.Write(
-                $"tray menu seen: 0x{window.ToInt64():X} {ClassOf(window)} " +
+                $"tray menu seen: 0x{window.ToInt64():X} {ClassOf(window)} pid {owningPid} " +
                 $"[{r.Left},{r.Top} {r.Right - r.Left}x{r.Bottom - r.Top}]");
 
             return;
@@ -239,23 +257,48 @@ internal sealed class TrayMenuWatcher
         return width is > 16 and < 900 && height is > 16 and < 1000;
     }
 
-    private static HashSet<IntPtr> VisibleWindowsOf(uint pid)
+    private static HashSet<IntPtr> VisibleWindows()
     {
         HashSet<IntPtr> windows = [];
 
         EnumWindows(
             (window, _) =>
             {
-                if (!IsWindowVisible(window)) return true;
-
-                GetWindowThreadProcessId(window, out uint owner);
-                if (owner == pid) windows.Add(window);
-
+                if (IsWindowVisible(window)) windows.Add(window);
                 return true;
             },
             IntPtr.Zero);
 
         return windows;
+    }
+
+    /// <summary>Whether a window is one of Umbra's own, which must never be taken for a menu.</summary>
+    private static bool IsOurs(IntPtr window)
+    {
+        GetWindowThreadProcessId(window, out uint pid);
+        return pid == (uint)Environment.ProcessId;
+    }
+
+    /// <summary>
+    /// Whether a window sits against the bar, which is where a tray menu appears.
+    /// </summary>
+    /// <remarks>
+    /// The discriminator that makes a system-wide search safe. Without it any popup opening
+    /// anywhere — a tooltip, another application's own menu, a notification — would be taken for
+    /// the tray menu and closed by the next click on the bar.
+    /// </remarks>
+    private bool NearTheBar(IntPtr window)
+    {
+        if (_bar.IsEmpty) return true;
+        if (!GetWindowRect(window, out NativeRect r)) return false;
+
+        const int Gap = 160;
+
+        System.Windows.Rect near = new(
+            _bar.X - Gap, _bar.Y - Gap, _bar.Width + Gap * 2, _bar.Height + Gap * 2);
+
+        return near.IntersectsWith(new System.Windows.Rect(
+            r.Left, r.Top, Math.Max(1, r.Right - r.Left), Math.Max(1, r.Bottom - r.Top)));
     }
 
     private static string ClassOf(IntPtr window)
