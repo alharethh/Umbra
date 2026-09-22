@@ -197,11 +197,13 @@ the full tier and motion system · live settings · starting at sign-in.
   the notification area announces each icon — but naming is not operating, and a screen-reader
   user still cannot activate any of it.
 - **The notification area keeps a timer running ten times a second.** That is how it holds its own
-  window in front of Explorer's, and it never stops while Umbra is running. A screen that is being
-  poked constantly may never be left alone long enough to idle — and an OLED panel does some of its
-  own upkeep while idle. So it is possible that hosting the tray costs more panel life than the
-  rest of Umbra saves. **Nobody has measured it yet.** If you would rather not find out, turn the
-  notification area off in Settings; everything else keeps working.
+  window in front of Explorer's, and it never stops while Umbra is running. This was listed here as
+  possibly costing more panel life than the rest of Umbra saves, on the theory that a screen being
+  poked constantly never idles and so never runs the panel's own upkeep. **That theory is wrong**:
+  Windows does not reset the display idle timer for CPU activity, only for input or an explicit
+  request, and Umbra makes no such request. What the timer actually costs is power — it keeps the
+  processor out of its deeper idle states. Smaller, real, and still not measured. Turn the
+  notification area off in Settings if you would rather not pay it; everything else keeps working.
 
 ## How it is built
 

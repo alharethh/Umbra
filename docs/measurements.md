@@ -571,6 +571,57 @@ template's `Grid` did not — they are `Grid`s with mouse handlers. Promoting th
 controls or custom `AutomationPeer`s, which is §11.2 Q7/Q8 proper and is not done. **Naming is
 not operating.**
 
+## Step 13 — §11.2 Q2, and why its premise does not hold
+
+Q2 asks whether ManagedShell's permanent 100 ms timers defeat display idle, and §6.6 rests on it:
+WOLED panels run their own compensation cycles while idle or on standby, so a process that keeps
+the display awake would suppress a mitigation far more effective than anything Umbra does. It has
+been the project's largest open unknown for weeks.
+
+**It was never going to be answered by running the bar for a week, and it does not need to be.**
+
+**What actually resets the display idle timer.** Microsoft's own documentation for
+`SetThreadExecutionState` is explicit: "The system automatically detects activities such as local
+keyboard or mouse input, server activity, and changing window focus. **Activities that are not
+automatically detected include disk or CPU activity and video display.**" A timer is CPU activity.
+Twenty wake-ups a second are twenty pieces of exactly the thing Windows does not count.
+
+Display idle is reset by user input, or by an explicit request — `SetThreadExecutionState` with
+`ES_DISPLAY_REQUIRED`, or a power request through `PowerSetRequest`.
+
+**Nobody here makes one.** Audited:
+
+| Searched | `SetThreadExecutionState` / `PowerSetRequest` / `ES_DISPLAY` |
+| :---- | :---- |
+| `src/` — all of Umbra | none |
+| ManagedShell 0.0.370, all eight assemblies | none |
+
+So on the mechanism Q2 names, the answer is no: the timers cannot defeat display idle, because
+CPU activity is not what the display idle timer watches.
+
+**What is still open, stated narrowly.** Two things, and neither is the one §6.6 feared:
+
+- **Power.** Twenty wake-ups a second keep the CPU out of its deeper idle states. That is a
+  battery and thermals question, not a panel-life one, and it is real but much smaller.
+- **Empirical confirmation.** `powercfg /requests` from an **elevated** prompt lists every process
+  holding a DISPLAY request and would settle it against the running system rather than against
+  documentation and a code audit. It needs administrator rights, so it has not been run here.
+
+**And the reason this sat unanswered is worth keeping.** The obvious experiment — leave the bar
+running and see whether the display sleeps — could never have worked on this machine:
+
+```
+powercfg /query SCHEME_CURRENT SUB_VIDEO VIDEOIDLE
+    Current AC Power Setting Index: 0x00000000     (never turn the display off)
+    Current DC Power Setting Index: 0x00000258     (600 s)
+```
+
+On AC, which is how a desktop runs, **this machine never turns its display off at all.** A
+before-and-after test would have produced two identical readings and been reported as "the timers
+make no difference", which is the right answer arrived at by an instrument that could not have
+produced any other. This project's own rule, again: measure the thing, then check the measurement
+could have detected it.
+
 ## Still open
 
 - **§11.2 Q2 — do ManagedShell's 100 ms timers defeat display idle?** Not yet measured. Only the
