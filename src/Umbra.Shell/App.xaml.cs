@@ -59,6 +59,13 @@ public partial class App : Application
         Shell.LicenceFiles.EnsureWritten(UmbraSettings.DefaultPath);
         ApplyCommandLineOverrides(Settings, e.Args);
 
+        // <b>Re-point the sign-in entry if we have moved.</b> The standalone download is commonly
+        // run out of the Downloads folder and then put somewhere permanent, which leaves the Run
+        // value naming a file that is gone — and Windows drops such an entry without saying so,
+        // so the symptom is "it stopped starting itself" with nothing to look at. Only touched
+        // when the user has asked for it; Apply writes nothing if the path already matches.
+        if (Settings.StartWithWindows) Shell.StartupRegistration.Apply(true);
+
         // Tray hosting works (docs/measurements.md step 7), but runs a permanent 100 ms timer,
         // and whether those timers defeat display idle is unmeasured -- so it waits to be asked for.
         _host = new ShellHost(enableTray: Settings.Tray);

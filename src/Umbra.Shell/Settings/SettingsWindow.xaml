@@ -170,6 +170,10 @@
         <TextBlock Style="{StaticResource Hint}"
                    Text="Icons shrink while the bar is resting and grow back to 24 px when you point at it, so the smaller size is only ever seen out of the corner of your eye. Applies immediately." />
 
+        <CheckBox x:Name="StartupBox" Content="Start Umbra when I sign in" Margin="0,0,0,2" />
+        <TextBlock Style="{StaticResource Hint}"
+                   Text="Adds Umbra to the sign-in programs for your account only. It appears in Task Manager's Startup tab, so you can turn it off from there too. Applies immediately." />
+
         <CheckBox x:Name="MotionBox" Content="Drift and micro-jitter" Margin="0,0,0,2" />
         <TextBlock Style="{StaticResource Hint}"
                    Text="Moves the bar's contents within their own slots, far too slowly to see. Applies immediately." />

@@ -78,6 +78,16 @@ internal sealed class UmbraSettings
     public bool Motion { get; set; } = true;
 
     /// <summary>
+    /// Whether Umbra starts when the user signs in.
+    /// </summary>
+    /// <remarks>
+    /// <b>Off by default, and that is deliberate rather than timid.</b> An application that
+    /// registers itself to start at sign-in without being asked is one people uninstall. The
+    /// checkbox is the ask.
+    /// </remarks>
+    public bool StartWithWindows { get; set; }
+
+    /// <summary>
     /// Whether a slot shows its application's icon rather than its current window's.
     /// </summary>
     /// <remarks>
@@ -223,6 +233,11 @@ internal sealed class UmbraSettings
                 else Unusable(key, value);
                 break;
 
+            case "startwithwindows":
+                if (bool.TryParse(value, out bool startWithWindows)) StartWithWindows = startWithWindows;
+                else Unusable(key, value);
+                break;
+
             case "applicationicons":
                 if (bool.TryParse(value, out bool applicationIcons)) ApplicationIcons = applicationIcons;
                 else Unusable(key, value);
@@ -318,6 +333,10 @@ internal sealed class UmbraSettings
         "# The drift and micro-jitter layer.",
         $"motion = {Motion.ToString().ToLowerInvariant()}",
         "",
+        "# Start Umbra when you sign in. Written to HKCU Run, and visible in Task Manager's",
+        "# Startup tab, so it can be turned off from there too.",
+        $"startWithWindows = {StartWithWindows.ToString().ToLowerInvariant()}",
+        "",
         "# Show each application's own icon rather than its current window's. Windows 11 shows",
         "# File Explorer the folder you are in; false restores that.",
         $"applicationIcons = {ApplicationIcons.ToString().ToLowerInvariant()}",
@@ -346,6 +365,7 @@ internal sealed class UmbraSettings
         Alignment = Alignment,
         DormantIconSize = DormantIconSize,
         Motion = Motion,
+        StartWithWindows = StartWithWindows,
         ApplicationIcons = ApplicationIcons,
         Tray = Tray,
         Monitor = Monitor,

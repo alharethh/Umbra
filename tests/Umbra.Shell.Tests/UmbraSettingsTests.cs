@@ -52,6 +52,10 @@ public class UmbraSettingsTests : IDisposable
         // Explorer windows on Downloads and Videos really do answer WM_GETICON with different
         // icons. A taskbar whose icons change as you work is a worse taskbar.
         Assert.True(settings.ApplicationIcons);
+
+        // Off by default: an application that registers itself to start at sign-in without being
+        // asked is one people uninstall.
+        Assert.False(settings.StartWithWindows);
     }
 
     [Fact]
@@ -74,6 +78,7 @@ public class UmbraSettingsTests : IDisposable
             DormantIconSize = 16,
             Motion = false,
             ApplicationIcons = false,
+            StartWithWindows = true,
             Tray = true,
             Monitor = @"\\.\DISPLAY2",
         };
@@ -86,6 +91,7 @@ public class UmbraSettingsTests : IDisposable
         Assert.Equal(original.DormantIconSize, reloaded.DormantIconSize);
         Assert.Equal(original.Motion, reloaded.Motion);
         Assert.Equal(original.ApplicationIcons, reloaded.ApplicationIcons);
+        Assert.Equal(original.StartWithWindows, reloaded.StartWithWindows);
         Assert.Equal(original.Tray, reloaded.Tray);
         Assert.Equal(original.Monitor, reloaded.Monitor);
     }

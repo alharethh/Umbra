@@ -51,6 +51,13 @@ internal partial class SettingsWindow : Window
         MotionBox.IsChecked = _working.Motion;
         TrayBox.IsChecked = _working.Tray;
 
+        // <b>The registry is the truth here, not the settings file.</b> The sign-in entry lives
+        // outside Umbra and Task Manager's Startup tab can switch it off without telling us, so
+        // showing the stored value would leave the checkbox claiming something untrue. Reading
+        // the key back means the box always says what Windows will actually do.
+        _working.StartWithWindows = Shell.StartupRegistration.IsEnabled();
+        StartupBox.IsChecked = _working.StartWithWindows;
+
         UpdateIconSizeReadout();
         UpdateRestartNote();
 
@@ -61,6 +68,8 @@ internal partial class SettingsWindow : Window
         EdgeBox.SelectionChanged += (_, _) => Commit();
         AlignmentBox.SelectionChanged += (_, _) => Commit();
         MonitorBox.SelectionChanged += (_, _) => Commit();
+        StartupBox.Checked += (_, _) => Commit();
+        StartupBox.Unchecked += (_, _) => Commit();
         MotionBox.Checked += (_, _) => Commit();
         MotionBox.Unchecked += (_, _) => Commit();
         TrayBox.Checked += (_, _) => Commit();
@@ -268,6 +277,11 @@ internal partial class SettingsWindow : Window
         _working.DormantIconSize = Math.Round(IconSize.Value);
         _working.Motion = MotionBox.IsChecked == true;
         _working.Tray = TrayBox.IsChecked == true;
+        _working.StartWithWindows = StartupBox.IsChecked == true;
+
+        // Applied here rather than through _applyLive, which is the bar's drawn state. This
+        // writes to the registry and has nothing to do with the window.
+        Shell.StartupRegistration.Apply(_working.StartWithWindows);
 
         if (AppHoverBox.SelectedItem is Choice { Value: AppIconHover appHover }) _working.AppIconHover = appHover;
 
