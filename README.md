@@ -186,12 +186,14 @@ as early.
 **Works:** every edge on one monitor · space-reserving AppBar · Explorer suppressed and restored ·
 pinning, launching and free drag-reorder · window previews · jump lists · notification area with
 overflow · clock, language and network indicators · show desktop · wear accumulator and heatmap ·
-the full tier and motion system · live settings · starting at sign-in.
+the full tier and motion system · live settings · starting at sign-in · a bar on every monitor.
 
 **Not yet:**
 
-- **One monitor at a time.** You choose which; you cannot have a bar on each. The open question is
-  not mechanical — a non-OLED second screen may not want any of this treatment.
+- **A bar on every monitor is off by default**, and that is a judgement rather than caution: a
+  non-OLED second screen pays for the dim resting state and the monochrome icons in legibility and
+  gets nothing back, because an LCD does not wear differentially. Turn it on in Settings if every
+  screen you have is OLED. The notification area stays on the primary either way.
 - **No keyboard navigation.** You cannot reach the bar, or anything on it, without a mouse.
   Screen readers now at least *name* everything correctly — each icon announces the application,
   the notification area announces each icon — but naming is not operating, and a screen-reader

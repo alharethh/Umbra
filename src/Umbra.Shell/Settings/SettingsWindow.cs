@@ -50,6 +50,7 @@ internal partial class SettingsWindow : Window
         IconSize.Value = _working.DormantIconSize;
         MotionBox.IsChecked = _working.Motion;
         TrayBox.IsChecked = _working.Tray;
+        EveryMonitorBox.IsChecked = _working.BarOnEveryMonitor;
 
         // <b>The registry is the truth here, not the settings file.</b> The sign-in entry lives
         // outside Umbra and Task Manager's Startup tab can switch it off without telling us, so
@@ -72,6 +73,8 @@ internal partial class SettingsWindow : Window
         StartupBox.Unchecked += (_, _) => Commit();
         MotionBox.Checked += (_, _) => Commit();
         MotionBox.Unchecked += (_, _) => Commit();
+        EveryMonitorBox.Checked += (_, _) => Commit();
+        EveryMonitorBox.Unchecked += (_, _) => Commit();
         TrayBox.Checked += (_, _) => Commit();
         TrayBox.Unchecked += (_, _) => Commit();
 
@@ -277,6 +280,7 @@ internal partial class SettingsWindow : Window
         _working.DormantIconSize = Math.Round(IconSize.Value);
         _working.Motion = MotionBox.IsChecked == true;
         _working.Tray = TrayBox.IsChecked == true;
+        _working.BarOnEveryMonitor = EveryMonitorBox.IsChecked == true;
         _working.StartWithWindows = StartupBox.IsChecked == true;
 
         // Applied here rather than through _applyLive, which is the bar's drawn state. This
@@ -303,7 +307,7 @@ internal partial class SettingsWindow : Window
         bool needsRestart = _saved.NeedsRestartToReach(_working);
 
         RestartNote.Text = needsRestart
-            ? "Saved. Hosting the notification area takes effect when Umbra restarts."
+            ? "Saved. Hosting the notification area and a bar on every monitor take effect when Umbra restarts."
             : string.Empty;
 
         // Always available. Greying it out when nothing pending needed a restart meant the one

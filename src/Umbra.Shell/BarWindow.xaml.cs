@@ -60,7 +60,27 @@ internal partial class BarWindow : AppBarWindow
     /// Which monitor to occupy. Fixed for the window's lifetime: it is part of the space-reserving
     /// AppBar registration, and §6.3 forbids re-registering that in steady state.
     /// </param>
-    public BarWindow(ShellHost host, BarMetrics metrics, AppBarScreen? screen = null)
+    /// <summary>
+    /// A bar on one screen.
+    /// </summary>
+    /// <param name="hostsTray">
+    /// Whether this bar shows the notification area. <b>Exactly one may.</b> ManagedShell's tray
+    /// is a single collection fed by one hidden <c>Shell_TrayWnd</c>; binding two rows to it
+    /// would draw every icon twice and forward each click twice. Windows puts the tray on the
+    /// primary screen only, and so does this.
+    /// </param>
+    /// <param name="wearPath">
+    /// Where this bar's wear dataset lives. <b>Per screen, and it has to be.</b> The accumulator
+    /// is sized to the reserved rectangle in physical pixels, so two screens are two different
+    /// grids; sharing one file would have each bar refuse the other's data on load and then
+    /// overwrite it on save, losing both.
+    /// </param>
+    public BarWindow(
+        ShellHost host,
+        BarMetrics metrics,
+        AppBarScreen? screen = null,
+        bool hostsTray = true,
+        string? wearPath = null)
         : base(
             host.ShellManager.AppBarManager,
             host.ShellManager.ExplorerHelper,
@@ -88,7 +108,9 @@ internal partial class BarWindow : AppBarWindow
         // Two collections now that §7.1's overflow chevron exists: the system indicators stay on
         // the bar, everything else lives behind the chevron. ManagedShell maintains both views off
         // the pinned-GUID list ShellHost supplies, so nothing here has to filter.
-        _notificationArea = host.ShellManager.NotificationArea;
+        _notificationArea = hostsTray ? host.ShellManager.NotificationArea : null;
+        _wearPath = wearPath;
+        IsPrimaryBar = hostsTray;
         TrayIcons = _notificationArea?.PinnedIcons;
         OverflowTrayIcons = _notificationArea?.UnpinnedIcons;
 
@@ -243,6 +265,9 @@ internal partial class BarWindow : AppBarWindow
 
     private readonly ProximityDriver _proximity;
     private readonly NotificationArea? _notificationArea;
+
+    /// <summary>This bar's own wear dataset. Null means the shared default.</summary>
+    private readonly string? _wearPath;
     private readonly DispatcherTimer _clock;
     private readonly StartMenuWatcher _startMenu = new();
     private readonly KeyboardLayoutWatcher _language = new();
@@ -487,7 +512,9 @@ internal partial class BarWindow : AppBarWindow
 
         // ShowInFront, not Show: the bar never holds the foreground, so a window it opens lands
         // behind whatever the user was looking at. See WindowOrder.
-        new Settings.SettingsWindow(app.Settings, ApplyLiveSettings, app.Restart).ShowInFront();
+        // ApplyLiveSettingsToAll, not this bar's own: the window is opened from whichever bar
+        // was right-clicked, and with a bar per monitor the others must change too.
+        new Settings.SettingsWindow(app.Settings, app.ApplyLiveSettingsToAll, app.Restart).ShowInFront();
     }
 
     /// <summary>
@@ -733,7 +760,8 @@ internal partial class BarWindow : AppBarWindow
             width,
             height,
             () => SceneReader.Read(ContentRoot, this),
-            () => DpiScale <= 0 ? 1.0 : DpiScale);
+            () => DpiScale <= 0 ? 1.0 : DpiScale,
+            _wearPath);
 
         _wear.Start();
 
@@ -1110,6 +1138,13 @@ internal partial class BarWindow : AppBarWindow
     {
         e.Handled = true;
 
+        // <b>The secondary bar's clock is a label, not a button.</b> The notification centre is
+        // raised by a synthesised Win+N and Windows decides where it appears — on the primary.
+        // Clicking the clock on the second monitor and watching a panel open on the first is a
+        // worse outcome than the clock doing nothing, which is what Windows' own secondary
+        // taskbar did until KB5065789 in September 2025.
+        if (!IsPrimaryBar) return;
+
         PlayPress(ClockScale);
         ClearPanelsFor(BarPanel.None);
         ManagedShell.Common.Helpers.ShellHelper.ShowNotificationCenter();
@@ -1171,7 +1206,46 @@ internal partial class BarWindow : AppBarWindow
     /// have on this panel and conveys nothing in exchange.
     /// </remarks>
     public Visibility LanguageVisibility =>
-        _language.HasChoice && _language.Name.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        IsPrimaryBar && _language.HasChoice && _language.Name.Length > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+    /// <summary>
+    /// Whether this is the bar on the primary screen.
+    /// </summary>
+    /// <remarks>
+    /// Set from the same flag that decides which bar hosts the tray, because they are the same
+    /// question asked twice.
+    /// </remarks>
+    public bool IsPrimaryBar { get; private set; } = true;
+
+    /// <summary>
+    /// The volume, network and battery cluster — <b>primary bar only</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Windows 11's own secondary taskbars carry the clock and nothing else: no tray, no Quick
+    /// Settings cluster, no input language. We matched that for the tray by necessity —
+    /// ManagedShell has one collection — and should match it here by choice, for a better
+    /// reason than fidelity.
+    /// </para>
+    /// <para>
+    /// <b>The cluster opens Quick Settings, and we cannot say where Quick Settings appears.</b> It
+    /// is raised by a synthesised Win+A and Windows places it on the primary screen. Reported
+    /// exactly that way: clicking the network glyph on the second monitor opened the panel on the
+    /// first. A control that does something on a screen you are not looking at is worse than no
+    /// control, so the secondary bar does not offer one.
+    /// </para>
+    /// </remarks>
+    public Visibility SystemClusterVisibility =>
+        IsPrimaryBar ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>What the clock's tooltip says — it is only a button on the primary bar.</summary>
+    public string ClockTooltip => IsPrimaryBar ? "Open notifications" : ClockAutomationName;
+
+    /// <summary>The same distinction for a screen reader, which should not promise an action.</summary>
+    public string ClockAutomationHelp =>
+        IsPrimaryBar ? "Opens notifications and the calendar" : string.Empty;
 
     /// <summary>Cycles the foreground window's input language, as clicking Windows' own does.</summary>
     private void OnLanguageClick(object sender, MouseButtonEventArgs e)

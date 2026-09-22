@@ -767,6 +767,7 @@
         -->
         <Grid x:Name="SystemCluster" Tag="ShellToggle"
               Background="Transparent"
+              Visibility="{Binding SystemClusterVisibility}"
               AutomationProperties.Name="{Binding NetworkDescription}"
               AutomationProperties.HelpText="Opens Quick Settings"
               ToolTip="{Binding NetworkDescription}"
@@ -890,8 +891,8 @@
             <Grid Background="Transparent"
                   Tag="ShellToggle"
                   AutomationProperties.Name="{Binding ClockAutomationName}"
-                  AutomationProperties.HelpText="Opens notifications and the calendar"
-                  ToolTip="Open notifications"
+                  AutomationProperties.HelpText="{Binding ClockAutomationHelp}"
+                  ToolTip="{Binding ClockTooltip}"
                   ToolTipService.Placement="{Binding TooltipPlacement}"
                   MouseLeftButtonUp="OnClockClick"
                   Margin="{Binding ClockMargin}"

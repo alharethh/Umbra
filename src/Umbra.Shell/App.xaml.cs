@@ -13,6 +13,9 @@ public partial class App : Application
 {
     private ShellHost? _host;
     private BarWindow? _bar;
+
+    /// <summary>Every bar, primary first. One entry unless BarOnEveryMonitor is on.</summary>
+    private readonly List<BarWindow> _bars = [];
     private SingleInstance? _instance;
     private string[] _args = [];
 
@@ -80,20 +83,51 @@ public partial class App : Application
         BarMetrics metrics = new(Settings.Edge, Settings.Alignment, scale: 1.0,
                                  baseIconExtent: Settings.DormantIconSize);
 
-        _bar = new BarWindow(_host, metrics, ResolveScreen(Settings.Monitor))
+        foreach (AppBarScreen? screen in ScreensToOccupy(Settings))
         {
-            MotionEnabled = Settings.Motion,
-        };
-        // The hover colours, the row's hover treatment and where icons come from, before the first
-        // paint — all ordinary drawn state rather than geometry, so they never go through the
-        // placement path that ApplyLiveSettings would otherwise drag in at startup.
-        _bar.ApplyHoverSettings(Settings);
-        _bar.ApplyIconSourceSetting(Settings);
+            bool primary = IsPrimary(screen);
 
-        _bar.Closed += (_, _) => Shutdown();
-        _bar.Show();
+            BarWindow bar = new(
+                _host,
+                metrics,
+                screen,
 
-        LogGeometry(metrics, _bar, ResolveScreen(Settings.Monitor));
+                // Exactly one bar may host it. See BarWindow's constructor: ManagedShell's tray is
+                // one collection fed by one hidden window, so a second row bound to it draws every
+                // icon twice and forwards every click twice.
+                hostsTray: primary,
+
+                // One dataset per screen. The accumulator is sized to the reserved rectangle in
+                // physical pixels, so two screens are two incompatible grids; sharing a file has
+                // each bar refuse the other's data and then save over it.
+                wearPath: Wear.WearSampler.PathForScreen(screen?.DeviceName, primary))
+            {
+                MotionEnabled = Settings.Motion,
+            };
+
+            // The hover colours, the row's hover treatment and where icons come from, before the
+            // first paint — all ordinary drawn state rather than geometry, so they never go
+            // through the placement path that ApplyLiveSettings would otherwise drag in at
+            // startup.
+            bar.ApplyHoverSettings(Settings);
+            bar.ApplyIconSourceSetting(Settings);
+
+            // Any bar closing ends the session. There is no way to close one from the UI, so this
+            // only fires on shutdown — and a surviving bar with the others gone would be a worse
+            // state than none, because Explorer's taskbar stays suppressed either way.
+            bar.Closed += (_, _) => Shutdown();
+            bar.Show();
+
+            _bars.Add(bar);
+            LogGeometry(metrics, bar, screen);
+        }
+
+        // Everything that reaches for "the bar" — settings, restart, the heatmap — means the one
+        // the user is most likely looking at, which is the primary.
+        _bar = _bars.Count > 0 ? _bars[0] : null;
+
+        if (_bars.Count > 1)
+            BringUpLog.Write($"bars on {_bars.Count} monitors; the tray is on the primary only");
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -109,6 +143,20 @@ public partial class App : Application
         _instance = null;
 
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// Applies drawn-state settings to <em>every</em> bar.
+    /// </summary>
+    /// <remarks>
+    /// The settings window is opened from whichever bar was right-clicked, and used to be handed
+    /// that bar's own apply method. With a bar on each monitor that quietly restyles one screen
+    /// and leaves the others as they were — the sort of bug that looks like the setting not
+    /// working.
+    /// </remarks>
+    internal void ApplyLiveSettingsToAll(UmbraSettings settings)
+    {
+        foreach (BarWindow bar in _bars) bar.ApplyLiveSettings(settings);
     }
 
     /// <summary>The live settings, shared with the settings window.</summary>
@@ -188,6 +236,52 @@ public partial class App : Application
     /// <summary>
     /// Finds the configured monitor, falling back to the primary when it is no longer attached.
     /// </summary>
+    /// <summary>
+    /// Which screens get a bar: every one, or just the chosen one.
+    /// </summary>
+    /// <remarks>
+    /// <b>Primary first.</b> The order decides which bar owns the tray and which one the settings
+    /// window and heatmap open against, and "the first screen Windows enumerated" is not a
+    /// property anybody chose — on a machine with a virtual adapter it is not even stable.
+    /// </remarks>
+    private static IReadOnlyList<AppBarScreen?> ScreensToOccupy(UmbraSettings settings)
+    {
+        if (!settings.BarOnEveryMonitor) return [ResolveScreen(settings.Monitor)];
+
+        try
+        {
+            List<AppBarScreen> all = [.. AppBarScreen.FromAllScreens()];
+            if (all.Count == 0) return [null];
+
+            all.Sort((a, b) => IsPrimary(b).CompareTo(IsPrimary(a)));
+
+            return [.. all.Cast<AppBarScreen?>()];
+        }
+        catch (Exception e) when (e is InvalidOperationException or PlatformNotSupportedException)
+        {
+            BringUpLog.Write(e, "could not enumerate screens; falling back to one bar");
+            return [ResolveScreen(settings.Monitor)];
+        }
+    }
+
+    /// <summary>Whether a screen is the primary one. A null screen means the primary.</summary>
+    private static bool IsPrimary(AppBarScreen? screen)
+    {
+        if (screen is null) return true;
+
+        try
+        {
+            return string.Equals(
+                screen.DeviceName,
+                AppBarScreen.FromPrimaryScreen().DeviceName,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception e) when (e is InvalidOperationException or PlatformNotSupportedException)
+        {
+            return true;
+        }
+    }
+
     private static AppBarScreen? ResolveScreen(string deviceName)
     {
         if (string.IsNullOrWhiteSpace(deviceName)) return null;
