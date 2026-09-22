@@ -9,7 +9,7 @@
 ![Windows 11](https://img.shields.io/badge/Windows%2011-0078D4?logo=windows11&logoColor=white)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
 ![WPF](https://img.shields.io/badge/WPF-C%23-239120)
-![tests](https://img.shields.io/badge/tests-394%20passing-2ea44f)
+![tests](https://img.shields.io/badge/tests-400%20passing-2ea44f)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![licence](https://img.shields.io/badge/licence-MIT-blue)
 
@@ -158,8 +158,8 @@ Two downloads, and the difference is only what your machine already has:
 
 | | |
 | :---- | :---- |
-| **`Umbra-0.1.1-win-x64.exe`** · 73 MB | One file. Double-click it. Nothing to install. |
-| `Umbra-0.1.1-win-x64.zip` · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
+| **`Umbra-0.1.2-win-x64.exe`** · 73 MB | One file. Double-click it. Nothing to install. |
+| `Umbra-0.1.2-win-x64.zip` · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
 
 Or build it, which needs the [.NET 10 SDK](https://dotnet.microsoft.com/download):
 
@@ -180,7 +180,7 @@ your own account's startup programs, where Task Manager's Startup tab can also s
 
 ## Status
 
-Runs daily on Windows 11 25H2. Latest release is `0.1.1`, built and used on one machine — treat it
+Runs daily on Windows 11 25H2. Latest release is `0.1.2`, built and used on one machine — treat it
 as early.
 
 **Works:** every edge on one monitor · space-reserving AppBar · Explorer suppressed and restored ·
@@ -214,7 +214,7 @@ provides tray hosting, the tasks service and AppBar registration; everything abo
 original.
 
 The wear model, colour handling, layout geometry, motion and tier systems live in `Umbra.Core`,
-which has no WPF dependency. **394 tests**, and the suite is written to fail on the silent traps
+which has no WPF dependency. **400 tests**, and the suite is written to fail on the silent traps
 specifically — accumulating light linearly instead of by the burn-in exponent, easing a drift
 turnaround, interpolating a tier ramp in the wrong colour space. Every published figure is asserted
 as a regression baseline.
