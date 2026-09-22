@@ -9,7 +9,7 @@
 ![Windows 11](https://img.shields.io/badge/Windows%2011-0078D4?logo=windows11&logoColor=white)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
 ![WPF](https://img.shields.io/badge/WPF-C%23-239120)
-![tests](https://img.shields.io/badge/tests-355%20passing-2ea44f)
+![tests](https://img.shields.io/badge/tests-394%20passing-2ea44f)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![licence](https://img.shields.io/badge/licence-MIT-blue)
 
@@ -59,6 +59,13 @@ does this too, and does it well — if a classic taskbar on any edge is all you 
 **And it will show you its own damage.** Umbra records how much light every pixel of its own
 rectangle has emitted, weighted the way burn-in actually accumulates rather than linearly, and
 draws you the map. No other taskbar can tell you what it has been doing to your screen.
+
+![The wear heatmap: the bar's own accumulated light, per pixel](docs/media/heatmap-readme.png)
+
+<sub>A real dataset off the development machine — the whole 2560×60 strip on top, its leading
+section magnified beneath. Brighter is more accumulated wear. Start is the hottest thing on the
+bar; every icon carries a soft halo rather than a hard edge, which is the drift spreading the
+boundary that would otherwise become a legible ghost.</sub>
 
 ### Where 260× comes from
 
@@ -142,6 +149,7 @@ And the rest of what a taskbar owes you:
 - **Show desktop** in the trailing corner, where it has always been.
 - **Live settings.** Edge, alignment, monitor, icon size, motion, hover colours — all applied on the
   spot. Only hosting the notification area needs a restart.
+- **Starts with Windows**, if you tick the box. Off until you do.
 
 ## Install
 
@@ -150,8 +158,8 @@ Two downloads, and the difference is only what your machine already has:
 
 | | |
 | :---- | :---- |
-| **`Umbra-0.1.0-win-x64.exe`** · 73 MB | One file. Double-click it. Nothing to install. |
-| `Umbra-0.1.0-win-x64.zip` · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
+| **`Umbra-0.1.1-win-x64.exe`** · 73 MB | One file. Double-click it. Nothing to install. |
+| `Umbra-0.1.1-win-x64.zip` · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
 
 Or build it, which needs the [.NET 10 SDK](https://dotnet.microsoft.com/download):
 
@@ -167,15 +175,18 @@ crash, which it recovers from on the next launch. Right-click the bar for **Sett
 heatmap, and **Exit**. Configuration lives in the settings window and in
 `%LOCALAPPDATA%\Umbra\settings.txt`.
 
+**It does not start itself until you ask.** Settings → *Start Umbra when I sign in* adds it to
+your own account's startup programs, where Task Manager's Startup tab can also switch it off.
+
 ## Status
 
-Runs daily on Windows 11 25H2. First release is `0.1.0`, built and used on one machine — treat it
+Runs daily on Windows 11 25H2. Latest release is `0.1.1`, built and used on one machine — treat it
 as early.
 
 **Works:** every edge on one monitor · space-reserving AppBar · Explorer suppressed and restored ·
 pinning, launching and free drag-reorder · window previews · jump lists · notification area with
 overflow · clock, language and network indicators · show desktop · wear accumulator and heatmap ·
-the full tier and motion system · live settings.
+the full tier and motion system · live settings · starting at sign-in.
 
 **Not yet:**
 
@@ -197,7 +208,7 @@ provides tray hosting, the tasks service and AppBar registration; everything abo
 original.
 
 The wear model, colour handling, layout geometry, motion and tier systems live in `Umbra.Core`,
-which has no WPF dependency. **355 tests**, and the suite is written to fail on the silent traps
+which has no WPF dependency. **394 tests**, and the suite is written to fail on the silent traps
 specifically — accumulating light linearly instead of by the burn-in exponent, easing a drift
 turnaround, interpolating a tier ramp in the wrong colour space. Every published figure is asserted
 as a regression baseline.
