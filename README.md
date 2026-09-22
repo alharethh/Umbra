@@ -158,8 +158,8 @@ Two downloads, and the difference is only what your machine already has:
 
 | | |
 | :---- | :---- |
-| **`Umbra-0.1.2-win-x64.exe`** · 73 MB | One file. Double-click it. Nothing to install. |
-| `Umbra-0.1.2-win-x64.zip` · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
+| **[`Umbra-0.1.2-win-x64.exe`](https://github.com/alharethh/Umbra/releases/download/v0.1.2/Umbra-0.1.2-win-x64.exe)** · 73 MB | One file. Double-click it. Nothing to install. |
+| [`Umbra-0.1.2-win-x64.zip`](https://github.com/alharethh/Umbra/releases/download/v0.1.2/Umbra-0.1.2-win-x64.zip) · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
 
 Or build it, which needs the [.NET 10 SDK](https://dotnet.microsoft.com/download):
 
