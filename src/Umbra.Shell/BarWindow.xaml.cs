@@ -110,6 +110,7 @@ internal partial class BarWindow : AppBarWindow
         // the pinned-GUID list ShellHost supplies, so nothing here has to filter.
         _notificationArea = hostsTray ? host.ShellManager.NotificationArea : null;
         _wearPath = wearPath;
+        IsPrimaryBar = hostsTray;
         TrayIcons = _notificationArea?.PinnedIcons;
         OverflowTrayIcons = _notificationArea?.UnpinnedIcons;
 
@@ -1137,6 +1138,13 @@ internal partial class BarWindow : AppBarWindow
     {
         e.Handled = true;
 
+        // <b>The secondary bar's clock is a label, not a button.</b> The notification centre is
+        // raised by a synthesised Win+N and Windows decides where it appears — on the primary.
+        // Clicking the clock on the second monitor and watching a panel open on the first is a
+        // worse outcome than the clock doing nothing, which is what Windows' own secondary
+        // taskbar did until KB5065789 in September 2025.
+        if (!IsPrimaryBar) return;
+
         PlayPress(ClockScale);
         ClearPanelsFor(BarPanel.None);
         ManagedShell.Common.Helpers.ShellHelper.ShowNotificationCenter();
@@ -1198,7 +1206,46 @@ internal partial class BarWindow : AppBarWindow
     /// have on this panel and conveys nothing in exchange.
     /// </remarks>
     public Visibility LanguageVisibility =>
-        _language.HasChoice && _language.Name.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        IsPrimaryBar && _language.HasChoice && _language.Name.Length > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+    /// <summary>
+    /// Whether this is the bar on the primary screen.
+    /// </summary>
+    /// <remarks>
+    /// Set from the same flag that decides which bar hosts the tray, because they are the same
+    /// question asked twice.
+    /// </remarks>
+    public bool IsPrimaryBar { get; private set; } = true;
+
+    /// <summary>
+    /// The volume, network and battery cluster — <b>primary bar only</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Windows 11's own secondary taskbars carry the clock and nothing else: no tray, no Quick
+    /// Settings cluster, no input language. We matched that for the tray by necessity —
+    /// ManagedShell has one collection — and should match it here by choice, for a better
+    /// reason than fidelity.
+    /// </para>
+    /// <para>
+    /// <b>The cluster opens Quick Settings, and we cannot say where Quick Settings appears.</b> It
+    /// is raised by a synthesised Win+A and Windows places it on the primary screen. Reported
+    /// exactly that way: clicking the network glyph on the second monitor opened the panel on the
+    /// first. A control that does something on a screen you are not looking at is worse than no
+    /// control, so the secondary bar does not offer one.
+    /// </para>
+    /// </remarks>
+    public Visibility SystemClusterVisibility =>
+        IsPrimaryBar ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>What the clock's tooltip says — it is only a button on the primary bar.</summary>
+    public string ClockTooltip => IsPrimaryBar ? "Open notifications" : ClockAutomationName;
+
+    /// <summary>The same distinction for a screen reader, which should not promise an action.</summary>
+    public string ClockAutomationHelp =>
+        IsPrimaryBar ? "Opens notifications and the calendar" : string.Empty;
 
     /// <summary>Cycles the foreground window's input language, as clicking Windows' own does.</summary>
     private void OnLanguageClick(object sender, MouseButtonEventArgs e)
