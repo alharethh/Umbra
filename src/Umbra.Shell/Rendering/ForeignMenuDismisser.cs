@@ -52,15 +52,11 @@ internal sealed class ForeignMenuDismisser
         if (!GetCursorPos(out NativePoint cursor)) return false;
         if (!barBounds.Contains(cursor.X, cursor.Y)) return false;
 
-        // Logged on every press that lands on the bar, which is rare enough to afford and is the
-        // only way to see what a tray menu actually is. Four fixes were aimed at this by
-        // reasoning about it; none of them were aimed at a measurement, and none of them worked.
-        // If MenuOwner is 0 here while a tray menu is plainly on screen, the menu is not a Win32
-        // menu at all and WM_CANCELMODE was never going to reach it.
-        BringUpLog.Write(
-            $"bar press | cursor {cursor.X},{cursor.Y} | menu owner 0x{MenuOwner():X} | " +
-            $"gui flags 0x{Flags():X} | foreground {ForegroundDescription()}");
-
+        // <b>Logged only when there is something to say.</b> This wrote a line on every press that
+        // landed on the bar while the tray-menu question was being chased, which was the right
+        // thing then and is log spam now: a press on the bar is one of the most common things
+        // that happens, and bring-up.log already carries motion ticks. The diagnostic survives
+        // inside Cancel, where it fires when a menu is actually found.
         return Cancel();
     }
 
@@ -131,7 +127,13 @@ internal sealed class ForeignMenuDismisser
         // into it from here would wait for that loop to finish — which is what we are trying to
         // bring about.
         PostMessage(owner, WmCancelMode, IntPtr.Zero, IntPtr.Zero);
-        BringUpLog.Write("foreign menu cancelled: a press landed on the bar while it was open");
+
+        // The whole diagnostic, on the one occasion it is worth having: which window owned the
+        // menu, and what the foreground was while it was up. A tray menu does not put its owner
+        // in front, and not knowing that cost four wrong fixes.
+        BringUpLog.Write(
+            $"foreign menu cancelled | owner 0x{owner.ToInt64():X} | gui flags 0x{Flags():X} | " +
+            $"foreground {ForegroundDescription()}");
 
         return true;
     }
