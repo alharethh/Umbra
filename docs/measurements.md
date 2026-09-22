@@ -463,7 +463,8 @@ App User Model properties, `SHGetFileInfo` for the executable, each under its ow
 
 | Process | Class | `WM_GETICON` | Exe icon | AUMID |
 | :---- | :---- | :---- | :---- | :---- |
-| LeagueClientUx | `RCLIENT` | yes | ok | `c:iot games\...\leagueclient.exe` |
+| LeagueClientUx | `RCLIENT` | yes | ok | `c:
+iot games\...\leagueclient.exe` |
 | explorer | `CabinetWClass` | yes | ok | — |
 | firefox | `MozillaWindowClass` | yes | ok | `308046B0AF4A39CB` |
 | packaged app | `Chrome_WidgetWin_1` | **none** | ok | — |
@@ -517,6 +518,58 @@ One setting apart, same machine, same windows. The diagnostic line also shows th
 **And the freeze did not recur.** `Ascent.exe` — the executable `SHGetFileInfo` never returns for —
 was running and in the notification area throughout, and the bar came up normally. It is reached on
 a worker now, abandoned after four seconds, and never asked again.
+
+## Step 12 — what a screen reader actually hears
+
+Measured with UI Automation, which is the API Narrator reads, so this is not an approximation of
+the accessibility story — it is the accessibility story. The probe walks the control view of
+Umbra's own window and prints every element's name, automation id, keyboard focusability and
+supported patterns.
+
+**Before.** Worse than silence:
+
+```
+List      name=""  id=WindowList
+  DataItem  name="Umbra.Shell.Tasks.TaskbarSlot"
+  DataItem  name="Umbra.Shell.Tasks.TaskbarSlot"
+  DataItem  name="Umbra.Shell.Tasks.TaskbarSlot"     ... once per icon
+List      name=""  id=TrayHost
+  DataItem  name="ManagedShell.WindowsTray.NotifyIcon"
+```
+
+Every application on the bar announced as the same .NET type name. A screen reader would read
+that aloud, identically, for every icon — which is less useful than announcing nothing, because
+it sounds like information.
+
+**Why.** WPF names a generated `DataItem` peer by calling `ToString()` on the bound object, and
+the default returns the type's full name. Nobody had overridden it.
+
+**After.**
+
+```
+List      name="Open and pinned applications"  id=WindowList
+  DataItem  name="Firefox"
+  DataItem  name="Discord"
+  DataItem  name="Packaged app"
+  DataItem  name="NVIDIA Broadcast"
+  DataItem  name="Jagex Launcher"
+  DataItem  name="Ascent"
+List      name="Notification area"  id=TrayHost
+  DataItem  name="Speakers (USB): 22%"
+```
+
+Two different fixes, and the difference matters. The slots are named by overriding
+`TaskbarSlot.ToString()`. The tray icons could not be — `NotifyIcon` is ManagedShell's type — so
+their name is set on the **container** through `ItemContainerStyle`, not on the template's root
+`Grid`. **A name set on a plain `Grid` is never read**: a `Grid` is not in the control view, so
+automation never surfaces it. That was the first attempt and the tree came back unchanged.
+
+**What is still missing, and the probe says so plainly.** Nothing on the bar is keyboard
+focusable and nothing supports `Invoke`. The Start button, the show-desktop sliver, the clock and
+the volume/network cluster do not appear in the control view at all, for the same reason the tray
+template's `Grid` did not — they are `Grid`s with mouse handlers. Promoting them needs real
+controls or custom `AutomationPeer`s, which is §11.2 Q7/Q8 proper and is not done. **Naming is
+not operating.**
 
 ## Still open
 

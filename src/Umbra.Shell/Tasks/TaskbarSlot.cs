@@ -337,5 +337,17 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         Raise(nameof(Icon));
     }
 
+    /// <summary>
+    /// What this slot is called. <b>Read aloud by screen readers, so it is not optional.</b>
+    /// </summary>
+    /// <remarks>
+    /// WPF names a generated <c>DataItem</c> peer by calling <c>ToString()</c> on the bound
+    /// object, and the default returns the type's full name. Measured through UI Automation
+    /// before this existed: every icon on the bar announced as
+    /// "Umbra.Shell.Tasks.TaskbarSlot" — the same words for all of them, which is worse for a
+    /// screen reader than announcing nothing.
+    /// </remarks>
+    public override string ToString() => DisplayName;
+
     private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

@@ -209,6 +209,8 @@
         <DataTemplate x:Key="SystemIndicatorTemplate">
             <Grid Background="Transparent"
                   Tag="ShellToggle"
+                  AutomationProperties.Name="{Binding Title}"
+                  AutomationProperties.AutomationId="TrayIcon"
                   ToolTip="{Binding Title}"
                   ToolTipService.Placement="{Binding TooltipPlacement, RelativeSource={RelativeSource AncestorType=Window}}"
                   MouseRightButtonDown="OnTrayIconMouseDown"
@@ -235,6 +237,8 @@
         <DataTemplate x:Key="TrayIconTemplate">
             <Grid Background="Transparent"
                   Tag="ShellToggle"
+                  AutomationProperties.Name="{Binding Title}"
+                  AutomationProperties.AutomationId="TrayIcon"
                   ToolTip="{Binding Title}"
                   ToolTipService.Placement="{Binding TooltipPlacement, RelativeSource={RelativeSource AncestorType=Window}}"
                   MouseLeftButtonDown="OnTrayIconMouseDown"
@@ -306,6 +310,7 @@
         -->
         <Grid x:Name="StartButton"
               Background="Transparent"
+              AutomationProperties.Name="Start"
               ToolTip="Start"
               ToolTipService.Placement="{Binding TooltipPlacement}"
               MouseLeftButtonUp="OnStartClick"
@@ -474,6 +479,7 @@
             hit slots underneath do not move at all (P5).
         -->
         <ItemsControl x:Name="WindowList"
+                      AutomationProperties.Name="Open and pinned applications"
                       ItemsSource="{Binding Slots}"
                       HorizontalAlignment="{Binding RowHorizontalAlignment}"
                       VerticalAlignment="{Binding RowVerticalAlignment}"
@@ -505,6 +511,9 @@
                         and the click target never leaves the icon.
                     -->
                     <Grid Background="Transparent"
+                          AutomationProperties.Name="{Binding DisplayName}"
+                          AutomationProperties.HelpText="{Binding Title}"
+                          AutomationProperties.AutomationId="TaskbarSlot"
                           MouseEnter="OnSlotMouseEnter"
                           MouseLeave="OnSlotMouseLeave"
                           MouseLeftButtonDown="OnSlotMouseDown"
@@ -758,6 +767,8 @@
         -->
         <Grid x:Name="SystemCluster" Tag="ShellToggle"
               Background="Transparent"
+              AutomationProperties.Name="{Binding NetworkDescription}"
+              AutomationProperties.HelpText="Opens Quick Settings"
               ToolTip="{Binding NetworkDescription}"
               ToolTipService.Placement="{Binding TooltipPlacement}"
               MouseLeftButtonUp="OnSystemClusterClick"
@@ -777,8 +788,15 @@
                 <StackPanel Orientation="{Binding RowOrientation}">
 
                     <ItemsControl x:Name="TrayHost"
+                                  AutomationProperties.Name="Notification area"
                                   ItemsSource="{Binding TrayIcons}"
                                   VerticalAlignment="Center">
+
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
 
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -871,6 +889,8 @@
             -->
             <Grid Background="Transparent"
                   Tag="ShellToggle"
+                  AutomationProperties.Name="{Binding ClockAutomationName}"
+                  AutomationProperties.HelpText="Opens notifications and the calendar"
                   ToolTip="Open notifications"
                   ToolTipService.Placement="{Binding TooltipPlacement}"
                   MouseLeftButtonUp="OnClockClick"
@@ -940,6 +960,7 @@
         -->
         <Grid x:Name="ShowDesktop"
               Background="Transparent"
+              AutomationProperties.Name="Show desktop"
               ToolTip="Show desktop"
               ToolTipService.Placement="{Binding TooltipPlacement}"
               MouseLeftButtonUp="OnShowDesktopClick"
@@ -1036,8 +1057,15 @@
                 </Border.Effect>
 
                 <ItemsControl x:Name="TrayOverflowHost"
+                              AutomationProperties.Name="Hidden notification icons"
                               ItemsSource="{Binding OverflowTrayIcons}"
                               ItemTemplate="{StaticResource TrayIconTemplate}">
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <!-- Five across, as Windows 11 lays its own overflow out. -->

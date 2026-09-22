@@ -694,7 +694,7 @@ internal partial class BarWindow : AppBarWindow
             nameof(PillWidth), nameof(PillHeight), nameof(PillMargin),
             nameof(PillHorizontalAlignment), nameof(PillVerticalAlignment),
             nameof(IconExtent), nameof(HoverChipExtent),
-            nameof(ClockDate), nameof(ClockMargin), nameof(TooltipPlacement),
+            nameof(ClockDate), nameof(ClockAutomationName), nameof(ClockMargin), nameof(TooltipPlacement),
         ])
         {
             OnPropertyChanged(name);
@@ -958,6 +958,18 @@ internal partial class BarWindow : AppBarWindow
 
     /// <summary>Current date, shown from Tier 1 upward.</summary>
     public string ClockDate { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// What a screen reader should say for the clock.
+    /// </summary>
+    /// <remarks>
+    /// The two visible lines are separate <c>TextBlock</c>s, so automation reads them as two
+    /// unrelated fragments — and the time line carries seconds only from Tier 1, which means what
+    /// is announced would depend on where the pointer happens to be. This is the whole thing in
+    /// one string, and it does not change with the tier.
+    /// </remarks>
+    public string ClockAutomationName =>
+        string.IsNullOrEmpty(ClockDate) ? ClockTime : $"{ClockTime}, {ClockDate}";
 
     /// <summary>
     /// Seconds appear from Tier 1 upward — that is, only while the pointer is near the bar.
@@ -1763,6 +1775,7 @@ internal partial class BarWindow : AppBarWindow
 
         OnPropertyChanged(nameof(ClockTime));
         OnPropertyChanged(nameof(ClockDate));
+        OnPropertyChanged(nameof(ClockAutomationName));
     }
 
     private int _loggedTrayChanges;

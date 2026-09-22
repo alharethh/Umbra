@@ -192,8 +192,10 @@ the full tier and motion system · live settings · starting at sign-in.
 
 - **One monitor at a time.** You choose which; you cannot have a bar on each. The open question is
   not mechanical — a non-OLED second screen may not want any of this treatment.
-- **No keyboard navigation and no screen-reader support.** A custom bar is invisible to a screen
-  reader without explicit automation peers, and none are written yet.
+- **No keyboard navigation.** You cannot reach the bar, or anything on it, without a mouse.
+  Screen readers now at least *name* everything correctly — each icon announces the application,
+  the notification area announces each icon — but naming is not operating, and a screen-reader
+  user still cannot activate any of it.
 - **The notification area keeps a timer running ten times a second.** That is how it holds its own
   window in front of Explorer's, and it never stops while Umbra is running. A screen that is being
   poked constantly may never be left alone long enough to idle — and an OLED panel does some of its
