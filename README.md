@@ -6,6 +6,10 @@
 
 **The Windows 11 taskbar burns into OLED panels. This one doesn't.**
 
+[![Download Umbra 0.1.2 for Windows](https://img.shields.io/badge/Download-Umbra%200.1.2-B0F7FB?style=for-the-badge&logo=windows11&logoColor=B0F7FB&labelColor=0B0B0B)](https://github.com/alharethh/Umbra/releases/download/v0.1.2/Umbra-0.1.2-win-x64.exe)
+
+<sub>Windows 11 · x64 · 73 MB · nothing to install &nbsp;·&nbsp; [smaller build and all releases](https://github.com/alharethh/Umbra/releases/latest)</sub>
+
 ![Windows 11](https://img.shields.io/badge/Windows%2011-0078D4?logo=windows11&logoColor=white)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
 ![WPF](https://img.shields.io/badge/WPF-C%23-239120)
