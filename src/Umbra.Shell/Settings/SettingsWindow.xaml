@@ -178,6 +178,10 @@
         <TextBlock Style="{StaticResource Hint}"
                    Text="Moves the bar's contents within their own slots, far too slowly to see. Applies immediately." />
 
+        <CheckBox x:Name="EveryMonitorBox" Content="A bar on every monitor" Margin="0,0,0,2" />
+        <TextBlock Style="{StaticResource Hint}"
+                   Text="Off by default. A non-OLED second screen pays for the dim resting state and the monochrome icons and gets nothing back, so this is only worth it if every screen is OLED. The notification area stays on the primary either way. Needs a restart." />
+
         <CheckBox x:Name="TrayBox" Content="Host the notification area" Margin="0,0,0,2" />
         <TextBlock Style="{StaticResource Hint}"
                    Text="Shows the notification icons next to the clock. Costs a permanent 100 ms timer, which is the only reason it is off by default. Applications that were already running appear once they next update their icon." />

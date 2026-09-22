@@ -88,6 +88,27 @@ internal sealed class UmbraSettings
     public bool StartWithWindows { get; set; }
 
     /// <summary>
+    /// Whether a bar appears on every monitor rather than only on <see cref="Monitor"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Off by default, and that is a wear decision rather than caution.</b> §11.2 Q12 asks
+    /// whether the OLED treatment should apply per monitor at all: on a non-OLED secondary every
+    /// bit of it is cost without benefit — the dim tiers, the monochrome row, the shrunken icons
+    /// are all paid for in legibility and bought nothing, because an LCD does not wear
+    /// differentially. Turning this on gives that screen the same treatment as the OLED one,
+    /// which may be the wrong trade for the user's hardware. Until per-monitor treatment exists,
+    /// leaving it off is the honest default.
+    /// </para>
+    /// <para>
+    /// The notification area stays on the primary screen alone whatever this says. Windows does
+    /// the same, and it is forced here anyway: ManagedShell's tray is one collection fed by one
+    /// hidden window, so a second row bound to it would draw every icon twice.
+    /// </para>
+    /// </remarks>
+    public bool BarOnEveryMonitor { get; set; }
+
+    /// <summary>
     /// Whether a slot shows its application's icon rather than its current window's.
     /// </summary>
     /// <remarks>
@@ -238,6 +259,11 @@ internal sealed class UmbraSettings
                 else Unusable(key, value);
                 break;
 
+            case "baroneverymonitor":
+                if (bool.TryParse(value, out bool everyMonitor)) BarOnEveryMonitor = everyMonitor;
+                else Unusable(key, value);
+                break;
+
             case "applicationicons":
                 if (bool.TryParse(value, out bool applicationIcons)) ApplicationIcons = applicationIcons;
                 else Unusable(key, value);
@@ -337,6 +363,10 @@ internal sealed class UmbraSettings
         "# Startup tab, so it can be turned off from there too.",
         $"startWithWindows = {StartWithWindows.ToString().ToLowerInvariant()}",
         "",
+        "# A bar on every monitor rather than only the one named below. Off by default: a",
+        "# non-OLED second screen pays the dim tiers and monochrome icons and gets nothing back.",
+        $"barOnEveryMonitor = {BarOnEveryMonitor.ToString().ToLowerInvariant()}",
+        "",
         "# Show each application's own icon rather than its current window's. Windows 11 shows",
         "# File Explorer the folder you are in; false restores that.",
         $"applicationIcons = {ApplicationIcons.ToString().ToLowerInvariant()}",
@@ -366,6 +396,7 @@ internal sealed class UmbraSettings
         DormantIconSize = DormantIconSize,
         Motion = Motion,
         StartWithWindows = StartWithWindows,
+        BarOnEveryMonitor = BarOnEveryMonitor,
         ApplicationIcons = ApplicationIcons,
         Tray = Tray,
         Monitor = Monitor,
@@ -384,5 +415,6 @@ internal sealed class UmbraSettings
     /// explicit settings change is exactly the exception that rule allows for, but doing it in
     /// place is far more work than restarting, and restarting is honest about what it costs.
     /// </remarks>
-    public bool NeedsRestartToReach(UmbraSettings other) => Tray != other.Tray;
+    public bool NeedsRestartToReach(UmbraSettings other) =>
+        Tray != other.Tray || BarOnEveryMonitor != other.BarOnEveryMonitor;
 }

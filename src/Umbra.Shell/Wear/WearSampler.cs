@@ -83,6 +83,37 @@ internal sealed class WearSampler : IDisposable
         "Umbra",
         "wear.dat");
 
+    /// <summary>
+    /// Where a particular screen's dataset lives, when there is a bar on more than one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>One file per screen, and it is not optional.</b> The accumulator is sized to the
+    /// reserved rectangle in physical pixels, so two screens of different size or orientation are
+    /// two incompatible grids. <c>WearStore.LoadCompatible</c> rightly refuses to load one into
+    /// the other — and then the bar that refused it saves over it, so both datasets are lost, one
+    /// per restart, silently.
+    /// </para>
+    /// <para>
+    /// The primary keeps the plain <c>wear.dat</c> so a single-monitor user's history survives
+    /// turning the setting on and off. Others are keyed by device name with the characters a
+    /// path cannot carry replaced — <c>\.\DISPLAY2</c> is not a file name.
+    /// </para>
+    /// </remarks>
+    public static string PathForScreen(string? deviceName, bool primary)
+    {
+        if (primary || string.IsNullOrWhiteSpace(deviceName)) return DefaultPath;
+
+        System.Text.StringBuilder safe = new(deviceName.Length);
+
+        foreach (char c in deviceName)
+            safe.Append(char.IsLetterOrDigit(c) ? c : '-');
+
+        return Path.Combine(
+            Path.GetDirectoryName(DefaultPath)!,
+            $"wear-{safe}.dat");
+    }
+
     /// <summary>The accumulated data, for the heatmap view.</summary>
     public WearAccumulator Accumulator => _accumulator;
 
