@@ -107,6 +107,11 @@ internal sealed partial class WindowPicker : Window
     private DateTime _awaySince = DateTime.MaxValue;
     private IntPtr _handle;
 
+    // Where the pointer has been lately, sampled by the watch, so a trip across the neighbouring
+    // icons towards a thumbnail is not read as leaving. See ApproachTracker.
+    private readonly ApproachTracker _approach = new();
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+
     public WindowPicker(TaskbarSlot slot, WpfRect anchorScreenDip, WpfRect barScreenDip,
                         BarEdge edge, double dpiScale)
     {
@@ -153,6 +158,28 @@ internal sealed partial class WindowPicker : Window
         Point cursor = new(native.X / _dpiScale, native.Y / _dpiScale);
 
         return Inflate(new WpfRect(Left, Top, Width, Height), 12).Contains(cursor);
+    }
+
+    /// <summary>
+    /// Whether the pointer is on its way into the picker — inside the safe triangle from where it
+    /// was a moment ago to the picker's far edges, and getting closer.
+    /// </summary>
+    /// <remarks>
+    /// Asked by the bar when the pointer crosses another icon with this picker up: while this is
+    /// true the crossing is the diagonal shortcut to a thumbnail, not a request for that icon's
+    /// preview. See <see cref="ApproachTracker"/>.
+    /// </remarks>
+    public bool PointerIsApproaching()
+    {
+        if (!GetCursorPos(out NativePoint native)) return false;
+
+        Point cursor = new(native.X / _dpiScale, native.Y / _dpiScale);
+        TimeSpan now = _clock.Elapsed;
+
+        bool approaching = _approach.IsApproaching(new WpfRect(Left, Top, Width, Height), cursor, now);
+        _approach.Add(cursor, now);
+
+        return approaching;
     }
 
     /// <summary>Builds one column per window: a header strip, then a box for the thumbnail.</summary>
@@ -490,8 +517,16 @@ internal sealed partial class WindowPicker : Window
         // picker and the short trip from the icon up to it is not a dismissal either. The icon's
         // own rectangle, not the bar's: the rest of the row belongs to other applications, and
         // what is under the pointer there is their preview or none.
+        // And while the pointer is on its way here — the diagonal trip from the icon to a thumbnail
+        // off to one side crosses the gap between the two rectangles, and starting to fade the
+        // panel the user is reaching for reads as it closing on them.
+        TimeSpan now = _clock.Elapsed;
+        bool approaching = _approach.IsApproaching(self, cursor, now);
+        _approach.Add(cursor, now);
+
         bool inside = Inflate(self, 12).Contains(cursor)
-                      || Inflate(_anchorScreenDip, 12).Contains(cursor);
+                      || Inflate(_anchorScreenDip, 12).Contains(cursor)
+                      || approaching;
 
         if (inside)
         {

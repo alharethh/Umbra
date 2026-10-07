@@ -377,6 +377,14 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     private const int HoverPreviewDelayMilliseconds = 450;
 
+    /// <summary>
+    /// How often a held-back switch is reconsidered while the pointer crosses another icon on its
+    /// way to an open preview. Runs only in that state.
+    /// </summary>
+    private const int SwitchCheckMilliseconds = 50;
+
+    private DispatcherTimer? _switchTimer;
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         _hoverTimer = new DispatcherTimer(DispatcherPriority.Background)
@@ -389,6 +397,13 @@ internal partial class BarWindow : AppBarWindow
             _hoverTimer!.Stop();
             if (_hoverSlot is not null && _hoverElement is not null) ShowPreview(_hoverSlot, _hoverElement);
         };
+
+        _switchTimer = new DispatcherTimer(DispatcherPriority.Input)
+        {
+            Interval = TimeSpan.FromMilliseconds(SwitchCheckMilliseconds),
+        };
+
+        _switchTimer.Tick += (_, _) => ReconsiderSwitch();
 
         _proximity.Start();
         _clock.Start();
@@ -2588,11 +2603,38 @@ internal partial class BarWindow : AppBarWindow
 
         if (_picker is not null)
         {
-            if (!AppIdentity.Same(_picker.SlotKey, slot.Key)) ShowPreview(slot, element);
+            if (AppIdentity.Same(_picker.SlotKey, slot.Key)) return;
+
+            // Crossing this icon on the diagonal to a thumbnail is not asking for its preview.
+            // Held back and reconsidered until the pointer arrives, stops here, or turns away —
+            // see ApproachTracker. Anything else switches at once, so scrubbing along the row
+            // still feels like the Windows taskbar.
+            if (_picker.PointerIsApproaching())
+            {
+                _switchTimer?.Start();
+                return;
+            }
+
+            ShowPreview(slot, element);
             return;
         }
 
         _hoverTimer?.Start();
+    }
+
+    /// <summary>Switches a held-back preview once the pointer is no longer heading for the open one.</summary>
+    private void ReconsiderSwitch()
+    {
+        if (_picker is null || _hoverSlot is null || _hoverElement is null || _dragging)
+        {
+            _switchTimer?.Stop();
+            return;
+        }
+
+        if (AppIdentity.Same(_picker.SlotKey, _hoverSlot.Key) || _picker.PointerIsApproaching()) return;
+
+        _switchTimer?.Stop();
+        ShowPreview(_hoverSlot, _hoverElement);
     }
 
     /// <summary>
@@ -2606,6 +2648,7 @@ internal partial class BarWindow : AppBarWindow
     private void OnSlotMouseLeave(object sender, MouseEventArgs e)
     {
         _hoverTimer?.Stop();
+        _switchTimer?.Stop();
         _hoverSlot = null;
         _hoverElement = null;
     }
