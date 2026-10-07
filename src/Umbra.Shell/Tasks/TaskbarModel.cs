@@ -117,6 +117,7 @@ internal sealed class TaskbarModel : IDisposable
         Dictionary<string, List<ApplicationWindow>> running = GroupRunningWindows();
 
         AdoptMovedApplications(running.Keys);
+        AdoptRunningIdentities(running);
 
         _order.Reconcile([.. _pins.Pins.Select(p => p.Key)], running.Keys);
 
@@ -197,6 +198,67 @@ internal sealed class TaskbarModel : IDisposable
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Re-keys path-keyed pins whose application turns out to run under an app user model ID.
+    /// </summary>
+    /// <remarks>
+    /// Only a pin made by dropping an executable can be in this state — one made from a window
+    /// already carries the window's identity. See <see cref="AppIdentity.RunningIdentityFor"/>.
+    /// The path is kept: it is still the executable, and the new key is not a path.
+    /// </remarks>
+    private void AdoptRunningIdentities(Dictionary<string, List<ApplicationWindow>> running)
+    {
+        if (running.Count == 0) return;
+
+        List<(string Key, string? Executable)> windows = RunningExecutables(running);
+
+        foreach (PinnedApp pin in _pins.Pins.ToList())
+        {
+            if (!AppIdentity.Same(pin.Key, pin.Path)) continue;
+
+            string? key = AppIdentity.RunningIdentityFor(pin.Path, windows);
+            if (key is null) continue;
+
+            if (_pins.Rekey(pin.Key, key, pin.Path)) _order.Rename(pin.Key, key);
+        }
+    }
+
+    private static List<(string Key, string? Executable)> RunningExecutables(
+        Dictionary<string, List<ApplicationWindow>> running) =>
+        [.. running.SelectMany(group => group.Value.Select(w => (group.Key, w.WinFileName)))];
+
+    /// <summary>
+    /// Pins an executable dropped on the bar and puts it where it was dropped.
+    /// </summary>
+    /// <param name="path">The executable.</param>
+    /// <param name="insertAt">
+    /// The gap it was dropped into: 0 is before the first icon, <c>Slots.Count</c> after the last.
+    /// </param>
+    /// <returns>The key it is pinned under.</returns>
+    /// <remarks>
+    /// Dropping something already pinned moves it rather than pinning it twice, and dropping an
+    /// application that is open but unpinned pins the icon that is already there — under the
+    /// identity its windows carry, so the two cannot come apart into separate icons.
+    /// </remarks>
+    public string PinExecutable(string path, int insertAt)
+    {
+        Dictionary<string, List<ApplicationWindow>> running = GroupRunningWindows();
+        string key = AppIdentity.RunningIdentityFor(path, RunningExecutables(running)) ?? path;
+
+        // Raises Changed when it adds, which rebuilds the row with the new pin on the end.
+        key = _pins.PinExecutable(key, path);
+
+        // A gap, not a slot: moving an icon rightwards takes it out of the row before putting it
+        // back, so every gap to its right is one fewer by the time it is reinserted.
+        int current = _order.IndexOf(key);
+        int index = current >= 0 && current < insertAt ? insertAt - 1 : insertAt;
+
+        // Writes the pin file itself when the order moves; when it does not, adding already wrote it.
+        Move(key, index);
+
+        return key;
     }
 
     private static bool PathStillExists(string? path)

@@ -3049,6 +3049,61 @@ internal partial class BarWindow : AppBarWindow
         else if (slot.Windows.Count > 0) Pins.Pin(slot.Windows[0]);
     }
 
+    /// <summary>What the drag currently over the bar would pin, read once when it arrives.</summary>
+    private IReadOnlyList<string> _dropCandidates = [];
+
+    /// <summary>
+    /// A file dragged onto the bar from Explorer: an executable, or a shortcut to one, is pinned
+    /// where it is dropped — what the Windows taskbar does.
+    /// </summary>
+    /// <remarks>
+    /// The files are resolved once, here, rather than on every <c>DragOver</c>: a shortcut is read
+    /// through COM, and the drag-over event fires on every pointer move for as long as the drag
+    /// stays on the bar. <c>WS_EX_NOACTIVATE</c> does not get in the way — an OLE drop is delivered
+    /// to the window under the pointer without the target ever being activated.
+    /// </remarks>
+    private void OnBarDragEnter(object sender, DragEventArgs e)
+    {
+        _dropCandidates = e.Data.GetDataPresent(DataFormats.FileDrop)
+            ? DroppedExecutables.From(e.Data.GetData(DataFormats.FileDrop) as string[])
+            : [];
+
+        OnBarDragOver(sender, e);
+    }
+
+    private void OnBarDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = _dropCandidates.Count > 0 ? DragDropEffects.Link : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnBarDragLeave(object sender, DragEventArgs e) => _dropCandidates = [];
+
+    private void OnBarDrop(object sender, DragEventArgs e)
+    {
+        IReadOnlyList<string> executables = _dropCandidates;
+        _dropCandidates = [];
+        e.Handled = true;
+
+        if (executables.Count == 0) return;
+
+        // The gap the pointer is nearest, in the undrifted layout. Anywhere past the last icon —
+        // the clock, the empty run of bar beside the row — means the end.
+        Point at = e.GetPosition(WindowList);
+        double along = IsVertical ? at.Y : at.X;
+        int gap = Math.Clamp((int)Math.Round(along / Metrics.Slot.Pitch), 0, Slots.Count);
+
+        foreach (string executable in executables)
+        {
+            string key = _tasks.PinExecutable(executable, gap);
+            BringUpLog.Write($"drop: pinned {executable} as {key} at {gap}");
+
+            // Several files land side by side in the order they were selected.
+            int placed = Slots.ToList().FindIndex(s => AppIdentity.Same(s.Key, key));
+            if (placed >= 0) gap = placed + 1;
+        }
+    }
+
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 

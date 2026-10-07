@@ -72,6 +72,46 @@ internal sealed class PinSettings
     }
 
     /// <summary>
+    /// Pins an executable that was dropped on the bar, with no window to read it from.
+    /// </summary>
+    /// <param name="key">
+    /// The identity to pin it under: the running application's own, when it is already open under
+    /// an app user model ID, and otherwise the path itself.
+    /// </param>
+    /// <param name="path">The executable.</param>
+    /// <returns>The key the application is pinned under — the existing one, if it already was.</returns>
+    /// <remarks>
+    /// Already pinned is matched on the recorded path as well as the key. An application pinned
+    /// from its window under an app user model ID has a key that looks nothing like a path, and
+    /// dropping its executable on the bar would otherwise pin it a second time beside itself.
+    /// </remarks>
+    public string PinExecutable(string key, string path)
+    {
+        PinnedApp? existing = _pins.FirstOrDefault(p => AppIdentity.Same(p.Key, key))
+                           ?? _pins.FirstOrDefault(p => AppIdentity.Same(p.Path, path));
+        if (existing is not null) return existing.Key;
+
+        _pins.Add(new PinnedApp(key, path, DisplayNameFor(path)));
+        Save();
+
+        return key;
+    }
+
+    private static string DisplayNameFor(string path)
+    {
+        try
+        {
+            string? description = System.Diagnostics.FileVersionInfo.GetVersionInfo(path).FileDescription;
+            if (!string.IsNullOrWhiteSpace(description)) return description.Trim();
+        }
+        catch (FileNotFoundException)
+        {
+        }
+
+        return Path.GetFileNameWithoutExtension(path);
+    }
+
+    /// <summary>
     /// Corrects a pin's recorded executable after the application has moved.
     /// </summary>
     /// <returns>True when something changed and the file was rewritten.</returns>
@@ -109,7 +149,14 @@ internal sealed class PinSettings
     /// it only runs when a pin is seen running, which is precisely what has stopped happening. Only
     /// rewriting the key breaks that circle.
     /// </remarks>
-    public bool Rekey(string oldKey, string newKey)
+    /// <param name="oldKey">The identity the pin is recorded under.</param>
+    /// <param name="newKey">The identity the running application actually has.</param>
+    /// <param name="path">
+    /// The executable to record. Defaults to <paramref name="newKey"/>, which is right for a moved
+    /// application — its new identity <i>is</i> its new path. Wrong for one adopting an app user
+    /// model ID, which is not a path at all, so that caller keeps the old one.
+    /// </param>
+    public bool Rekey(string oldKey, string newKey, string? path = null)
     {
         if (string.IsNullOrWhiteSpace(oldKey) || string.IsNullOrWhiteSpace(newKey)) return false;
         if (Same(oldKey, newKey)) return false;
@@ -125,7 +172,7 @@ internal sealed class PinSettings
             return true;
         }
 
-        _pins[index] = _pins[index] with { Key = newKey, Path = newKey };
+        _pins[index] = _pins[index] with { Key = newKey, Path = path ?? newKey };
         Write();
 
         BringUpLog.Write($"pin adopted moved application: {_pins[index].Name} -> {newKey}");

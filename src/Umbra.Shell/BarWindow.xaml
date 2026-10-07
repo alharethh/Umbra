@@ -12,6 +12,12 @@
 
         Background="#FF000000"
 
+        AllowDrop="True"
+        DragEnter="OnBarDragEnter"
+        DragOver="OnBarDragOver"
+        DragLeave="OnBarDragLeave"
+        Drop="OnBarDrop"
+
         ToolTipService.InitialShowDelay="2400"
         ToolTipService.BetweenShowDelay="0"
 

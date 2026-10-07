@@ -38,6 +38,47 @@ internal static class AppIdentity
         a is not null && b is not null && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The identity an executable is running under, when that is not its own path.
+    /// </summary>
+    /// <param name="path">The executable.</param>
+    /// <param name="running">Every running window's identity and executable.</param>
+    /// <returns>
+    /// The one identity windows of <paramref name="path"/> carry, or null when none are open, when
+    /// they are keyed by the path anyway, or when they disagree.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A pin made by dropping an executable has only a path to be keyed by, and the running
+    /// application may not be.</b> Firefox, Chrome and most Electron applications set an app user
+    /// model ID, which <see cref="For"/> prefers — so dropping <c>firefox.exe</c> on the bar would
+    /// pin a path that no Firefox window ever matches, and the bar would draw Firefox twice the
+    /// moment it was started. Same failure as an application updating into a new directory, from
+    /// the other side.
+    /// </para>
+    /// <para>
+    /// <b>Disagreement is refused rather than resolved.</b> One executable can run under several
+    /// identities — Chrome's browser windows and its installed web applications are all
+    /// <c>chrome.exe</c> — and guessing would pin the browser as whichever web application happened
+    /// to be open. The pin keeps its path and tries again on the next window event.
+    /// </para>
+    /// </remarks>
+    public static string? RunningIdentityFor(string? path, IEnumerable<(string Key, string? Executable)> running)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+
+        List<string> keys = [];
+        foreach ((string key, string? executable) in running)
+        {
+            if (!Same(executable, path)) continue;
+            if (!keys.Any(k => Same(k, key))) keys.Add(key);
+        }
+
+        if (keys.Count != 1) return null;
+
+        return Same(keys[0], path) ? null : keys[0];
+    }
+
+    /// <summary>
     /// Whether a dead path and a live one are the same application, moved.
     /// </summary>
     /// <remarks>
