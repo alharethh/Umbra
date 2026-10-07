@@ -87,4 +87,4 @@ Start-Process explorer.exe -ArgumentList "`"$exe`""
 
 if (-not (Wait-Until { Test-BarRunning } 20)) { throw 'The new bar did not start. Check bring-up.log.' }
 
-Write-Host ("Dev bar running, built {0:HH:mm:ss}." -f (Get-Item (Join-Path $out 'Umbra.dll')).LastWriteTime)
+Write-Host ("Dev bar started {0:HH:mm:ss}, code built {1:HH:mm:ss}." -f (Get-Date), (Get-Item (Join-Path $out 'Umbra.dll')).LastWriteTime)
