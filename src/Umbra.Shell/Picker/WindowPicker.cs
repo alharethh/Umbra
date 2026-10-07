@@ -632,8 +632,17 @@ internal sealed partial class WindowPicker : Window
 
     private bool _fading;
 
-    public void Dismiss()
+    public void Dismiss([System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
+        // Once only. A fade that began before the bar replaced this picker still completes after
+        // it has closed, and a second Dismiss raised Dismissed again — which the bar took as its
+        // *current* picker going away, forgot the live one, and opened another beside it. Seen
+        // as two previews on screen at once.
+        if (_dismissed) return;
+        _dismissed = true;
+        _fading = false;
+
+        BringUpLog.Write($"picker dismiss: {_slot.Key} | by {caller}");
         _watch.Stop();
         _watch.Tick -= OnWatchTick;
 
@@ -655,8 +664,11 @@ internal sealed partial class WindowPicker : Window
         }
     }
 
+    private bool _dismissed;
+
     protected override void OnClosed(EventArgs e)
     {
+
         // Belt and braces: an unregistered thumbnail outlives the window and leaks a DWM handle.
         foreach (Column column in _columns) column.Thumbnail?.Dispose();
         _columns.Clear();

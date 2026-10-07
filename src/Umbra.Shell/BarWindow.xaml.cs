@@ -2993,7 +2993,13 @@ internal partial class BarWindow : AppBarWindow
             $"anchor {anchor.Left:F1},{anchor.Top:F1} {anchor.Width:F0}x{anchor.Height:F0} DIP"));
 
         WindowPicker picker = new(slot, anchor, bar, Metrics.Edge, DpiScale <= 0 ? 1.0 : DpiScale);
-        picker.Dismissed += () => _picker = null;
+        // Only forget the picker if it is still the current one. A replaced picker that reports
+        // its own dismissal late must not take its successor's reference with it — that is the
+        // orphaning that left two previews on screen.
+        picker.Dismissed += () =>
+        {
+            if (ReferenceEquals(_picker, picker)) _picker = null;
+        };
 
         _picker = picker;
         picker.Show();

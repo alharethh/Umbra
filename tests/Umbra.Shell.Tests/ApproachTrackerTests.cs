@@ -48,10 +48,30 @@ public class ApproachTrackerTests
     [Fact]
     public void Coming_To_Rest_On_The_Neighbour_Is_Not()
     {
-        // A pixel of drift straight towards the picker: inside the triangle, and still resting.
+        // Two pixels of drift straight towards the picker over a quarter of a second: inside the
+        // triangle, and resting.
         ApproachTracker tracker = From(new Point(160, 1112));
+        tracker.Add(new Point(160, 1111), Ms(120));
 
-        Assert.False(tracker.IsApproaching(Picker, new Point(160, 1111), Ms(150)));
+        Assert.False(tracker.IsApproaching(Picker, new Point(160, 1110), Ms(240)));
+    }
+
+    /// <summary>
+    /// About 16 DIP/s straight up from Discord's icon towards the picker.
+    /// </summary>
+    /// <remarks>
+    /// Judged over the 90 ms the direction is read from, this moves under a pixel and a half and
+    /// counts as a stop — which released the held switch and flipped the preview to Discord's and
+    /// back, every few hundred milliseconds, for anyone moving carefully. Seen in the log on
+    /// hardware before it was understood.
+    /// </remarks>
+    [Fact]
+    public void A_Slow_Deliberate_Approach_Is_Still_An_Approach()
+    {
+        ApproachTracker tracker = new();
+        for (int i = 0; i <= 4; i++) tracker.Add(new Point(165, 1130 - 0.8 * i), Ms(50 * i));
+
+        Assert.True(tracker.IsApproaching(Picker, new Point(165, 1130 - 0.8 * 5), Ms(250)));
     }
 
     [Fact]

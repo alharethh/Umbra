@@ -44,8 +44,20 @@ internal sealed class ApproachTracker
     /// </summary>
     public const double Tolerance = 10;
 
-    /// <summary>Below this much movement, in DIP, the pointer is resting rather than travelling.</summary>
-    public const double StillDistance = 2;
+    /// <summary>
+    /// Below this much movement over <see cref="StillWindow"/>, in DIP, the pointer is resting
+    /// rather than travelling.
+    /// </summary>
+    public const double StillDistance = 3;
+
+    /// <summary>
+    /// How long a pointer must barely move to count as resting. <b>Longer than
+    /// <see cref="LookBack"/> on purpose</b>: judging rest over the same 90 ms as direction read a
+    /// slow, deliberate approach — about 20 DIP/s — as a stop, and released the switch the pointer
+    /// was crawling past. Measured that way on hardware: the preview flipped between File Explorer
+    /// and Discord every few hundred milliseconds.
+    /// </summary>
+    public static readonly TimeSpan StillWindow = TimeSpan.FromMilliseconds(250);
 
     private readonly List<(Point At, TimeSpan When)> _samples = [];
 
@@ -67,7 +79,7 @@ internal sealed class ApproachTracker
 
         // Resting is not travelling. A pointer that has stopped on the neighbouring icon has
         // arrived there, and is asking for its preview.
-        if ((cursor - from).Length < StillDistance) return false;
+        if (RestingAt(cursor, now)) return false;
 
         // No separate "getting closer" test is needed: distance to a convex region is convex, so no
         // point of the hull is further from the panel than the apex is. Inside the hull is closer.
@@ -88,6 +100,22 @@ internal sealed class ApproachTracker
         }
 
         return apex?.At;
+    }
+
+    /// <summary>Whether the pointer has stayed within <see cref="StillDistance"/> for the last <see cref="StillWindow"/>.</summary>
+    private bool RestingAt(Point cursor, TimeSpan now)
+    {
+        Point? earliest = null;
+
+        foreach ((Point at, TimeSpan when) in _samples)
+        {
+            if (now - when > StillWindow) continue;
+
+            earliest ??= at;
+            if ((cursor - at).Length >= StillDistance) return false;
+        }
+
+        return earliest is not null;
     }
 
     /// <summary>
