@@ -17,6 +17,9 @@ public partial class App : Application
     /// <summary>Every bar, primary first. One entry unless BarOnEveryMonitor is on.</summary>
     private readonly List<BarWindow> _bars = [];
     private SingleInstance? _instance;
+#if DEBUG
+    private DevControl? _devControl;
+#endif
     private string[] _args = [];
 
     protected override void OnStartup(StartupEventArgs e)
@@ -55,6 +58,14 @@ public partial class App : Application
 
         if (_instance.WasAbandoned)
             BringUpLog.Write("the single-instance lock was abandoned: the previous exit was not clean");
+
+#if DEBUG
+        // After the lock, so only the bar that is actually running listens. See DevControl.
+        _devControl = new DevControl(Dispatcher, () =>
+        {
+            foreach (BarWindow bar in _bars.ToList()) bar.CloseForShutdown();
+        });
+#endif
 
         Settings = UmbraSettings.Load();
 
@@ -133,6 +144,11 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         BringUpLog.Write("--- clean shutdown ---");
+
+#if DEBUG
+        _devControl?.Dispose();
+        _devControl = null;
+#endif
 
         _host?.Dispose();
         _host = null;
