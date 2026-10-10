@@ -295,6 +295,7 @@
             <ContextMenu Style="{StaticResource DarkContextMenu}">
                 <MenuItem Header="Settings" Click="OnSettingsClick" Style="{StaticResource DarkMenuItem}" />
                 <Separator Style="{StaticResource MenuSeparatorStyle}" />
+                <MenuItem Header="Refresh tray icons" Click="OnRefreshTrayClick" Style="{StaticResource DarkMenuItem}" />
                 <MenuItem Header="Wear heatmap" Click="OnHeatmapClick" Style="{StaticResource DarkMenuItem}" />
                 <MenuItem Header="Motion speed" Click="OnMotionSpeedClick" Style="{StaticResource DarkMenuItem}" />
                 <Separator Style="{StaticResource MenuSeparatorStyle}" />

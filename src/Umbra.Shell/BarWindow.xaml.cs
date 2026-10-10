@@ -420,6 +420,16 @@ internal partial class BarWindow : AppBarWindow
         {
             LogTrayContents("at load");
             _notificationArea.TrayIcons.CollectionChanged += (_, _) => LogTrayContents("changed");
+
+            // ManagedShell's own startup broadcast can go unanswered — see TrayRefresh. A second
+            // one, once things have settled, recovers icons from applications that missed it.
+            DispatcherTimer second = new(DispatcherPriority.Background) { Interval = TrayRefreshDelay };
+            second.Tick += (_, _) =>
+            {
+                second.Stop();
+                TrayRefresh.Broadcast("after startup");
+            };
+            second.Start();
         }
 
         if (MotionEnabled)
@@ -551,7 +561,12 @@ internal partial class BarWindow : AppBarWindow
         }).ShowInFront();
     }
 
-    private void OnHeatmapClick(object sender, RoutedEventArgs e)
+    /// <summary>How long after startup the bar asks for notification icons a second time.</summary>
+    private static readonly TimeSpan TrayRefreshDelay = TimeSpan.FromSeconds(5);
+
+    private void OnRefreshTrayClick(object sender, RoutedEventArgs e) => TrayRefresh.Broadcast("menu");
+
+        private void OnHeatmapClick(object sender, RoutedEventArgs e)
     {
         if (_wear is null) return;
 
