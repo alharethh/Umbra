@@ -838,6 +838,19 @@ internal partial class BarWindow : AppBarWindow
     public ICollectionView? OverflowTrayIcons { get; }
 
     /// <summary>
+    /// How many icons wide the overflow flyout is: as many as it holds, up to five.
+    /// </summary>
+    /// <remarks>
+    /// A fixed five-column grid drew three icons huddled at the left of a panel with room for
+    /// five — reported as the tray having "bugged out". Windows 11 sizes its own overflow to fit
+    /// and wraps at the same width, so this does what it does. The flyout is re-placed whenever
+    /// the icons change (<see cref="OnTrayIconsChanged"/>), so a narrower panel stays centred on
+    /// the chevron.
+    /// </remarks>
+    public int TrayOverflowColumns =>
+        Math.Clamp(OverflowTrayIcons?.Cast<object>().Count() ?? 0, 1, 5);
+
+    /// <summary>
     /// Whether the chevron is worth drawing.
     /// </summary>
     /// <remarks>
@@ -2317,6 +2330,7 @@ internal partial class BarWindow : AppBarWindow
     private void OnTrayIconsChanged()
     {
         OnPropertyChanged(nameof(TrayOverflowVisibility));
+        OnPropertyChanged(nameof(TrayOverflowColumns));
 
         if (!TrayOverflowPopup.IsOpen) return;
 

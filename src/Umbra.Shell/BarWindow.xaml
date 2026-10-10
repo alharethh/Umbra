@@ -1075,8 +1075,12 @@
 
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
-                            <!-- Five across, as Windows 11 lays its own overflow out. -->
-                            <UniformGrid Columns="5" />
+                            <!--
+                                As wide as it is full, wrapping at five across — how Windows 11
+                                lays its own overflow out. A fixed five left a short row huddled
+                                at one end of an empty panel.
+                            -->
+                            <UniformGrid Columns="{Binding TrayOverflowColumns, RelativeSource={RelativeSource AncestorType=Window}}" />
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                 </ItemsControl>
