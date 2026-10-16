@@ -622,11 +622,49 @@ make no difference", which is the right answer arrived at by an instrument that 
 produced any other. This project's own rule, again: measure the thing, then check the measurement
 could have detected it.
 
+## Step 14 — Explorer's auto-hide, restored on the second machine
+
+**2026-10-16, the 2256×1504 laptop at 150%**, which has auto-hide **off** (`StuckRects3` byte 8 =
+`0x02`). The development machine has it on, so every earlier exit there restored auto-hide to
+auto-hide, and a guard that did nothing would have read exactly the same. This is the first run
+where the restore had something to do. Probed from a per-monitor-v2 DPI-aware process
+(`director\qa\scripts\taskbar-probe.ps1`, outside the repo): `ABM_GETSTATE`, the work area,
+Explorer's `Shell_TrayWnd` rectangle, and `WindowFromPoint` at two heights — y=1502, the bottom
+pixel row, and y=1480, inside where a visible taskbar would be.
+
+| | clean exit | `Stop-Process -Force` |
+| :---- | :---- | :---- |
+| `ABM_GETSTATE` after | 0 | **1 (auto-hide)** |
+| Explorer's `Shell_TrayWnd` | (0,1432)–(2256,1504), visible | (0,1502)–(2256,1574): 2 px on screen |
+| Work area | 1432 tall, reserved | 1504, nothing reserved |
+| `WindowFromPoint` at y=1480 | `Shell_TrayWnd` | `Progman` |
+| `StuckRects3` byte 8, `TaskbarAl` | `0x02`, 0 — unchanged | `0x02`, 0 — unchanged |
+| State file | deleted | still present |
+| Explorer's taskbar back | 1.4 s | not until Umbra is relaunched |
+
+**A clean exit restores correctly.** `ExplorerStateGuard.Restore` put Explorer back to auto-hide
+off, reserving its 72 px, within 1.4 s.
+
+**A hard kill does not, and the registry does not show it.** The kill leaves Explorer in the
+*runtime* auto-hide ManagedShell set to release the work area, while every persisted value still
+reads as the user had it. Unchanged 15 s after the kill. The next launch finds the state file, logs
+`recovered Explorer taskbar state from a previous unclean exit`, and repairs it — so the damage
+lasts until Umbra is started again, or for the rest of the session for someone who does not.
+
+**The bottom-pixel probe alone would have passed it.** The auto-hidden taskbar leaves a 2 px sliver
+of itself on screen, so `WindowFromPoint` at y=1502 reports Explorer's `Shell_TrayWnd` either way.
+The y=1480 probe and the window rectangle are what tell a visible taskbar from a hidden one. Any
+repeat of this measurement needs both.
+
+**Not measured:** whether hovering the edge reveals the auto-hidden taskbar (synthetic input cannot
+trigger the reveal — see the trap in the project notes), and whether Explorer writes the runtime
+auto-hide into `StuckRects3` on sign-out or an Explorer restart. If it does, the damage outlives the
+session for a user who never runs Umbra again.
+
 ## Still open
 
 - **§11.2 Q2 — do ManagedShell's 100 ms timers defeat display idle?** Not yet measured. Only the
   taskbar watchdog runs at present, so measuring now would attribute its cost separately from the
   tray timer that arrives at step 7.
-- **Crash recovery on a machine with autohide off.** The reference machine has autohide already
-  enabled, so restoring is a no-op there and a broken guard would be invisible.
-  `ExplorerStateGuardTests` covers the logic against a fake; the live path is unproven.
+- **A hard kill leaves Explorer's taskbar auto-hidden until Umbra is next started.** Step 14. No
+  code inside the process can fix it, because the process is gone; it needs something outside it.
