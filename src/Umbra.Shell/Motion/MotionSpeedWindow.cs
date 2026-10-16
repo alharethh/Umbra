@@ -1,3 +1,4 @@
+#if DEBUG
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -19,6 +20,10 @@ namespace Umbra.Shell.Motion;
 /// The slider is logarithmic. A linear one spends nearly all its travel above 500×, where every
 /// setting looks the same, and gives no useful resolution over the 1–50× range where the drift
 /// first becomes noticeable — which is the range the perceptibility question actually lives in.
+/// </para>
+/// <para>
+/// <b>Debug builds only.</b> This file is compiled out by <c>#if DEBUG</c>, and the XAML half is
+/// removed from every other configuration in <c>Umbra.Shell.csproj</c>.
 /// </para>
 /// </remarks>
 internal partial class MotionSpeedWindow : Window
@@ -88,3 +93,4 @@ internal partial class MotionSpeedWindow : Window
         base.OnClosed(e);
     }
 }
+#endif

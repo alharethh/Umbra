@@ -125,7 +125,12 @@ internal sealed class WearSampler : IDisposable
     /// times faster than reality, so anything sampled during it would be a fiction written into a
     /// dataset whose whole purpose is to answer §11.2 Q1 from real evidence. Better a gap in the
     /// record than an invented stretch of it.
+    /// <para>
+    /// <b>Debug builds only</b>, like the slider that is its one caller. <c>_suspended</c> itself
+    /// stays in every build, because a session lock sets it too.
+    /// </para>
     /// </remarks>
+#if DEBUG
     public bool Suspended
     {
         get => _suspended;
@@ -136,6 +141,7 @@ internal sealed class WearSampler : IDisposable
             if (value) Persist();
         }
     }
+#endif
 
     public void Start()
     {

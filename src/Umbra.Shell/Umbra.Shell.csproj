@@ -62,4 +62,14 @@
     <InternalsVisibleTo Include="Umbra.Shell.Tests" />
   </ItemGroup>
 
+  <!--
+    The motion speed slider is a development instrument and a release build does not carry it.
+    Its code-behind and every caller sit behind #if DEBUG; this removes the XAML half, which C#'s
+    preprocessor cannot reach. Gated rather than deleted so development keeps the instrument.
+    MotionSpeedGateTests checks the built assembly, BAML included, in both configurations.
+  -->
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <Page Remove="Motion\MotionSpeedWindow.xaml" />
+  </ItemGroup>
+
 </Project>

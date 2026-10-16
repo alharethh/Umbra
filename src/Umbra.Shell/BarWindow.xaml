@@ -296,8 +296,8 @@
                 <MenuItem Header="Settings" Click="OnSettingsClick" Style="{StaticResource DarkMenuItem}" />
                 <Separator Style="{StaticResource MenuSeparatorStyle}" />
                 <MenuItem Header="Refresh tray icons" Click="OnRefreshTrayClick" Style="{StaticResource DarkMenuItem}" />
-                <MenuItem Header="Wear heatmap" Click="OnHeatmapClick" Style="{StaticResource DarkMenuItem}" />
-                <MenuItem Header="Motion speed" Click="OnMotionSpeedClick" Style="{StaticResource DarkMenuItem}" />
+                <MenuItem x:Name="HeatmapMenuItem" Header="Wear heatmap" Click="OnHeatmapClick" Style="{StaticResource DarkMenuItem}" />
+                <!-- The motion speed item follows here in Debug builds only. See AddMotionSpeedItem. -->
                 <Separator Style="{StaticResource MenuSeparatorStyle}" />
                 <MenuItem Header="Exit Umbra" Click="OnExitClick" Style="{StaticResource DarkMenuItem}" />
             </ContextMenu>
