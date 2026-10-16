@@ -409,6 +409,7 @@ internal partial class BarWindow : AppBarWindow
         _proximity.Start();
         _clock.Start();
         SuppressActivation();
+        StartExplorerRestartWatch();
         LogWindowInventoryOnce();
 
         // Built here rather than in the constructor because the accumulator is sized in physical
@@ -729,6 +730,68 @@ internal partial class BarWindow : AppBarWindow
             $"re-registered AppBar: edge {updated.Edge} on {Screen.DeviceName} " +
             $"extent {updated.ReservedExtent} -> {Left},{Top} {Width}x{Height}"));
     }
+
+    private static readonly int TaskbarCreatedMessage = (int)RegisterWindowMessage("TaskbarCreated");
+
+    private ExplorerRestartWatch? _explorerWatch;
+    private DispatcherTimer? _explorerWatchTimer;
+
+    /// <summary>
+    /// Arms the watch that re-registers the AppBar after Explorer restarts. See
+    /// <see cref="ExplorerRestartWatch"/> for why it is not simply a <c>TaskbarCreated</c> handler.
+    /// </summary>
+    private void StartExplorerRestartWatch()
+    {
+        _explorerWatch = new ExplorerRestartWatch(ExplorerRestartWatch.ShellProcessId());
+
+        // Runs only while armed, so a bar whose Explorer never restarts holds no extra wake-up.
+        _explorerWatchTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+        _explorerWatchTimer.Tick += (_, _) => CheckReservation();
+    }
+
+    /// <inheritdoc />
+    protected override IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == TaskbarCreatedMessage && TaskbarCreatedMessage != 0 && _explorerWatch is not null)
+        {
+            uint shell = ExplorerRestartWatch.ShellProcessId();
+            uint known = _explorerWatch.KnownShell;
+            bool armed = _explorerWatch.OnTaskbarCreated(shell);
+
+            BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
+                $"TaskbarCreated: shell pid {shell}, registered with {known} -> {(armed ? "watching the reservation" : "ignored")}"));
+
+            if (armed) _explorerWatchTimer?.Start();
+        }
+
+        return base.WndProc(hwnd, msg, wParam, lParam, ref handled);
+    }
+
+    private void CheckReservation()
+    {
+        if (_explorerWatch is null || _explorerWatchTimer is null) return;
+
+        uint shell = ExplorerRestartWatch.ShellProcessId();
+        bool measured = ExplorerRestartWatch.TryMeasure(Handle, out Umbra.Core.Layout.Rect work, out Umbra.Core.Layout.Rect bar);
+
+        // An unmeasurable tick counts as held: a wrong "missing" costs a reflow of every maximised
+        // window, and the next tick looks again.
+        bool held = !measured || ExplorerRestartWatch.ReservationHeld(work, bar, Metrics.Edge);
+
+        ReservationVerdict verdict = _explorerWatch.Check(shell, held);
+        if (verdict != ReservationVerdict.KeepWatching)
+        {
+            BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
+                $"reservation check: {verdict}, shell pid {shell}, work area " +
+                $"{work.Left},{work.Top},{work.Right},{work.Bottom}, bar {bar.Left},{bar.Top},{bar.Right},{bar.Bottom}"));
+        }
+
+        if (verdict == ReservationVerdict.Reregister) Reregister(Metrics, Screen);
+        if (!_explorerWatch.Armed) _explorerWatchTimer.Stop();
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint RegisterWindowMessage(string message);
 
     /// <summary>
     /// Tells every bound layout property that the geometry moved.
