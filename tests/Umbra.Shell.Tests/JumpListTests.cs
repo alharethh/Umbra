@@ -134,7 +134,7 @@ public class JumpListTests
     public void AUwpApplicationIsMatchedByTheIdentityBehindItsFakePath()
     {
         string[] keys = JumpListIndex.Candidates(
-            null, @"C:\Users\User\Desktop\Microsoft.MicrosoftEdge_8wekyb3d8bbwe!MicrosoftEdge");
+            null, @"C:\Users\Someone\Desktop\Microsoft.MicrosoftEdge_8wekyb3d8bbwe!MicrosoftEdge");
 
         Assert.Contains("Microsoft.MicrosoftEdge_8wekyb3d8bbwe!MicrosoftEdge", keys);
     }
