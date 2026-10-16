@@ -8,6 +8,25 @@ public class MotionTests
 {
     private static readonly SlotMetrics Slot = SlotMetrics.ForScale(1.0);
 
+    /// <summary>
+    /// The bar launches with both drift axes at the centre of their travel. The short axis used to
+    /// start at +0.64 of its amplitude, so every launch put the clock low on a bottom bar.
+    /// </summary>
+    [Fact]
+    public void Both_Drift_Axes_Start_Centred_At_Launch()
+    {
+        double t = MotionModel.LaunchPhaseSeconds;
+        double along = MotionModel.Drift(t, Slot.DriftAmplitude);
+        double across = MotionModel.Drift(t + MotionModel.ShortAxisPhaseSeconds, 4.8,
+                                          MotionModel.ShortAxisDriftPeriodSeconds);
+
+        Assert.Equal(0.0, along, 9);
+        Assert.Equal(0.0, across, 9);
+
+        // And it is the shift doing it: unshifted, the short axis is well off centre at launch.
+        Assert.True(Math.Abs(MotionModel.Drift(t, 4.8, MotionModel.ShortAxisDriftPeriodSeconds)) > 2.0);
+    }
+
     [Fact]
     public void Drift_Velocity_Is_The_Published_Figure()
     {

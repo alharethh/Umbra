@@ -138,25 +138,36 @@ public class LayoutTests
     }
 
     [Fact]
-    public void Row_Is_Inset_Far_Enough_That_Drift_Cannot_Clip_At_The_Corner()
+    public void Row_Starts_At_The_Edge_And_Drift_Cannot_Clip()
     {
-        // §6.3: with a left-aligned row the first slot sits at the start of the bar, so there is
-        // nowhere for negative drift to go. Take the larger of Windows 11's own padding and the
-        // peak offset.
-        BarMetrics measured = new(BarEdge.Bottom, Alignment.Start, 1.0);
-        Approx.Equal(8.0, measured.RowInset, 1e-9, "row inset at the Windows 11 padding");
-
-        // If the measurement comes back smaller than the peak offset, the peak offset wins.
-        BarMetrics unmeasured = new(BarEdge.Bottom, Alignment.Start, 1.0, measuredWindows11RowInset: 0.0);
-        Approx.Equal(7.41, unmeasured.RowInset, 1e-9, "row inset falls back to the peak offset");
-
-        for (double t = 0.0; t < MotionModel.DriftPeriodSeconds; t += 5.0)
+        // Windows 11 puts its first slot at the screen edge (measured 2026-10-16), and so does the
+        // row. No inset is needed for drift: P5 keeps drawn content inside its own slot, and the
+        // first slot starts on screen. Checked here at every dormant size the settings allow down
+        // to 12, because a smaller icon drifts further.
+        foreach (double icon in new[] { 24.0, 20.0, 16.0, 12.0 })
         {
-            MotionOffset offset = MotionModel.IconRow(t, unmeasured.Slot, unmeasured.ShortAxisDriftAmplitude);
-            Rect first = unmeasured.DrawnIcon(0, 8, ScreenWidth, ScreenHeight, offset.Along, offset.Across);
+            BarMetrics bar = new(BarEdge.Bottom, Alignment.Start, 1.0, baseIconExtent: icon);
+            Approx.Equal(0.0, bar.RowInset, 1e-9, "row inset at the Windows 11 padding, which is none");
 
-            Assert.True(first.Left >= 0.0, $"First icon clipped at the screen corner at t={t:F0}s ({first.Left:F2}).");
+            for (double t = 0.0; t < MotionModel.DriftPeriodSeconds; t += 5.0)
+            {
+                MotionOffset offset = MotionModel.IconRow(t, bar.Slot, bar.ShortAxisDriftAmplitude);
+                Rect first = bar.DrawnIcon(0, 8, ScreenWidth, ScreenHeight, offset.Along, offset.Across);
+
+                Assert.True(first.Left >= 0.0,
+                    $"{icon} px icon clipped at the screen corner at t={t:F0}s ({first.Left:F2}).");
+            }
         }
+    }
+
+    [Fact]
+    public void Trailing_End_Keeps_Its_Drift_Inset()
+    {
+        // The trailing group did not move with the row: the larger of 8 px and the peak offset.
+        Approx.Equal(8.0, new BarMetrics(BarEdge.Bottom, Alignment.Start, 1.0).TrailingInset, 1e-9,
+            "trailing inset at its padding");
+        BarMetrics dormant = new(BarEdge.Bottom, Alignment.Start, 1.0, baseIconExtent: 16.0);
+        Approx.Equal(dormant.Slot.PeakOffset, dormant.TrailingInset, 1e-9, "peak offset wins when larger");
     }
 
     [Fact]

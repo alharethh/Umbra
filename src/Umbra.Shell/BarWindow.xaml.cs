@@ -599,6 +599,7 @@ internal partial class BarWindow : AppBarWindow
 
         OnPropertyChanged(nameof(IconExtent));
         OnPropertyChanged(nameof(HoverChipExtent));
+        OnPropertyChanged(nameof(StartGlyphScale));
 
         ApplyHoverSettings(settings);
         ApplyIconSourceSetting(settings);
@@ -750,8 +751,9 @@ internal partial class BarWindow : AppBarWindow
             nameof(TraySlotWidth), nameof(TraySlotHeight), nameof(TrayIconExtent),
             nameof(PillWidth), nameof(PillHeight), nameof(PillMargin),
             nameof(PillHorizontalAlignment), nameof(PillVerticalAlignment),
-            nameof(IconExtent), nameof(HoverChipExtent),
-            nameof(ClockDate), nameof(ClockAutomationName), nameof(ClockMargin), nameof(TooltipPlacement),
+            nameof(IconExtent), nameof(HoverChipExtent), nameof(StartGlyphScale),
+            nameof(ClockDate), nameof(ClockAutomationName), nameof(ClockMargin), nameof(ClockTimeMargin),
+            nameof(TooltipPlacement),
         ])
         {
             OnPropertyChanged(name);
@@ -1066,6 +1068,44 @@ internal partial class BarWindow : AppBarWindow
     public bool ShowsDate => TierLevel >= 1.0;
 
     /// <summary>
+    /// Lifts the time onto the bar's centre line while it is alone, below Tier 1.
+    /// </summary>
+    /// <remarks>
+    /// A centred <see cref="TextBlock"/> centres its line box, not its digits, and Segoe UI's line
+    /// box has more room above the digits than below them. The time therefore sat about 1 DIP
+    /// low, measured 2026-10-16 at 150% as 2 physical pixels below the network glyph beside it.
+    /// With the date showing, the two lines are centred as a block, as Windows does, so this only
+    /// applies to the time on its own.
+    /// </remarks>
+    public Thickness ClockTimeMargin
+    {
+        get
+        {
+            if (ShowsDate || ClockTimeText is null) return default;
+
+            double lift = DigitsBelowCentre(ClockTimeText);
+            return new Thickness(0, -lift, 0, lift);
+        }
+    }
+
+    /// <summary>
+    /// How far below its line box's centre a text block's digits sit, from the font's metrics.
+    /// </summary>
+    /// <remarks>
+    /// Digits run from the baseline up by roughly the cap height, so their centre sits
+    /// <c>Baseline - CapsHeight / 2</c> from the top of a line <c>LineSpacing</c> tall.
+    /// </remarks>
+    private static double DigitsBelowCentre(TextBlock text)
+    {
+        var typeface = new Typeface(text.FontFamily, text.FontStyle, text.FontWeight, text.FontStretch);
+        if (!typeface.TryGetGlyphTypeface(out GlyphTypeface glyphs)) return 0.0;
+
+        FontFamily family = text.FontFamily;
+        double em = (family.Baseline - glyphs.CapsHeight / 2.0) - family.LineSpacing / 2.0;
+        return Math.Max(0.0, em * text.FontSize);
+    }
+
+    /// <summary>
     /// The show-desktop control's hairline, which appears from Tier 1 like the date.
     /// </summary>
     /// <remarks>
@@ -1086,7 +1126,7 @@ internal partial class BarWindow : AppBarWindow
     /// taking any from the clock. Like the Start button (§6.5) its hit area runs into the screen
     /// corner while its drawn content stays inboard of the drift inset, where it cannot clip.
     /// </remarks>
-    public double ShowDesktopHitExtent => Metrics.RowInset + TrailingEdgePadding + ShowDesktopWidth;
+    public double ShowDesktopHitExtent => Metrics.TrailingInset + TrailingEdgePadding + ShowDesktopWidth;
 
     /// <summary>
     /// How much of the control's width is its own, beyond the margin the row already held back.
@@ -1377,7 +1417,7 @@ internal partial class BarWindow : AppBarWindow
     /// the group has to be moved inboard by its width or the two would overlap — the clock would
     /// be drawn under a transparent hit area, and clicking the time would show the desktop.
     /// </remarks>
-    private double TrailingReserved => Metrics.RowInset + TrailingEdgePadding + ShowDesktopWidth;
+    private double TrailingReserved => Metrics.TrailingInset + TrailingEdgePadding + ShowDesktopWidth;
 
     /// <summary>Slot pitch — the hit target's extent along the bar's long axis. 44 DIP.</summary>
     public double SlotPitch => Metrics.Slot.Pitch;
@@ -1452,6 +1492,40 @@ internal partial class BarWindow : AppBarWindow
     /// inside it at the extremes — which is precisely what P6 asks the motion layer not to do.
     /// </remarks>
     public double HoverChipExtent => IconExtent + 2 * HoverChipMargin;
+
+    /// <summary>
+    /// Scale applied to the Start glyph and its chip, so Start shrinks while dormant with the icons.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The same ratio, not the same size.</b> Start is drawn at <see cref="StartGlyphExtent"/>,
+    /// Explorer's own size, and the icons at 26 when engaged; matching extents would grow Start
+    /// past Windows'. Scaling by the icons' own dormant-to-full ratio keeps Start at Windows' size
+    /// once the bar is engaged and shrinks it by the same proportion while it is not — 16/26 at
+    /// the default setting.
+    /// </para>
+    /// <para>
+    /// <b>P5 holds because Start is never drawn larger than the icon.</b> The glyph rides
+    /// <see cref="ContentOffset"/>, whose amplitude is derived from the icon actually drawn, so
+    /// anything no wider than that icon stays inside the slot with it. Start is 23.3/26 of the
+    /// icon at every point on the ramp. <c>StartGlyphScaleTests</c> pins that, since with the row
+    /// at the screen edge a Start glyph wider than the icon would clip at the corner.
+    /// </para>
+    /// </remarks>
+    public double StartGlyphScale => StartGlyphScaleFor(IconExtent, Metrics.Scale);
+
+    /// <summary>
+    /// <see cref="StartGlyphScale"/> for a given drawn icon extent, static so it can be asserted
+    /// without a window.
+    /// </summary>
+    internal static double StartGlyphScaleFor(double iconExtent, double scale) =>
+        Math.Clamp(iconExtent / (ActiveIconExtent * scale), 0.0, 1.0);
+
+    /// <summary>
+    /// Drawn extent of the Start logo at full size, at 100% scaling: four 11.25 squares and a
+    /// 0.8 gap, as laid out in <c>BarWindow.xaml</c>.
+    /// </summary>
+    internal const double StartGlyphExtent = 2 * 11.25 + 0.8;
 
     /// <summary>How far along the dormant → full-size ramp the icon currently is, 0 to 1.</summary>
     private double SizeBlend =>
@@ -1539,6 +1613,7 @@ internal partial class BarWindow : AppBarWindow
         if (d is not BarWindow bar) return;
 
         bar.OnPropertyChanged(nameof(ShowsDate));
+        bar.OnPropertyChanged(nameof(ClockTimeMargin));
         bar.OnPropertyChanged(nameof(ShowsSeconds));
         bar.OnPropertyChanged(nameof(ShowsShowDesktopLine));
 
@@ -1548,6 +1623,7 @@ internal partial class BarWindow : AppBarWindow
         // offset -- outside its own slot, which is exactly what P5 forbids.
         bar.OnPropertyChanged(nameof(IconExtent));
         bar.OnPropertyChanged(nameof(HoverChipExtent));
+        bar.OnPropertyChanged(nameof(StartGlyphScale));
         bar._motion?.Reemit();
 
         // Rebuild the string immediately rather than waiting up to a second for the next tick,

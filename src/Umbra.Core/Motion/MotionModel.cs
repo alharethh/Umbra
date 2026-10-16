@@ -58,6 +58,26 @@ public static class MotionModel
     /// </remarks>
     public const double ShortAxisDriftPeriodSeconds = 0.61 * DriftPeriodSeconds;
 
+    /// <summary>
+    /// Motion time at which the bar launches: a quarter period in, where the long-axis triangle
+    /// crosses its centre.
+    /// </summary>
+    public const double LaunchPhaseSeconds = 0.25 * DriftPeriodSeconds;
+
+    /// <summary>
+    /// Shift applied to the short-axis triangle so it, too, crosses its centre at
+    /// <see cref="LaunchPhaseSeconds"/>.
+    /// </summary>
+    /// <remarks>
+    /// Without it the shorter period puts the short axis 41% of the way through its cycle at
+    /// launch, which is +0.64 of its amplitude: every launch started the row and the clock low on a
+    /// bottom bar, and on a fixed line of text against the screen edge that reads as the clock
+    /// being off centre. Wear-neutral for the same reason the launch phase is: a triangle's
+    /// residence distribution does not depend on where it starts. The micro-jitter sinusoids are
+    /// measured from the launch phase for the same reason, so they start at zero too.
+    /// </remarks>
+    public const double ShortAxisPhaseSeconds = 0.25 * ShortAxisDriftPeriodSeconds - LaunchPhaseSeconds;
+
     /// <summary>Micro-jitter update rate, 2 Hz (§6.1).</summary>
     /// <remarks>
     /// v1 implied continuous animation. At ±2 px over a 60 s period a 60 Hz repaint moves the
@@ -145,9 +165,9 @@ public static class MotionModel
     public static MotionOffset IconRow(double seconds, SlotMetrics slot, double shortAxisAmplitude)
     {
         double along = Drift(seconds, slot.DriftAmplitude)
-                     + Micro(seconds, slot.MicroAmplitude, IconMicroPeriodASeconds);
-        double across = Drift(seconds, shortAxisAmplitude, ShortAxisDriftPeriodSeconds)
-                      + Micro(seconds, slot.MicroAmplitude, IconMicroPeriodBSeconds);
+                     + Micro(seconds - LaunchPhaseSeconds, slot.MicroAmplitude, IconMicroPeriodASeconds);
+        double across = Drift(seconds + ShortAxisPhaseSeconds, shortAxisAmplitude, ShortAxisDriftPeriodSeconds)
+                      + Micro(seconds - LaunchPhaseSeconds, slot.MicroAmplitude, IconMicroPeriodBSeconds);
         return new MotionOffset(along, across);
     }
 
@@ -158,9 +178,9 @@ public static class MotionModel
     public static MotionOffset Clock(double seconds, SlotMetrics slot, double shortAxisAmplitude)
     {
         double along = Drift(seconds, slot.DriftAmplitude)
-                     + Micro(seconds, slot.MicroAmplitude, ClockMicroPeriodASeconds);
-        double across = Drift(seconds, shortAxisAmplitude, ShortAxisDriftPeriodSeconds)
-                      + Micro(seconds, slot.MicroAmplitude, ClockMicroPeriodBSeconds);
+                     + Micro(seconds - LaunchPhaseSeconds, slot.MicroAmplitude, ClockMicroPeriodASeconds);
+        double across = Drift(seconds + ShortAxisPhaseSeconds, shortAxisAmplitude, ShortAxisDriftPeriodSeconds)
+                      + Micro(seconds - LaunchPhaseSeconds, slot.MicroAmplitude, ClockMicroPeriodBSeconds);
         return new MotionOffset(along, across);
     }
 }

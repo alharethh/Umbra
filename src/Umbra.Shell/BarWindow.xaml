@@ -342,9 +342,13 @@
                      Style="{StaticResource HolographicChip}"
                      Width="30" Height="30"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                     Margin="{Binding StartGlyphMargin}">
+                     Margin="{Binding StartGlyphMargin}"
+                     RenderTransformOrigin="0.5,0.5">
                 <Control.RenderTransform>
-                    <TranslateTransform X="{Binding ContentOffset.X}" Y="{Binding ContentOffset.Y}" />
+                    <TransformGroup>
+                        <ScaleTransform ScaleX="{Binding StartGlyphScale}" ScaleY="{Binding StartGlyphScale}" />
+                        <TranslateTransform X="{Binding ContentOffset.X}" Y="{Binding ContentOffset.Y}" />
+                    </TransformGroup>
                 </Control.RenderTransform>
             </Control>
 
@@ -356,10 +360,13 @@
                     Press feedback, plus the drift offset. The scale and rotation are animated from
                     code on click; the translate carries the same drift every other element gets,
                     bound through rather than shared, because a TransformGroup child cannot be the
-                    shared transform instance itself.
+                    shared transform instance itself. The first scale is the dormant shrink, kept
+                    apart from StartScale because the press animation owns that one outright.
                 -->
                 <Canvas.RenderTransform>
                     <TransformGroup>
+                        <ScaleTransform CenterX="12" CenterY="12"
+                                        ScaleX="{Binding StartGlyphScale}" ScaleY="{Binding StartGlyphScale}" />
                         <ScaleTransform x:Name="StartScale" CenterX="12" CenterY="12" />
                         <RotateTransform x:Name="StartRotate" CenterX="12" CenterY="12" />
                         <TranslateTransform X="{Binding ContentOffset.X}" Y="{Binding ContentOffset.Y}" />
@@ -367,8 +374,9 @@
                 </Canvas.RenderTransform>
 
                 <!--
-                    Square corners and a thin cross: four 10.7 px squares separated by 0.8 px,
-                    filling 22.2 of the 24 px box.
+                    Square corners and a thin cross: four 11.25 px squares separated by 0.8 px,
+                    filling 23.3 of the 24 px box. That is Explorer's own logo, measured 2026-10-16
+                    at 150% as two 17 px squares and a 1 px gap; it was 22.2 before, a little small.
 
                     Both numbers were arrived at by rendering candidates at true size against the
                     real logo rather than by adjusting one at a time. Rounded corners and a wide
@@ -381,16 +389,16 @@
                 -->
                 <Canvas.Resources>
                     <Style TargetType="Rectangle">
-                        <Setter Property="Width" Value="10.7" />
-                        <Setter Property="Height" Value="10.7" />
+                        <Setter Property="Width" Value="11.25" />
+                        <Setter Property="Height" Value="11.25" />
                         <Setter Property="Fill"
                                 Value="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource StartGlyphBrush}}" />
                     </Style>
                 </Canvas.Resources>
 
-                <Rectangle Canvas.Left="0.9"  Canvas.Top="0.9" />
-                <Rectangle Canvas.Left="12.4" Canvas.Top="0.9" />
-                <Rectangle Canvas.Left="0.9"  Canvas.Top="12.4" />
+                <Rectangle Canvas.Left="0.35" Canvas.Top="0.35" />
+                <Rectangle Canvas.Left="12.4" Canvas.Top="0.35" />
+                <Rectangle Canvas.Left="0.35" Canvas.Top="12.4" />
                 <Rectangle Canvas.Left="12.4" Canvas.Top="12.4" />
 
                 <!--
@@ -466,16 +474,16 @@
 
                     <Canvas.Resources>
                         <Style TargetType="Rectangle">
-                            <Setter Property="Width" Value="10.7" />
-                            <Setter Property="Height" Value="10.7" />
+                            <Setter Property="Width" Value="11.25" />
+                            <Setter Property="Height" Value="11.25" />
                             <Setter Property="Fill"
                                     Value="{Binding StartAccentBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                         </Style>
                     </Canvas.Resources>
 
-                    <Rectangle Canvas.Left="0.9"  Canvas.Top="0.9" />
-                    <Rectangle Canvas.Left="12.4" Canvas.Top="0.9" />
-                    <Rectangle Canvas.Left="0.9"  Canvas.Top="12.4" />
+                    <Rectangle Canvas.Left="0.35" Canvas.Top="0.35" />
+                    <Rectangle Canvas.Left="12.4" Canvas.Top="0.35" />
+                    <Rectangle Canvas.Left="0.35" Canvas.Top="12.4" />
                     <Rectangle Canvas.Left="12.4" Canvas.Top="12.4" />
                 </Canvas>
             </Canvas>
@@ -930,6 +938,7 @@
 
                 <TextBlock x:Name="ClockTimeText"
                            Text="{Binding ClockTime}"
+                           Margin="{Binding ClockTimeMargin}"
                            FontSize="14"
                            TextAlignment="Center"
                            Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}" />

@@ -51,11 +51,30 @@ public readonly record struct BarMetrics
     /// Windows 11's own padding before the first icon when left-aligned, at 100% scaling.
     /// </summary>
     /// <remarks>
-    /// §6.3 says to measure this on the target machine and adopt it. This is a placeholder until
-    /// someone does; <see cref="RowInset"/> takes the larger of it and the peak drift offset, so
-    /// an under-measurement cannot clip content at the corner.
+    /// <para>
+    /// <b>Measured 2026-10-16: there is none.</b> On a 2256×1504 panel at 150%, Explorer's own
+    /// left-aligned taskbar centres the Start logo 22.0 DIP from the screen edge, which is the
+    /// middle of a 44 DIP slot starting at the edge itself. The 8 here before that was a placeholder
+    /// that was never measured, and with the peak drift offset winning over it the row sat 11 DIP
+    /// right of where Windows puts it.
+    /// </para>
+    /// <para>
+    /// §6.3's worry, that drift would clip the first icon at the corner, does not need an inset to
+    /// answer it: P5 keeps drawn content inside its own slot, so a slot that starts on screen keeps
+    /// its content on screen.
+    /// </para>
     /// </remarks>
-    public const double BaseWindows11RowInset = 8.0;
+    public const double BaseWindows11RowInset = 0.0;
+
+    /// <summary>
+    /// Padding before the trailing group at 100% scaling, which <see cref="TrailingInset"/> takes
+    /// the larger of with the peak drift offset.
+    /// </summary>
+    /// <remarks>
+    /// The value <see cref="BaseWindows11RowInset"/> used to have, kept for the trailing end so
+    /// moving the row to Windows' position does not also move the clock.
+    /// </remarks>
+    public const double BaseTrailingInset = 8.0;
 
     /// <summary>Short-axis drift amplitude as a fraction of the short-axis maximum (§6.2).</summary>
     public const double ShortAxisDriftFraction = 0.50;
@@ -191,10 +210,21 @@ public readonly record struct BarMetrics
     public bool ShortAxisFitsReservedHeadroom => ShortAxisPeakOffset <= ReservedHeadroom;
 
     /// <summary>
-    /// Inset of the row from the aligned end (§6.3). The larger of Windows 11's own padding and
-    /// the peak drift offset, so negative drift can never clip content at the screen corner.
+    /// Inset of the row from the aligned end (§6.3): Windows 11's own padding, which is zero.
     /// </summary>
-    public double RowInset => Math.Max(MeasuredWindows11RowInset, Slot.PeakOffset);
+    /// <remarks>
+    /// This used to be the larger of that padding and the peak drift offset. Neither half was
+    /// needed: drift is bounded by the gutter (P5), so the first slot's content cannot cross the
+    /// slot's own edge, and that edge is the screen's. <c>Row_Starts_At_The_Edge_And_Drift_Cannot_Clip</c>
+    /// asserts it across a full drift period.
+    /// </remarks>
+    public double RowInset => MeasuredWindows11RowInset;
+
+    /// <summary>
+    /// Inset of the trailing group (notification area, clock, show desktop) from the far end:
+    /// the larger of <see cref="BaseTrailingInset"/> and the peak drift offset.
+    /// </summary>
+    public double TrailingInset => Math.Max(BaseTrailingInset * Scale, Slot.PeakOffset);
 
     /// <summary>Extent of a row of <paramref name="slotCount"/> slots along the long axis.</summary>
     public double RowSpan(int slotCount)

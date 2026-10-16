@@ -38,7 +38,7 @@ internal sealed class MotionDriver : IDisposable
     /// appears, and it would take ten minutes to come back. Starting centred means the bar always
     /// launches looking like the layout says it should.
     /// </remarks>
-    private readonly MotionClock _clock = new(MotionModel.DriftPeriodSeconds * 0.25);
+    private readonly MotionClock _clock = new(MotionModel.LaunchPhaseSeconds);
     private readonly Func<BarMetrics> _metricsNow;
     private DateTime _lastTick = DateTime.UtcNow;
     private int _loggedTicks;

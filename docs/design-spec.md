@@ -355,6 +355,8 @@ This is **not a deviation.** Windows 11's own left-aligned taskbar already pads 
 
 The same applies to the aligned end of a vertical bar, and to the clock at the trailing end of any bar.
 
+**Measured 2026-10-16, and the leading inset is gone.** On a 2256×1504 panel at 150%, Explorer centres its Start logo 22.0 DIP from the screen edge: its first slot starts at the edge, and Windows 11 has no inset before it. The premise above was also wrong. Drift is bounded by the gutter (P5), so content cannot leave its slot, and a slot that starts on screen keeps its content on screen. The aligned end therefore uses Windows' 0, and the bar's Start button and icons sit where Windows puts them. The trailing end keeps the larger of 8 px and the peak offset, so the clock did not move.
+
 The **reserved AppBar rectangle is fixed and never re-registered during steady-state operation.** Changing it reflows every maximised window on the desktop. Drift happens strictly inside it. Resolution change, DPI change and monitor hotplug are the exceptions and need an explicit policy — see §11.2 Q4.
 
 ### 6.4 Clock
