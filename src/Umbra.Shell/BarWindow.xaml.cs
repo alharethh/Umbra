@@ -152,6 +152,7 @@ internal partial class BarWindow : AppBarWindow
         _proximity.Ticked += () =>
         {
             _startMenu.Poll();
+            SurfaceOverFullScreenWhileStartIsOpen();
 
             // A tray icon's menu belongs to the application that owns the icon, and clicking the
             // bar does not close it for the same reason nothing else does — the foreground never
@@ -1649,6 +1650,71 @@ internal partial class BarWindow : AppBarWindow
     {
         get => (bool)GetValue(StartActiveProperty);
         set => SetValue(StartActiveProperty, value);
+    }
+
+    /// <summary>
+    /// The fullscreen application this bar last gave way to, or null when there is none on its
+    /// screen.
+    /// </summary>
+    private FullScreenApp? _concededTo;
+
+    /// <summary>Whether the bar is currently raised over <see cref="_concededTo"/> for Start.</summary>
+    private bool _raisedForStart;
+
+    /// <summary>
+    /// Records the fullscreen application, and gives way to it unless Start is open.
+    /// </summary>
+    protected override void OnFullScreenEnter(FullScreenApp app)
+    {
+        _concededTo = app;
+        if (_raisedForStart) return;
+
+        base.OnFullScreenEnter(app);
+    }
+
+    /// <inheritdoc />
+    protected override void OnFullScreenLeave()
+    {
+        _concededTo = null;
+        _raisedForStart = false;
+        base.OnFullScreenLeave();
+    }
+
+    /// <summary>
+    /// Brings the bar up over a fullscreen application while Start is open, and gives way again
+    /// once it closes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Explorer's taskbar does this, and ours never did.</b> ManagedShell concedes to a
+    /// fullscreen app by dropping topmost and sending the bar to the bottom, and it keeps the app
+    /// active while a topmost window is in front of it. Start is topmost, so pressing Win in a
+    /// borderless game opened Start with no bar under it at all.
+    /// </para>
+    /// <para>
+    /// <b>Giving way again is ours to do.</b> ManagedShell only acts when its list of fullscreen
+    /// apps changes, and Start opening and closing over the game does not change it. A bar raised
+    /// here and not lowered would stay over the game after Start closed. If the user picked another
+    /// application from Start instead, the game leaves the list, ManagedShell raises the bar
+    /// itself, and <see cref="OnFullScreenLeave"/> clears the state.
+    /// </para>
+    /// </remarks>
+    private void SurfaceOverFullScreenWhileStartIsOpen()
+    {
+        if (_concededTo is null) return;
+
+        if (_startMenu.IsOpen && !_raisedForStart)
+        {
+            _raisedForStart = true;
+            BringUpLog.Write($"start opened over fullscreen '{_concededTo.title}': raising the bar");
+            base.OnFullScreenLeave();
+        }
+        else if (!_startMenu.IsOpen && _raisedForStart)
+        {
+            _raisedForStart = false;
+            BringUpLog.Write($"start closed over fullscreen '{_concededTo.title}': giving way again");
+            base.OnFullScreenEnter(_concededTo);
+        }
     }
 
     /// <summary>
