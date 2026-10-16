@@ -46,6 +46,16 @@ public class CrashGuardTests : IDisposable
         public int? GetAlignment() => Alignment;
 
         public void SetAlignment(int? value) => Alignment = value;
+
+        public bool? SavedAutoHide { get; set; } = false;
+
+        public string? Shell { get; set; } = "explorer-1";
+
+        public bool? GetSavedAutoHide() => SavedAutoHide;
+
+        public void SetSavedAutoHide(bool value) => SavedAutoHide = value;
+
+        public string? GetShellIdentity() => Shell;
     }
 
     /// <summary>What a bar leaves behind when it dies: its marker, and Explorer still suppressed.</summary>
@@ -75,6 +85,21 @@ public class CrashGuardTests : IDisposable
 
         // Or the next launch would recover a second time from a record that is now stale.
         Assert.False(File.Exists(_statePath));
+    }
+
+    [Fact]
+    public void The_Guard_Also_Repairs_Auto_Hide_Saved_By_An_Explorer_Restart()
+    {
+        // The two fixes composed: Explorer restarted under the bar and saved the suppression as
+        // the user's setting, then the bar was killed. The guard's restore is the next launch's
+        // recovery, so it puts the saved bit back too.
+        FakeTaskbar taskbar = BarDiedHoldingTheTaskbar(NativeMethods.ABState.Default, usersAlignment: 1);
+        taskbar.Shell = "explorer-2";
+        taskbar.SavedAutoHide = true;
+
+        CrashGuard.RecoverIfOrphaned(_lockName, _statePath, () => taskbar);
+
+        Assert.False(taskbar.SavedAutoHide);
     }
 
     [Fact]

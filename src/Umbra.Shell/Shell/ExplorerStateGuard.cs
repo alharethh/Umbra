@@ -28,6 +28,19 @@ namespace Umbra.Shell.Shell;
 /// until the Start button lands (build order step 8); when it does, it belongs here alongside the
 /// taskbar state and in the same file.
 /// </para>
+/// <para>
+/// <b>An Explorer restart under the bar saves the suppression as the user's own setting</b>
+/// (QA 2026-10-16, case 0.6): the saved auto-hide bit went <c>0x02</c> → <c>0x03</c> within 15 s
+/// of a restarted Explorer starting, and stayed there after a clean exit that had put the
+/// <i>runtime</i> state back correctly. Most likely ManagedShell's watchdog autohides the new
+/// taskbar while it is still initialising, and a starting Explorer saves its layout. Restoring the
+/// runtime state does not trigger a save, so the user would sign in next time to an auto-hidden
+/// taskbar, long after uninstalling Umbra — and the next launch would capture the damage as their
+/// baseline. So the saved bit is captured too, and put back at <see cref="Restore"/> and in crash
+/// recovery, <b>only when the Explorer running the shell is not the one that was running at
+/// capture</b>. Without that condition a deliberate change the user makes in Windows Settings while
+/// the bar runs would be reverted on exit. Owner's decision, 2026-10-16 (option A).
+/// </para>
 /// </remarks>
 internal sealed class ExplorerStateGuard : IDisposable
 {
@@ -59,6 +72,18 @@ internal sealed class ExplorerStateGuard : IDisposable
     public bool RecoveredFromUncleanExit { get; private set; }
 
     /// <summary>
+    /// The auto-hide setting Explorer had saved before Umbra touched it, or null when it could not
+    /// be read in a known format — in which case it is never written either.
+    /// </summary>
+    public bool? OriginalSavedAutoHide { get; private set; }
+
+    /// <summary>True once this guard has rewritten the saved auto-hide bit.</summary>
+    public bool RepairedSavedAutoHide { get; private set; }
+
+    /// <summary>The Explorer this run's baseline was taken against. See <see cref="ITaskbarState.GetShellIdentity"/>.</summary>
+    private string? _shellAtCapture;
+
+    /// <summary>
     /// Points Explorer's taskbar alignment at Umbra's own, so the Start menu opens beneath our
     /// Start button rather than wherever Explorer's alignment would have put it (§7.0).
     /// </summary>
@@ -71,26 +96,35 @@ internal sealed class ExplorerStateGuard : IDisposable
     /// </summary>
     public void Capture()
     {
-        if (TryReadPersistedState(out NativeMethods.ABState orphaned, out int? orphanedAlignment))
+        if (TryReadPersistedState(out PersistedState orphaned))
         {
             // A previous run died with Explorer's taskbar autohidden and its alignment overwritten.
             // Put both back before reading the current state, or the damage gets recorded as the
             // baseline and every later run faithfully restores it.
             RecoveredFromUncleanExit = true;
 
-            _taskbar.SetState(orphaned);
-            _taskbar.SetAlignment(orphanedAlignment);
+            _taskbar.SetState(orphaned.State);
+            _taskbar.SetAlignment(orphaned.Alignment);
 
-            OriginalState = orphaned;
-            OriginalAlignment = orphanedAlignment;
+            OriginalState = orphaned.State;
+            OriginalAlignment = orphaned.Alignment;
+            OriginalSavedAutoHide = orphaned.SavedAutoHide;
+
+            // The dead run's Explorer is the one to compare against: if it has been replaced since,
+            // the replacement may have saved the suppression as the user's setting.
+            RepairSavedAutoHideIfExplorerRestarted(orphaned.Shell);
         }
         else
         {
             OriginalState = _taskbar.GetState();
             OriginalAlignment = _taskbar.GetAlignment();
+            OriginalSavedAutoHide = _taskbar.GetSavedAutoHide();
         }
 
-        Persist(OriginalState, OriginalAlignment);
+        // From here on, a restart means a restart during this run.
+        _shellAtCapture = _taskbar.GetShellIdentity();
+
+        Persist();
     }
 
     /// <summary>Restores Explorer's taskbar and clears the on-disk marker. Safe to call twice.</summary>
@@ -104,6 +138,10 @@ internal sealed class ExplorerStateGuard : IDisposable
             _taskbar.Hidden = false;
             _taskbar.SetState(OriginalState);
             _taskbar.SetAlignment(OriginalAlignment);
+
+            // After the runtime state, so that if setting it ever does make Explorer save, the
+            // repaired bit is the last word.
+            RepairSavedAutoHideIfExplorerRestarted(_shellAtCapture);
         }
         finally
         {
@@ -113,14 +151,51 @@ internal sealed class ExplorerStateGuard : IDisposable
 
     public void Dispose() => Restore();
 
+    /// <summary>
+    /// Puts the saved auto-hide bit back, but only when the Explorer running now is not
+    /// <paramref name="shellBefore"/>, and only if it differs.
+    /// </summary>
+    /// <remarks>
+    /// Every unknown answers "leave it alone": no recorded setting (a marker from an older build, or
+    /// an unfamiliar format), no recorded Explorer, no Explorer now, or an unreadable setting now.
+    /// This is a backstop for one known failure, and the cost of it misfiring is reverting a choice
+    /// the user made, so it fires on evidence rather than on absence of it.
+    /// </remarks>
+    private void RepairSavedAutoHideIfExplorerRestarted(string? shellBefore)
+    {
+        if (OriginalSavedAutoHide is not bool original || shellBefore is null) return;
+
+        string? shellNow = _taskbar.GetShellIdentity();
+        if (shellNow is null || shellNow == shellBefore) return;
+
+        bool? saved = _taskbar.GetSavedAutoHide();
+        if (saved is null || saved == original) return;
+
+        _taskbar.SetSavedAutoHide(original);
+        RepairedSavedAutoHide = true;
+
+        Diagnostics.BringUpLog.Write(
+            $"explorer restarted under the bar ({shellBefore} -> {shellNow}) and saved auto-hide " +
+            $"{(saved.Value ? "on" : "off")}; put back to {(original ? "on" : "off")}");
+    }
+
+    /// <summary>What a marker file holds.</summary>
+    private readonly record struct PersistedState(
+        NativeMethods.ABState State, int? Alignment, bool? SavedAutoHide, string? Shell);
+
     /// <remarks>
     /// A missing <c>alignment</c> line means <c>TaskbarAl</c> was absent before Umbra ran, which is
-    /// different from it being zero — restoring must delete the value rather than write one.
+    /// different from it being zero — restoring must delete the value rather than write one. A
+    /// missing <c>autohide</c> or <c>shell</c> line — a marker from a build before either existed,
+    /// or a value that could not be read — means the saved bit is left alone.
     /// </remarks>
-    private bool TryReadPersistedState(out NativeMethods.ABState state, out int? alignment)
+    private bool TryReadPersistedState(out PersistedState persisted)
     {
-        state = NativeMethods.ABState.Default;
-        alignment = null;
+        NativeMethods.ABState state = NativeMethods.ABState.Default;
+        int? alignment = null;
+        bool? savedAutoHide = null;
+        string? shell = null;
+        persisted = default;
 
         try
         {
@@ -147,8 +222,17 @@ internal sealed class ExplorerStateGuard : IDisposable
                 {
                     alignment = align;
                 }
+                else if (key == "autohide" && value is "0" or "1")
+                {
+                    savedAutoHide = value == "1";
+                }
+                else if (key == "shell" && value.Length > 0)
+                {
+                    shell = value;
+                }
             }
 
+            persisted = new PersistedState(state, alignment, savedAutoHide, shell);
             return found;
         }
         catch (IOException)
@@ -161,7 +245,7 @@ internal sealed class ExplorerStateGuard : IDisposable
         }
     }
 
-    private void Persist(NativeMethods.ABState state, int? alignment)
+    private void Persist()
     {
         try
         {
@@ -170,11 +254,19 @@ internal sealed class ExplorerStateGuard : IDisposable
             List<string> lines =
             [
                 "# Explorer state before Umbra started. Present means Umbra is running or died.",
-                string.Create(CultureInfo.InvariantCulture, $"state={(int)state}"),
+                string.Create(CultureInfo.InvariantCulture, $"state={(int)OriginalState}"),
             ];
 
-            if (alignment is not null)
-                lines.Add(string.Create(CultureInfo.InvariantCulture, $"alignment={alignment.Value}"));
+            if (OriginalAlignment is not null)
+                lines.Add(string.Create(CultureInfo.InvariantCulture, $"alignment={OriginalAlignment.Value}"));
+
+            // The saved auto-hide bit, and which Explorer was running when this run took its
+            // baseline, so crash recovery can tell whether a restart since may have overwritten it.
+            if (OriginalSavedAutoHide is bool autoHide)
+                lines.Add(autoHide ? "autohide=1" : "autohide=0");
+
+            if (_shellAtCapture is not null)
+                lines.Add("shell=" + _shellAtCapture);
 
             File.WriteAllLines(_statePath, lines);
         }
