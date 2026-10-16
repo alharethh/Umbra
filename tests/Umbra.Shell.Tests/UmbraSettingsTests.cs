@@ -81,6 +81,7 @@ public class UmbraSettingsTests : IDisposable
             StartWithWindows = true,
             Tray = true,
             Monitor = @"\\.\DISPLAY2",
+            AppIconHover = AppIconHover.Holographic,
         };
 
         original.Save(_path);
@@ -94,6 +95,22 @@ public class UmbraSettingsTests : IDisposable
         Assert.Equal(original.StartWithWindows, reloaded.StartWithWindows);
         Assert.Equal(original.Tray, reloaded.Tray);
         Assert.Equal(original.Monitor, reloaded.Monitor);
+        Assert.Equal(original.AppIconHover, reloaded.AppIconHover);
+    }
+
+    [Theory]
+    [InlineData("7")]
+    [InlineData("Top, Left")]
+    [InlineData("sideways")]
+    public void The_Edge_Flag_Ignores_A_Value_That_Is_Not_A_Name(string value)
+    {
+        Assert.Null(App.ParseEdgeOverride(["--edge", value]));
+    }
+
+    [Fact]
+    public void The_Edge_Flag_Reads_A_Name()
+    {
+        Assert.Equal(BarEdge.Left, App.ParseEdgeOverride(["--edge", "left"]));
     }
 
     [Fact]

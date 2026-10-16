@@ -364,7 +364,7 @@ public partial class App : Application
     /// <summary>
     /// <c>--edge left|top|right|bottom</c>. Defaults to bottom, the shipping default (§7.1).
     /// </summary>
-    private static BarEdge? ParseEdgeOverride(string[] args)
+    internal static BarEdge? ParseEdgeOverride(string[] args)
     {
         for (int i = 0; i < args.Length - 1; i++)
         {
