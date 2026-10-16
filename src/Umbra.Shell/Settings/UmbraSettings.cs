@@ -231,12 +231,12 @@ internal sealed class UmbraSettings
         switch (key.ToLowerInvariant())
         {
             case "edge":
-                if (Enum.TryParse(value, ignoreCase: true, out BarEdge edge)) Edge = edge;
+                if (TryParseName(value, out BarEdge edge)) Edge = edge;
                 else Unusable(key, value);
                 break;
 
             case "alignment":
-                if (Enum.TryParse(value, ignoreCase: true, out Alignment alignment)) Alignment = alignment;
+                if (TryParseName(value, out Alignment alignment)) Alignment = alignment;
                 else Unusable(key, value);
                 break;
 
@@ -284,7 +284,7 @@ internal sealed class UmbraSettings
                 break;
 
             case "appiconhover":
-                if (Enum.TryParse(value, ignoreCase: true, out AppIconHover appHover)) AppIconHover = appHover;
+                if (TryParseName(value, out AppIconHover appHover)) AppIconHover = appHover;
                 else Unusable(key, value);
                 break;
 
@@ -319,6 +319,34 @@ internal sealed class UmbraSettings
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Reads an enum by one of its declared names, case-insensitively, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <c>Enum.TryParse</c> is the obvious call and the wrong one: it also accepts any integer,
+    /// declared or not, and comma-joined names, which it ORs together. <c>edge = 7</c> came back as
+    /// a successful parse of <c>(BarEdge)7</c>, and <c>BarMetrics</c> threw on it at startup, after
+    /// <c>ShellHost</c> had already suppressed Explorer's taskbar, on every launch until the file
+    /// was edited by hand. This file only ever writes names, so a number is never something Umbra
+    /// wrote, and accepting names alone rules out the integer and the combination together.
+    /// </remarks>
+    internal static bool TryParseName<TEnum>(string value, out TEnum result) where TEnum : struct, Enum
+    {
+        string candidate = value.Trim();
+
+        foreach (string name in Enum.GetNames<TEnum>())
+        {
+            if (string.Equals(name, candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                result = Enum.Parse<TEnum>(name);
+                return true;
+            }
+        }
+
+        result = default;
+        return false;
     }
 
     private static void Unusable(string key, string value) =>

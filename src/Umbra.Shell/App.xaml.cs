@@ -369,7 +369,7 @@ public partial class App : Application
         for (int i = 0; i < args.Length - 1; i++)
         {
             if (!string.Equals(args[i], "--edge", StringComparison.OrdinalIgnoreCase)) continue;
-            if (Enum.TryParse(args[i + 1], ignoreCase: true, out BarEdge parsed)) return parsed;
+            if (UmbraSettings.TryParseName(args[i + 1], out BarEdge parsed)) return parsed;
 
             BringUpLog.Write($"unrecognised --edge value '{args[i + 1]}', keeping the stored edge");
         }
