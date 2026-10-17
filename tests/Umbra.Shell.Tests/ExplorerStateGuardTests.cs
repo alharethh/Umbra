@@ -58,6 +58,37 @@ public class ExplorerStateGuardTests : IDisposable
 
         public void SetAlignment(int? alignment) => Alignment = alignment;
 
+        /// <summary>The saved Settings toggle; null stands for a blob in an unfamiliar format.</summary>
+        public bool? SavedAutoHide { get; set; } = false;
+
+        public int SavedAutoHideWrites { get; private set; }
+
+        /// <summary>Which Explorer is running the shell.</summary>
+        public string? Shell { get; set; } = "explorer-1";
+
+        public bool? GetSavedAutoHide() => SavedAutoHide;
+
+        public void SetSavedAutoHide(bool autoHide)
+        {
+            // Like the live one: an unfamiliar blob is never written.
+            if (SavedAutoHide is null) return;
+
+            SavedAutoHide = autoHide;
+            SavedAutoHideWrites++;
+        }
+
+        public string? GetShellIdentity() => Shell;
+
+        /// <summary>
+        /// QA case 0.6: Explorer is killed and Windows starts a new one, which saves the
+        /// suppression it was handed while starting up as the user's own setting.
+        /// </summary>
+        public void ExplorerRestartsUnderTheBar()
+        {
+            Shell += "-restarted";
+            SavedAutoHide = true;
+        }
+
         /// <summary>What the shell does to suppress Explorer: autohide, hide, and claim alignment.</summary>
         public void SuppressLikeUmbraDoes()
         {
@@ -250,6 +281,139 @@ public class ExplorerStateGuardTests : IDisposable
 
         second.Restore();
         Assert.Equal(1, taskbar.Alignment);
+    }
+
+    [Fact]
+    public void An_Explorer_Restart_Under_The_Bar_Does_Not_Leave_Auto_Hide_Switched_On()
+    {
+        // QA case 0.6, the reason the saved bit is captured at all: the runtime state came back
+        // and the saved setting stayed 0x03, so the user's next sign-in would hide their taskbar.
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = false };
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+
+        guard.Capture();
+        taskbar.SuppressLikeUmbraDoes();
+        taskbar.ExplorerRestartsUnderTheBar();
+        guard.Restore();
+
+        Assert.False(taskbar.SavedAutoHide);
+        Assert.True(guard.RepairedSavedAutoHide);
+        Assert.Equal(NativeMethods.ABState.Default, taskbar.State);
+    }
+
+    [Fact]
+    public void A_Change_The_User_Makes_In_Settings_While_The_Bar_Runs_Is_Kept()
+    {
+        // Same Explorer throughout, so a different saved bit at exit is the user's doing. Reverting
+        // it is the cost of the repair misfiring, which is why it waits for a restart.
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = false };
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+
+        guard.Capture();
+        taskbar.SuppressLikeUmbraDoes();
+        taskbar.SavedAutoHide = true;
+        guard.Restore();
+
+        Assert.True(taskbar.SavedAutoHide);
+        Assert.Equal(0, taskbar.SavedAutoHideWrites);
+    }
+
+    [Fact]
+    public void A_Restart_That_Saved_Nothing_Wrong_Writes_Nothing()
+    {
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = false };
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+
+        guard.Capture();
+        taskbar.Shell = "explorer-2";
+        guard.Restore();
+
+        Assert.Equal(0, taskbar.SavedAutoHideWrites);
+        Assert.False(guard.RepairedSavedAutoHide);
+    }
+
+    [Fact]
+    public void An_Unfamiliar_Saved_Format_Is_Never_Written()
+    {
+        // Null is what the live reader returns for a blob it does not recognise.
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = null };
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+
+        guard.Capture();
+        taskbar.Shell = "explorer-2";
+        guard.Restore();
+
+        Assert.Null(guard.OriginalSavedAutoHide);
+        Assert.Equal(0, taskbar.SavedAutoHideWrites);
+    }
+
+    [Fact]
+    public void No_Known_Explorer_At_Capture_Means_No_Repair()
+    {
+        // Without a baseline identity a restart cannot be told from the user's own change.
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = false, Shell = null };
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+
+        guard.Capture();
+        taskbar.Shell = "explorer-2";
+        taskbar.SavedAutoHide = true;
+        guard.Restore();
+
+        Assert.True(taskbar.SavedAutoHide);
+    }
+
+    [Fact]
+    public void Crash_Recovery_Repairs_A_Bit_Saved_By_A_Restart_During_The_Dead_Run()
+    {
+        // Explorer restarts under the bar, then the bar is hard killed: the next launch must not
+        // take 0x03 as the user's setting.
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = false };
+        new ExplorerStateGuard(taskbar, _statePath).Capture();
+        taskbar.SuppressLikeUmbraDoes();
+        taskbar.ExplorerRestartsUnderTheBar();
+
+        ExplorerStateGuard second = new(taskbar, _statePath);
+        second.Capture();
+
+        Assert.True(second.RecoveredFromUncleanExit);
+        Assert.False(taskbar.SavedAutoHide);
+        Assert.Equal(false, second.OriginalSavedAutoHide);
+
+        // And the restored baseline holds for the rest of the run.
+        taskbar.SuppressLikeUmbraDoes();
+        second.Restore();
+        Assert.False(taskbar.SavedAutoHide);
+    }
+
+    [Fact]
+    public void Crash_Recovery_With_The_Same_Explorer_Leaves_The_Saved_Bit_Alone()
+    {
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = false };
+        new ExplorerStateGuard(taskbar, _statePath).Capture();
+        taskbar.SuppressLikeUmbraDoes();
+        taskbar.SavedAutoHide = true;   // the user, in Settings, before the crash
+
+        ExplorerStateGuard second = new(taskbar, _statePath);
+        second.Capture();
+
+        Assert.True(taskbar.SavedAutoHide);
+        Assert.Equal(0, taskbar.SavedAutoHideWrites);
+    }
+
+    [Fact]
+    public void A_Marker_From_An_Older_Build_Does_Not_Touch_The_Saved_Bit()
+    {
+        // No autohide or shell line: nothing was recorded, so nothing is known to put back.
+        File.WriteAllLines(_statePath, ["state=0"]);
+
+        FakeTaskbar taskbar = new(NativeMethods.ABState.AutoHide) { SavedAutoHide = true, Shell = "explorer-9" };
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+        guard.Capture();
+        guard.Restore();
+
+        Assert.True(guard.RecoveredFromUncleanExit);
+        Assert.True(taskbar.SavedAutoHide);
+        Assert.Equal(0, taskbar.SavedAutoHideWrites);
     }
 
     [Fact]

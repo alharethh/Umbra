@@ -40,6 +40,9 @@
     <RootNamespace>Umbra.Shell</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
+    <!-- Program.Main, not WPF's generated one: the crash guard must not build an Application. -->
+    <StartupObject>Umbra.Shell.Program</StartupObject>
+
     <!--
       Umbra's own windows - settings, the heatmap, the motion speed tool - appear on the
       taskbar, and without this they appear with the generic placeholder icon.
