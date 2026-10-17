@@ -1,7 +1,7 @@
-Umbra 0.1.0
-===========
+Umbra
+=====
 
-A Windows 11 taskbar that lives on any edge, built to minimise OLED burn-in.
+A Windows 11 taskbar built to minimise OLED burn-in, on any screen edge.
 
   https://github.com/alharethh/Umbra
 
@@ -10,10 +10,10 @@ REQUIREMENTS
 
   Windows 11.
 
-  The framework-dependent download also needs the .NET 10 Desktop Runtime:
+  This download needs the .NET 10 Desktop Runtime:
   https://dotnet.microsoft.com/download/dotnet/10.0  (choose "Desktop Runtime", x64)
 
-  If Umbra does not start, that runtime is what is missing. The self-contained download
+  If Umbra does not start, that runtime is what is missing. The one-file .exe download
   carries its own copy and needs nothing installed.
 
 
@@ -21,25 +21,54 @@ RUNNING IT
 
   Umbra.exe
 
-  Umbra hides Explorer's taskbar while it runs and puts it back when it exits -- including
-  after a crash, which it recovers from on the next launch.
+  The release is not code-signed yet, so Windows may stop the first launch with "Windows
+  protected your PC". Choose More info, then Run anyway.
 
-  Right-click the bar for Settings, the wear heatmap, and Exit. There is no other way to
-  close it: the bar has no window of its own to close.
+  Umbra replaces Explorer's taskbar while it runs. Right-click an empty part of the bar for
+  Settings, the wear heatmap, and Exit Umbra.
 
-  Settings live in %LOCALAPPDATA%\Umbra\settings.txt and mostly apply immediately. Only
-  hosting the notification area needs a restart.
+  Settings live in %LOCALAPPDATA%\Umbra\settings.txt and apply immediately, except hosting
+  the notification area, which needs a restart. Umbra starts at sign-in only if you tick
+  "Start Umbra when I sign in" in Settings.
+
+
+GETTING YOUR WINDOWS TASKBAR BACK
+
+  For now: right-click the bar, Exit Umbra. Your normal taskbar comes back as it was.
+
+  To remove Umbra completely, in this order:
+
+    1. Right-click the bar, Settings, untick "Start Umbra when I sign in".
+    2. Right-click the bar, Exit Umbra, and check your normal taskbar is back.
+    3. Delete this folder.
+    4. Delete %LOCALAPPDATA%\Umbra (paste it into File Explorer's address bar). It holds
+       your settings, pins, wear history and a log. Do this last: while Umbra runs, it also
+       holds the note of how your taskbar was set up, which is how Umbra puts it back.
+
+  If you deleted Umbra without step 1, the leftover sign-in entry does nothing. Task Manager
+  (Ctrl+Shift+Esc), Startup apps, Umbra, Disable silences it.
+
+  If Umbra crashed or was closed by force and your taskbar is missing:
+
+    - Start Umbra.exe again, then right-click the bar, Exit Umbra. It notices the last
+      session did not end properly and puts your taskbar back. Win+E still opens File
+      Explorer without a taskbar.
+    - Or restart Windows Explorer: Ctrl+Shift+Esc, find "Windows Explorer" under Processes,
+      Restart. Signing out and back in does the same. If the taskbar then hides itself,
+      turn off Settings > Personalization > Taskbar > Taskbar behaviors > Automatically
+      hide the taskbar.
+
+  Pressing the Windows key on its own does not bring the taskbar back in that state.
 
 
 KNOWN LIMITS
 
-  - One monitor at a time. You choose which; you cannot have a bar on each.
-  - No keyboard navigation and no screen-reader support yet.
-  - The notification area keeps a timer running ten times a second, which is how it holds
-    its window in front of Explorer's. A screen being poked constantly may never be left
-    alone long enough to idle, and an OLED does some of its own upkeep while idle -- so
-    hosting the tray may cost more panel life than the rest of Umbra saves. Nobody has
-    measured it. Turn it off in Settings if you would rather not find out.
+  - A bar on every monitor exists but is off by default, and is all or nothing: the OLED
+    treatment cannot yet be applied to one screen and not another.
+  - No keyboard navigation. Screen readers can hear the bar's names but cannot operate it.
+  - The notification area keeps a timer running ten times a second to hold its window in
+    front of Explorer's. It does not stop the display idling; it costs some power. Turn the
+    notification area off in Settings if you would rather not pay it.
 
 
 LICENCE

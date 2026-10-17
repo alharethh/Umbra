@@ -174,13 +174,51 @@ dotnet publish src\Umbra.Shell -c Release -o artifacts\Umbra
 artifacts\Umbra\Umbra.exe
 ```
 
-Umbra hides Explorer's taskbar while it runs and puts it back when it exits — including after a
-crash, which it recovers from on the next launch. Right-click the bar for **Settings**, the wear
-heatmap, and **Exit**. Configuration lives in the settings window and in
+The release is not code-signed yet, so Windows may stop the first launch with *Windows protected
+your PC*. Choose **More info**, then **Run anyway**.
+
+Umbra replaces Explorer's taskbar while it runs: your usual taskbar goes away and Umbra's bar
+takes its place. **Right-click an empty part of the bar** for **Settings**, the wear heatmap, and
+**Exit Umbra**. Configuration lives in the settings window and in
 `%LOCALAPPDATA%\Umbra\settings.txt`.
 
 **It does not start itself until you ask.** Settings → *Start Umbra when I sign in* adds it to
-your own account's startup programs, where Task Manager's Startup tab can also switch it off.
+your own account's startup programs, where Task Manager's *Startup apps* page can also switch it
+off.
+
+## Getting your Windows taskbar back
+
+**To stop using it for now:** right-click the bar → **Exit Umbra**. Your normal taskbar comes
+back within a second or two, set up the way it was before.
+
+**To remove it completely**, in this order:
+
+1. Right-click the bar → **Settings** → untick *Start Umbra when I sign in*.
+2. Right-click the bar → **Exit Umbra**, and check your normal taskbar is back.
+3. Delete `Umbra-…-win-x64.exe` (or the folder you unzipped).
+4. Delete the folder `%LOCALAPPDATA%\Umbra` — paste that into File Explorer's address bar to get
+   there. It holds your settings, pins, the wear history and a log.
+
+Umbra installs nothing else: no service, no Start menu entry, no shortcuts. The one-file download
+also unpacks some of its own runtime into `%TEMP%\.net\Umbra-…-win-x64` the first time it runs;
+that folder can go too, and Windows' own temporary-file clean-up removes it in time. Do step 4
+last. While Umbra is running, that folder also holds the note of how your taskbar was set
+up before Umbra hid it, which is what Umbra uses to put it back.
+
+If you already deleted the file without step 1, the leftover sign-in entry does nothing. Task
+Manager (`Ctrl+Shift+Esc`) → *Startup apps* → **Umbra** → **Disable** silences it.
+
+**If Umbra crashed or was closed by force and your taskbar is missing:**
+
+- **Start Umbra again, then right-click it → Exit Umbra.** It notices that the last session did
+  not end properly and puts your taskbar back exactly as it was. Without a taskbar, `Win+E` still
+  opens File Explorer, so you can find the file where you left it (usually *Downloads*).
+- **Or restart Windows Explorer:** `Ctrl+Shift+Esc` opens Task Manager; find *Windows Explorer*
+  under *Processes*, select it and choose **Restart**. Signing out and back in does the same. The
+  taskbar returns, but it may come back set to hide itself; if so, turn that off in Settings →
+  Personalization → Taskbar → *Taskbar behaviors* → *Automatically hide the taskbar*.
+
+Pressing the Windows key on its own does not bring the taskbar back in this state.
 
 ## Status
 
