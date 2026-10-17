@@ -184,7 +184,7 @@
 
         <CheckBox x:Name="TrayBox" Content="Host the notification area" Margin="0,0,0,2" />
         <TextBlock Style="{StaticResource Hint}"
-                   Text="Shows the notification icons next to the clock. Costs a permanent 100 ms timer, which is the only reason it is off by default. Applications that were already running appear once they next update their icon." />
+                   Text="On by default. Shows the notification icons next to the clock, at the cost of a permanent 100 ms timer that keeps them above other windows. An icon that is missing appears once its application next updates it, or from Refresh tray icons in the bar's menu. Needs a restart." />
 
         <TextBlock Text="Hover" FontWeight="SemiBold" Margin="0,8,0,6" />
 
