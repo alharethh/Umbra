@@ -197,26 +197,34 @@ back within a second or two, set up the way it was before.
 2. Right-click the bar → **Exit Umbra**, and check your normal taskbar is back.
 3. Delete `Umbra-…-win-x64.exe` (or the folder you unzipped).
 4. Delete the folder `%LOCALAPPDATA%\Umbra` — paste that into File Explorer's address bar to get
-   there. It holds your settings, pins, the wear history and a log.
+   there. It holds your settings, pins, the wear history and a log. **Do this step last, and
+   never while your taskbar is missing:** while Umbra is running, or after it crashed, that
+   folder also holds the note of how your taskbar was set up before Umbra hid it, which is what
+   Umbra uses to put it back.
 
 Umbra installs nothing else: no service, no Start menu entry, no shortcuts. The one-file download
 also unpacks some of its own runtime into `%TEMP%\.net\Umbra-…-win-x64` the first time it runs;
-that folder can go too, and Windows' own temporary-file clean-up removes it in time. Do step 4
-last. While Umbra is running, that folder also holds the note of how your taskbar was set
-up before Umbra hid it, which is what Umbra uses to put it back.
+that folder can go too.
 
 If you already deleted the file without step 1, the leftover sign-in entry does nothing. Task
 Manager (`Ctrl+Shift+Esc`) → *Startup apps* → **Umbra** → **Disable** silences it.
 
 **If Umbra crashed or was closed by force and your taskbar is missing:**
 
-- **Start Umbra again, then right-click it → Exit Umbra.** It notices that the last session did
-  not end properly and puts your taskbar back exactly as it was. Without a taskbar, `Win+E` still
-  opens File Explorer, so you can find the file where you left it (usually *Downloads*).
+- **Best: start Umbra again, then right-click it → Exit Umbra.** It notices that the last
+  session did not end properly and puts your taskbar back exactly as it was, including where its
+  icons sit and whether it hides itself. Without a taskbar, `Win+E` still opens File Explorer, so
+  you can find the file where you left it (usually *Downloads*).
 - **Or restart Windows Explorer:** `Ctrl+Shift+Esc` opens Task Manager; find *Windows Explorer*
   under *Processes*, select it and choose **Restart**. Signing out and back in does the same. The
-  taskbar returns, but it may come back set to hide itself; if so, turn that off in Settings →
-  Personalization → Taskbar → *Taskbar behaviors* → *Automatically hide the taskbar*.
+  taskbar returns, but this way puts back neither of the two settings Umbra changes, so check
+  both in Windows Settings (`Win+I`) → *Personalization* → *Taskbar* → *Taskbar behaviors*:
+  - **Its icons will be on the left**, because Umbra moves them there while it runs. If you had
+    them centred (the Windows 11 default), set *Taskbar alignment* to **Center**.
+  - **It may hide itself.** If so, untick *Automatically hide the taskbar*.
+
+  Starting Umbra once more and choosing **Exit Umbra** also fixes both, as long as
+  `%LOCALAPPDATA%\Umbra` is still there.
 
 Pressing the Windows key on its own does not bring the taskbar back in this state.
 

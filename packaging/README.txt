@@ -42,21 +42,28 @@ GETTING YOUR WINDOWS TASKBAR BACK
     2. Right-click the bar, Exit Umbra, and check your normal taskbar is back.
     3. Delete this folder.
     4. Delete %LOCALAPPDATA%\Umbra (paste it into File Explorer's address bar). It holds
-       your settings, pins, wear history and a log. Do this last: while Umbra runs, it also
-       holds the note of how your taskbar was set up, which is how Umbra puts it back.
+       your settings, pins, wear history and a log. Do this last, and never while your
+       taskbar is missing: while Umbra runs, or after it crashed, it also holds the note of
+       how your taskbar was set up, which is how Umbra puts it back.
 
   If you deleted Umbra without step 1, the leftover sign-in entry does nothing. Task Manager
   (Ctrl+Shift+Esc), Startup apps, Umbra, Disable silences it.
 
   If Umbra crashed or was closed by force and your taskbar is missing:
 
-    - Start Umbra.exe again, then right-click the bar, Exit Umbra. It notices the last
-      session did not end properly and puts your taskbar back. Win+E still opens File
+    - Best: start Umbra.exe again, then right-click the bar, Exit Umbra. It notices the
+      last session did not end properly and puts your taskbar back exactly as it was,
+      including where its icons sit and whether it hides itself. Win+E still opens File
       Explorer without a taskbar.
     - Or restart Windows Explorer: Ctrl+Shift+Esc, find "Windows Explorer" under Processes,
-      Restart. Signing out and back in does the same. If the taskbar then hides itself,
-      turn off Settings > Personalization > Taskbar > Taskbar behaviors > Automatically
-      hide the taskbar.
+      Restart. Signing out and back in does the same. This way puts back neither of the two
+      settings Umbra changes, so check both in Windows Settings (Win+I) > Personalization >
+      Taskbar > Taskbar behaviors:
+        - Its icons will be on the left, because Umbra moves them there while it runs. If
+          you had them centred (the Windows 11 default), set Taskbar alignment to Center.
+        - It may hide itself. If so, untick Automatically hide the taskbar.
+      Starting Umbra once more and choosing Exit Umbra also fixes both, as long as
+      %LOCALAPPDATA%\Umbra is still there.
 
   Pressing the Windows key on its own does not bring the taskbar back in that state.
 
