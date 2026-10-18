@@ -125,6 +125,10 @@ internal partial class BarWindow : AppBarWindow
         // end of the screen from a chevron that sits near the trailing end of the bar.
         TrayOverflowPopup.CustomPopupPlacementCallback = PlaceTrayOverflow;
 
+#if DEBUG
+        AddMotionSpeedItem();
+#endif
+
         // Zero, not §3's 40 px: the bar engages when the pointer is on it, not when the pointer is
         // near it. A 40 px band lights the bar up on the way past, which reads as the taskbar
         // reacting to traffic rather than to the user. The Tier 0 → 1 ambient ramp is untouched —
@@ -543,6 +547,32 @@ internal partial class BarWindow : AppBarWindow
         new Settings.SettingsWindow(app.Settings, app.ApplyLiveSettingsToAll, app.Restart).ShowInFront();
     }
 
+#if DEBUG
+    /// <summary>
+    /// Puts "Motion speed" into the bar's menu, under the heatmap. <b>Debug builds only.</b>
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The slider is a development instrument and a release build does not contain it: not the
+    /// window, not <c>MotionDriver.TimeScale</c>, not the setter that pauses wear, and not this
+    /// item. The item is built here rather than written in <c>BarWindow.xaml</c> because XAML has
+    /// no conditional compilation, so an item declared there would be compiled into the release
+    /// BAML with a handler that does not exist.
+    /// </para>
+    /// <para>
+    /// The style comes from <see cref="MenuStyle"/>, not from the menu: a ContextMenu cannot find
+    /// the window's resources, and a null Style leaves an item that looks almost themed.
+    /// </para>
+    /// </remarks>
+    private void AddMotionSpeedItem()
+    {
+        MenuItem item = new() { Header = "Motion speed", Style = MenuStyle("DarkMenuItem") };
+        item.Click += OnMotionSpeedClick;
+
+        ItemCollection items = ContentRoot.ContextMenu.Items;
+        items.Insert(items.IndexOf(HeatmapMenuItem) + 1, item);
+    }
+
     /// <summary>
     /// Opens the drift speed simulator. Motion is imperceptible at 1× by design (P6), so this is
     /// the only way to confirm with your eyes that it is running and that it stays inside its slot.
@@ -561,6 +591,7 @@ internal partial class BarWindow : AppBarWindow
             if (_wear is not null) _wear.Suspended = suspended;
         }).ShowInFront();
     }
+#endif
 
     /// <summary>How long after startup the bar asks for notification icons a second time.</summary>
     private static readonly TimeSpan TrayRefreshDelay = TimeSpan.FromSeconds(5);

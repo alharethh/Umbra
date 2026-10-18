@@ -82,7 +82,13 @@ internal sealed class MotionDriver : IDisposable
     /// simulation runs, which is also why wear sampling is paused while it does — see
     /// <c>BarWindow.OnMotionSpeedClick</c>. Nothing about the 1× path changes.
     /// </para>
+    /// <para>
+    /// <b>Debug builds only</b>, with <c>MaxTimeScale</c> and the slider that sets them. A
+    /// release build has nothing that can change the timer's interval, so it ticks at §6.1's 2 Hz
+    /// for its whole life.
+    /// </para>
     /// </remarks>
+#if DEBUG
     public double TimeScale
     {
         get => _timeScale;
@@ -97,12 +103,14 @@ internal sealed class MotionDriver : IDisposable
     /// <summary>Ceiling on <see cref="TimeScale"/>. At this the 20-minute drift period runs in 0.6 s.</summary>
     public const double MaxTimeScale = 2000.0;
 
+    private double _timeScale = 1.0;
+#endif
+
     /// <summary>
     /// How much of the short-axis amplitude the clock uses, against everything else's full share.
     /// </summary>
     public const double ClockShortAxisScale = 0.5;
 
-    private double _timeScale = 1.0;
     private bool _enabled = true;
 
     /// <summary>Raised when the offset changes, in device-independent pixels.</summary>
@@ -166,7 +174,10 @@ internal sealed class MotionDriver : IDisposable
 
         if (!_clock.IsRunning) return;
 
-        _clock.Advance(elapsed * _timeScale);
+#if DEBUG
+        elapsed *= _timeScale;
+#endif
+        _clock.Advance(elapsed);
 
         (double dx, double dy, MotionOffset offset) = Emit();
 
