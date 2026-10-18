@@ -16,7 +16,8 @@
 
 param(
     [string]$Version = "0.1.0",
-    [string]$Repo = "C:\src\Umbra"
+    # The checkout this script sits in, so it builds whichever copy it was run from.
+    [string]$Repo = (Split-Path $PSScriptRoot -Parent)
 )
 
 $ErrorActionPreference = "Stop"
