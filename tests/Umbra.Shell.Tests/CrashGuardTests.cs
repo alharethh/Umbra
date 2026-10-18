@@ -212,7 +212,33 @@ public class CrashGuardTests : IDisposable
     [InlineData(new[] { "--GUARD", "1234" }, true)]
     [InlineData(new[] { "--wait-for", "1234" }, false)]
     [InlineData(new[] { "--edge", "left", "--guard", "1" }, false)]
+    [InlineData(new[] { "--guard-launch", "1234" }, false)]
     [InlineData(new string[0], false)]
     public void Only_A_Leading_Guard_Flag_Makes_A_Guard(string[] args, bool expected) =>
         Assert.Equal(expected, CrashGuard.IsGuardLaunch(args));
+
+    // The launcher is what keeps the guard out of the bar's process tree. If the two flags could
+    // be confused, the launcher would become a guard that is still the bar's child — and nothing
+    // would look wrong until a tree kill took both.
+    [Theory]
+    [InlineData(new[] { "--guard-launch", "1234" }, true)]
+    [InlineData(new[] { "--GUARD-LAUNCH", "1234" }, true)]
+    [InlineData(new[] { "--guard", "1234" }, false)]
+    [InlineData(new[] { "--edge", "left", "--guard-launch", "1" }, false)]
+    [InlineData(new string[0], false)]
+    public void Only_A_Leading_Launcher_Flag_Makes_A_Launcher(string[] args, bool expected) =>
+        Assert.Equal(expected, CrashGuard.IsLauncherLaunch(args));
+
+    [Fact]
+    public void Each_Hop_Passes_The_Bar_Id_On_Under_The_Next_Flag()
+    {
+        string first = CrashGuard.Arguments(CrashGuard.LauncherFlag, 4321);
+        string[] launcher = first.Split(' ');
+        Assert.True(CrashGuard.IsLauncherLaunch(launcher));
+        Assert.False(CrashGuard.IsGuardLaunch(launcher));
+
+        string[] guard = CrashGuard.Arguments(CrashGuard.Flag, int.Parse(launcher[1])).Split(' ');
+        Assert.True(CrashGuard.IsGuardLaunch(guard));
+        Assert.Equal("4321", guard[1]);
+    }
 }
