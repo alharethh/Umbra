@@ -38,6 +38,25 @@ internal interface ITaskbarState
 
     /// <summary>Sets, or with <see langword="null"/> removes, <c>TaskbarAl</c>.</summary>
     void SetAlignment(int? alignment);
+
+    /// <summary>
+    /// The auto-hide setting Explorer has <i>saved</i> as the user's — the Settings toggle, not
+    /// the runtime state — or <see langword="null"/> when it cannot be read in a known format.
+    /// See <see cref="StuckRects"/>.
+    /// </summary>
+    bool? GetSavedAutoHide();
+
+    /// <summary>
+    /// Rewrites only the saved auto-hide bit. Does nothing when the saved settings are not in a
+    /// format <see cref="StuckRects"/> recognises.
+    /// </summary>
+    void SetSavedAutoHide(bool autoHide);
+
+    /// <summary>
+    /// Identifies the Explorer process currently running the shell, or <see langword="null"/>
+    /// when there is none. Two different answers in one run mean Explorer restarted.
+    /// </summary>
+    string? GetShellIdentity();
 }
 
 /// <summary>The live implementation, over ManagedShell's <see cref="ExplorerHelper"/>.</summary>
@@ -96,4 +115,70 @@ internal sealed class ExplorerTaskbarState : ITaskbarState
             // Not being able to move the Start menu is a cosmetic loss, not a reason to fail.
         }
     }
+
+    public bool? GetSavedAutoHide()
+    {
+        try
+        {
+            using Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(StuckRects.KeyPath);
+            return StuckRects.ReadAutoHide(key?.GetValue(StuckRects.ValueName) as byte[]);
+        }
+        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or System.IO.IOException)
+        {
+            return null;
+        }
+    }
+
+    public void SetSavedAutoHide(bool autoHide)
+    {
+        try
+        {
+            using Microsoft.Win32.RegistryKey? key =
+                Microsoft.Win32.Registry.CurrentUser.OpenSubKey(StuckRects.KeyPath, writable: true);
+
+            if (key is null) return;
+
+            // Read and rewritten in one place so nothing but the one bit can change, and an
+            // unfamiliar blob is left exactly as Explorer wrote it.
+            byte[]? repaired = StuckRects.WithAutoHide(key.GetValue(StuckRects.ValueName) as byte[], autoHide);
+            if (repaired is null) return;
+
+            key.SetValue(StuckRects.ValueName, repaired, Microsoft.Win32.RegistryValueKind.Binary);
+        }
+        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or System.IO.IOException)
+        {
+            // A backstop that cannot run leaves things as they were without it.
+        }
+    }
+
+    /// <remarks>
+    /// The shell window is Explorer's desktop (<c>Progman</c>); Umbra creates no desktop of its own,
+    /// so its owner is the shell Explorer. The process start time is part of the answer so a
+    /// recycled process id cannot pass for the same Explorer.
+    /// </remarks>
+    public string? GetShellIdentity()
+    {
+        IntPtr shell = GetShellWindow();
+        if (shell == IntPtr.Zero) return null;
+
+        GetWindowThreadProcessId(shell, out uint pid);
+        if (pid == 0) return null;
+
+        try
+        {
+            using System.Diagnostics.Process process = System.Diagnostics.Process.GetProcessById((int)pid);
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                                 $"{pid}@{process.StartTime.ToFileTimeUtc()}");
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetShellWindow();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 }

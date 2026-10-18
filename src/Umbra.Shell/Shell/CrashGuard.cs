@@ -220,6 +220,12 @@ internal static class CrashGuard
 
         public void SetAlignment(int? alignment) => inner.SetAlignment(alignment);
 
+        public bool? GetSavedAutoHide() => inner.GetSavedAutoHide();
+
+        public void SetSavedAutoHide(bool autoHide) => inner.SetSavedAutoHide(autoHide);
+
+        public string? GetShellIdentity() => inner.GetShellIdentity();
+
         public bool Hidden
         {
             get => false;
