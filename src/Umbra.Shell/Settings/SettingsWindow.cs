@@ -324,6 +324,34 @@ internal partial class SettingsWindow : Window
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
+    /// <summary>
+    /// Where the hint at the bottom of the window sends the user: the front page's section on
+    /// getting the Windows taskbar back and removing Umbra. <c>RemovalHelpTests</c> checks the
+    /// anchor against the README's headings, because a renamed heading breaks the link silently —
+    /// GitHub just opens the top of the page.
+    /// </summary>
+    internal const string RemovalHelpUrl = "https://github.com/alharethh/Umbra#getting-your-windows-taskbar-back";
+
+    /// <summary>
+    /// A <c>Hyperlink</c> outside a navigation host does nothing on its own, so the browser is
+    /// started here, through the shell, so it is the user's default one.
+    /// </summary>
+    private void OnRemovalHelpClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(RemovalHelpUrl)
+            {
+                UseShellExecute = true,
+            })?.Dispose();
+            BringUpLog.Write($"settings: opened {RemovalHelpUrl}");
+        }
+        catch (Exception ex)
+        {
+            BringUpLog.Write(ex, $"settings: could not open {RemovalHelpUrl}");
+        }
+    }
+
     /// <summary>One entry in a combo box: what the user reads, and what gets stored.</summary>
     private sealed record Choice(string Label, object Value)
     {
