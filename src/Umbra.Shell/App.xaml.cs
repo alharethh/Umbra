@@ -364,12 +364,12 @@ public partial class App : Application
     /// <summary>
     /// <c>--edge left|top|right|bottom</c>. Defaults to bottom, the shipping default (§7.1).
     /// </summary>
-    private static BarEdge? ParseEdgeOverride(string[] args)
+    internal static BarEdge? ParseEdgeOverride(string[] args)
     {
         for (int i = 0; i < args.Length - 1; i++)
         {
             if (!string.Equals(args[i], "--edge", StringComparison.OrdinalIgnoreCase)) continue;
-            if (Enum.TryParse(args[i + 1], ignoreCase: true, out BarEdge parsed)) return parsed;
+            if (UmbraSettings.TryParseName(args[i + 1], out BarEdge parsed)) return parsed;
 
             BringUpLog.Write($"unrecognised --edge value '{args[i + 1]}', keeping the stored edge");
         }

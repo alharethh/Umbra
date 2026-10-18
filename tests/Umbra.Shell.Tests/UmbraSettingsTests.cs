@@ -81,6 +81,7 @@ public class UmbraSettingsTests : IDisposable
             StartWithWindows = true,
             Tray = true,
             Monitor = @"\\.\DISPLAY2",
+            AppIconHover = AppIconHover.Holographic,
         };
 
         original.Save(_path);
@@ -94,6 +95,22 @@ public class UmbraSettingsTests : IDisposable
         Assert.Equal(original.StartWithWindows, reloaded.StartWithWindows);
         Assert.Equal(original.Tray, reloaded.Tray);
         Assert.Equal(original.Monitor, reloaded.Monitor);
+        Assert.Equal(original.AppIconHover, reloaded.AppIconHover);
+    }
+
+    [Theory]
+    [InlineData("7")]
+    [InlineData("Top, Left")]
+    [InlineData("sideways")]
+    public void The_Edge_Flag_Ignores_A_Value_That_Is_Not_A_Name(string value)
+    {
+        Assert.Null(App.ParseEdgeOverride(["--edge", value]));
+    }
+
+    [Fact]
+    public void The_Edge_Flag_Reads_A_Name()
+    {
+        Assert.Equal(BarEdge.Left, App.ParseEdgeOverride(["--edge", "left"]));
     }
 
     [Fact]
@@ -133,6 +150,65 @@ public class UmbraSettingsTests : IDisposable
     public void An_Unusable_Edge_Keeps_The_Default()
     {
         Assert.Equal(BarEdge.Bottom, Written("edge = sideways").Edge);
+    }
+
+    /// <remarks>
+    /// <c>Enum.TryParse</c> reports success for any integer, declared or not, and for comma-joined
+    /// names, which it ORs together. <c>edge = 7</c> therefore reached <c>BarMetrics</c> as
+    /// <c>(BarEdge)7</c> and threw at startup, after Explorer's taskbar had been suppressed, on
+    /// every launch. A declared number is refused as well: Umbra only ever writes names, so a
+    /// number in the file was not written by it, and "1" meaning Top is a coincidence of
+    /// declaration order rather than a format. Each enum key is checked, because each had its own
+    /// <c>TryParse</c> and fixing one says nothing about the others.
+    /// </remarks>
+    [Theory]
+    [InlineData("edge = 7")]
+    [InlineData("edge = -1")]
+    [InlineData("edge = 1")]
+    [InlineData("edge = Top, Left")]
+    public void A_Number_Or_Combination_Is_Not_An_Edge(string line)
+    {
+        Assert.Equal(BarEdge.Bottom, Written(line).Edge);
+    }
+
+    [Theory]
+    [InlineData("alignment = 42")]
+    [InlineData("alignment = 1")]
+    [InlineData("alignment = Start, Center")]
+    public void A_Number_Or_Combination_Is_Not_An_Alignment(string line)
+    {
+        Assert.Equal(Alignment.Start, Written(line).Alignment);
+    }
+
+    [Theory]
+    [InlineData("appIconHover = 9")]
+    [InlineData("appIconHover = 1")]
+    public void A_Number_Is_Not_A_Hover_Treatment(string line)
+    {
+        Assert.Equal(new UmbraSettings().AppIconHover, Written(line).AppIconHover);
+    }
+
+    /// <summary>
+    /// The QA reproduction exactly: three out-of-range values in one file, and every declared
+    /// value of every key still has to come out as something the bar can lay out.
+    /// </summary>
+    [Fact]
+    public void The_QA_File_Yields_Only_Declared_Values()
+    {
+        UmbraSettings settings = Written("edge = 7", "alignment = 42", "appIconHover = 9");
+
+        Assert.True(Enum.IsDefined(settings.Edge));
+        Assert.True(Enum.IsDefined(settings.Alignment));
+        Assert.True(Enum.IsDefined(settings.AppIconHover));
+    }
+
+    [Theory]
+    [InlineData("edge = left", BarEdge.Left)]
+    [InlineData("edge = RIGHT", BarEdge.Right)]
+    [InlineData("edge =   Top  ", BarEdge.Top)]
+    public void Names_Still_Parse_In_Any_Case(string line, BarEdge expected)
+    {
+        Assert.Equal(expected, Written(line).Edge);
     }
 
     [Fact]
