@@ -28,7 +28,7 @@
 
 The whole path is skipped when `EnvironmentHelper.IsAppRunningAsShell` — if registered as the actual shell, Explorer's taskbar never exists.
 
-**Original state is saved** (`startupTaskbarState`) and restored on shutdown, which matters for §11 Q4's crash-recovery requirement: a hard kill leaves the user's taskbar autohidden and invisible until they fix it manually. Our watchdog needs to cover this too, not just `ABM_REMOVE`.
+**Original state is saved** (`startupTaskbarState`) and restored on shutdown, which matters for §11 Q4's crash-recovery requirement: a hard kill leaves the user's taskbar autohidden and invisible until they fix it manually. Our watchdog needs to cover this too, not just `ABM_REMOVE`. **Covered** by `Shell/CrashGuard.cs`: a second `Umbra.exe --guard <pid>` waits on the bar and restores the state, and the window visibility, the moment it dies. A kill of every `Umbra.exe` at once still falls back to the next launch.
 
 ### 2.2 How the tray is claimed
 

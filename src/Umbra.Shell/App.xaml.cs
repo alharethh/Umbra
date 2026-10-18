@@ -87,6 +87,11 @@ public partial class App : Application
         if (_host.RecoveredFromUncleanExit)
             BringUpLog.Write("recovered Explorer taskbar state from a previous unclean exit");
 
+        // After the host, because the marker file it just wrote is what the guard acts on. Covers
+        // every death no handler in this process can see: a kill, a native crash, FailFast, a
+        // stack overflow, "close the program" on a hung window. See CrashGuard.
+        CrashGuard.Launch();
+
         // Bottom is the shipping default (§7.1) and the only edge that contends with Explorer's
         // autohidden taskbar (shell-integration §2.5). Left is the control: it is the one edge
         // where none of that contention exists, so running the two back to back is what makes the

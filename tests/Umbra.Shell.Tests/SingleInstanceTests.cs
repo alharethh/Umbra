@@ -133,11 +133,19 @@ public class SingleInstanceTests
 
         // A thread that takes the lock and dies without releasing it, exactly as a killed process
         // does.
-        Thread killed = new(() => SingleInstance.Claim(name));
+        //
+        // Two races, both of which made this flaky under a parallel run. The dead thread's claim
+        // is kept reachable, because finalising its Mutex closes the last handle and destroys the
+        // named object, so the next claim would create a fresh one that was never abandoned. And
+        // the next claim waits a little, because Thread.Join returns when the managed thread is
+        // done, which can be a moment before the OS thread has exited and abandoned the lock.
+        SingleInstance? dead = null;
+        Thread killed = new(() => dead = SingleInstance.Claim(name));
         killed.Start();
         killed.Join();
 
-        using SingleInstance? next = SingleInstance.Claim(name);
+        using SingleInstance? next = SingleInstance.Claim(name, TimeSpan.FromSeconds(5));
+        GC.KeepAlive(dead);
 
         Assert.NotNull(next);
         Assert.True(next.WasAbandoned, "an abandoned lock should be reported as such, not silently taken");
