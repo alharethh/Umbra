@@ -212,7 +212,56 @@ public class CrashGuardTests : IDisposable
     [InlineData(new[] { "--GUARD", "1234" }, true)]
     [InlineData(new[] { "--wait-for", "1234" }, false)]
     [InlineData(new[] { "--edge", "left", "--guard", "1" }, false)]
+    [InlineData(new[] { "--guard-launch", "1234" }, false)]
     [InlineData(new string[0], false)]
     public void Only_A_Leading_Guard_Flag_Makes_A_Guard(string[] args, bool expected) =>
         Assert.Equal(expected, CrashGuard.IsGuardLaunch(args));
+
+    // The launcher is what keeps the guard out of the bar's process tree. If the two flags could
+    // be confused, the launcher would become a guard that is still the bar's child — and nothing
+    // would look wrong until a tree kill took both.
+    [Theory]
+    [InlineData(new[] { "--guard-launch", "1234" }, true)]
+    [InlineData(new[] { "--GUARD-LAUNCH", "1234" }, true)]
+    [InlineData(new[] { "--guard", "1234" }, false)]
+    [InlineData(new[] { "--edge", "left", "--guard-launch", "1" }, false)]
+    [InlineData(new string[0], false)]
+    public void Only_A_Leading_Launcher_Flag_Makes_A_Launcher(string[] args, bool expected) =>
+        Assert.Equal(expected, CrashGuard.IsLauncherLaunch(args));
+
+    // These go through the functions Launch and RunLauncher really call, and Start takes nothing
+    // but a finished command line, so they fail if either hop starts the wrong flag.
+    // Mutation-checked: the bar starting --guard directly (the guard back inside its process
+    // tree), and the launcher starting another launcher (an endless chain, no guard), each turn
+    // this red.
+    [Fact]
+    public void The_Bar_Starts_A_Launcher_Not_A_Guard()
+    {
+        string[] launcher = CrashGuard.LauncherArguments(4321).Split(' ');
+
+        Assert.True(CrashGuard.IsLauncherLaunch(launcher));
+        Assert.False(CrashGuard.IsGuardLaunch(launcher));
+        Assert.Equal("4321", launcher[1]);
+    }
+
+    [Fact]
+    public void The_Launcher_Starts_A_Guard_For_The_Same_Bar_Not_Another_Launcher()
+    {
+        string? guardArgs = CrashGuard.GuardArgumentsFor(CrashGuard.LauncherArguments(4321).Split(' '));
+
+        Assert.NotNull(guardArgs);
+        string[] guard = guardArgs.Split(' ');
+        Assert.True(CrashGuard.IsGuardLaunch(guard));
+        Assert.False(CrashGuard.IsLauncherLaunch(guard));
+        Assert.Equal("4321", guard[1]);
+    }
+
+    [Theory]
+    [InlineData("--guard-launch")]
+    [InlineData("--guard-launch abc")]
+    [InlineData("--guard-launch ")]
+    [InlineData("--guard 1234")]
+    [InlineData("")]
+    public void A_Launcher_Without_A_Bar_Id_Starts_Nothing(string commandLine) =>
+        Assert.Null(CrashGuard.GuardArgumentsFor(commandLine.Length == 0 ? [] : commandLine.Split(' ')));
 }

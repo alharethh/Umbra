@@ -43,16 +43,38 @@ namespace Umbra.Shell.Shell;
 /// <c>ABM_SETSTATE</c> through, and only when there is a marker to act on.
 /// </para>
 /// <para>
-/// <b>Known gap, accepted:</b> <c>Stop-Process -Name Umbra</c> (or ending the whole process tree)
+/// <b>It is not the bar's child.</b> The bar starts <c>Umbra.exe --guard-launch &lt;pid&gt;</c>,
+/// which starts the guard and exits at once, so the guard's parent is a process that no longer
+/// exists. Ending the bar's process tree — <c>taskkill /T</c>, and Task Manager's "End task",
+/// which groups an application with its children — follows parent links, and with the link
+/// broken it ends the bar alone. Measured on the second machine (2026-10-18): as the bar's child,
+/// <c>taskkill /T /F</c> took the guard with it and left Explorer's taskbar auto-hidden and
+/// unreserved; detached, the guard survives and puts it back. The one-hop launcher was chosen
+/// over <c>PROC_THREAD_ATTRIBUTE_PARENT_PROCESS</c>, which would do the same in one process but
+/// is parent-process spoofing, a pattern antivirus heuristics look for, and over starting through
+/// <c>explorer.exe</c>, which passes no arguments.
+/// </para>
+/// <para>
+/// <b>Known gap, accepted:</b> <c>Stop-Process -Name Umbra</c> (or <c>taskkill /IM Umbra.exe</c>)
 /// kills the guard too, since it is also <c>Umbra.exe</c>. That case still falls back to the next
-/// launch. Covering it would need something outside the process name, such as a scheduled task,
-/// which is a heavier thing to install on a stranger's machine than the failure warrants.
+/// launch. Measured 2026-10-18 with Explorer's saved auto-hide off (<c>StuckRects3</c> byte 8 =
+/// <c>0x02</c>): Explorer's taskbar comes back visible but auto-hidden, a 2 px sliver that
+/// reveals on hover and reserves no space, until Umbra is started again or Explorer restarts.
+/// Earlier, with byte 8 = <c>0x03</c>, it stayed invisible. Covering it would need something
+/// outside the process name, such as a scheduled task, which is a heavier thing to install on a
+/// stranger's machine than the failure warrants.
 /// </para>
 /// </remarks>
 internal static class CrashGuard
 {
     /// <summary>The flag that turns a launch into a guard.</summary>
     public const string Flag = "--guard";
+
+    /// <summary>
+    /// The flag for the short-lived process between the bar and its guard, which exists only so
+    /// the guard is not the bar's child.
+    /// </summary>
+    public const string LauncherFlag = "--guard-launch";
 
     /// <summary>What the guard found once the bar was gone.</summary>
     public enum Outcome
@@ -72,31 +94,100 @@ internal static class CrashGuard
         args.Length >= 1 && string.Equals(args[0], Flag, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Starts a guard for this process. Called by the bar once <see cref="ShellHost"/> has
-    /// written the marker. Best-effort: a bar without a guard is what shipped before.
+    /// True when the command line asks for the launcher hop. Exact, like <see cref="IsGuardLaunch"/>:
+    /// a prefix match on <c>--guard</c> would take the launcher for a guard, which would then watch
+    /// the bar as its child — working, and silently back inside the bar's process tree.
     /// </summary>
-    public static void Launch()
+    public static bool IsLauncherLaunch(string[] args) =>
+        args.Length >= 1 && string.Equals(args[0], LauncherFlag, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The bar's command line for the launcher hop. <see cref="Launch"/> starts exactly this, and
+    /// <see cref="Start"/> takes a finished command line rather than a flag, so a test of this is
+    /// a test of what the bar actually starts.
+    /// </summary>
+    /// <remarks>
+    /// The flag is the whole point. Starting <see cref="Flag"/> here instead would still work —
+    /// the guard would watch the bar and restore after a crash — and would put the guard straight
+    /// back inside the bar's process tree, where a tree kill takes it too.
+    /// </remarks>
+    public static string LauncherArguments(int barId) => Arguments(LauncherFlag, barId);
+
+    /// <summary>
+    /// The launcher's command line for the guard, from the launcher's own arguments, or null when
+    /// they carry no bar process id. <see cref="RunLauncher"/> starts exactly this.
+    /// </summary>
+    /// <remarks>
+    /// It must name <see cref="Flag"/>, never <see cref="LauncherFlag"/>: a launcher that started
+    /// another launcher would exit, and that one would start another, a chain of processes with no
+    /// guard at the end of it.
+    /// </remarks>
+    public static string? GuardArgumentsFor(string[] launcherArgs)
+    {
+        if (!IsLauncherLaunch(launcherArgs) || launcherArgs.Length < 2 ||
+            !int.TryParse(launcherArgs[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int barId))
+        {
+            return null;
+        }
+
+        return Arguments(Flag, barId);
+    }
+
+    private static string Arguments(string flag, int barId) =>
+        string.Create(CultureInfo.InvariantCulture, $"{flag} {barId}");
+
+    /// <summary>
+    /// Starts a guard for this process, through the launcher hop. Called by the bar once
+    /// <see cref="ShellHost"/> has written the marker. Best-effort: a bar without a guard is what
+    /// shipped before.
+    /// </summary>
+    /// <remarks>
+    /// Not waited for. If the bar dies before the launcher has started the guard, the guard finds
+    /// the bar gone, and the lock and the marker decide what happens, exactly as for a bar that
+    /// died during its own startup.
+    /// </remarks>
+    public static void Launch() => Start(LauncherArguments(Environment.ProcessId), "crash guard launcher");
+
+    /// <summary>
+    /// The launcher's whole life: start the guard for the bar it was given, and exit, which is
+    /// what leaves the guard without a living parent. Returns its exit code.
+    /// </summary>
+    public static int RunLauncher(string[] args)
+    {
+        string? guardArgs = GuardArgumentsFor(args);
+        if (guardArgs is null)
+        {
+            BringUpLog.Write("crash guard launcher: no bar process id given; exiting");
+            return 2;
+        }
+
+        return Start(guardArgs, "crash guard") ? 0 : 1;
+    }
+
+    private static bool Start(string arguments, string what)
     {
         string? exe = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exe))
         {
-            BringUpLog.Write("crash guard not started: the process path is unknown");
-            return;
+            BringUpLog.Write($"{what} not started: the process path is unknown");
+            return false;
         }
 
         try
         {
-            using Process? guard = Process.Start(new ProcessStartInfo(exe)
+            using Process? started = Process.Start(new ProcessStartInfo(exe)
             {
                 UseShellExecute = false,
-                Arguments = string.Create(CultureInfo.InvariantCulture, $"{Flag} {Environment.ProcessId}"),
+                Arguments = arguments,
             });
 
-            BringUpLog.Write($"crash guard started, pid {guard?.Id}");
+            BringUpLog.Write($"{what} started as \"{arguments}\", pid {started?.Id}");
+            return started is not null;
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
-            BringUpLog.Write(e, "crash guard could not be started");
+            BringUpLog.Write(e, $"{what} could not be started");
+            return false;
         }
     }
 
