@@ -261,6 +261,18 @@
             </StackPanel>
         </Grid>
 
+        <!--
+            How to leave, at the bottom where it is out of the way. A pointer rather than a Remove
+            button: the front page already has the steps in the order that cannot strand a user
+            without a taskbar, and a second copy of them here would drift.
+        -->
+        <TextBlock Style="{StaticResource Hint}" Margin="0,14,0,0">
+            <Run Text="To go back to the Windows taskbar, right-click the bar → Exit Umbra. To remove Umbra completely, see" />
+            <Hyperlink Click="OnRemovalHelpClick"
+                       Foreground="#FFB6B6AD"><Run Text="Getting your Windows taskbar back" /></Hyperlink>
+            <Run Text="on the front page." />
+        </TextBlock>
+
     </StackPanel>
 
 </Window>
