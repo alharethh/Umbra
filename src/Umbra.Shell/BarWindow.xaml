@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:appbar="clr-namespace:ManagedShell.AppBar;assembly=ManagedShell.AppBar"
         xmlns:render="clr-namespace:Umbra.Shell.Rendering"
+        xmlns:shell="clr-namespace:Umbra.Shell.Shell"
         xmlns:tiers="clr-namespace:Umbra.Core.Tiers;assembly=Umbra.Core"
         x:ClassModifier="internal"
         Title="Umbra"
@@ -52,6 +53,7 @@
 
         <render:TierIconConverter x:Key="TierIcon" Element="RunningIcon" />
         <render:TierIconConverter x:Key="TrayTierIcon" Element="TrayIcon" />
+        <shell:TrayIconNameConverter x:Key="TrayIconName" />
         <render:TierBrushConverter x:Key="IndicatorBrush" Element="RunningIndicator" />
         <render:TierBrushConverter x:Key="ClockBrush" Element="Clock" />
         <render:TierBrushConverter x:Key="StartGlyphBrush" Element="StartGlyph" />
@@ -810,7 +812,16 @@
 
                         <ItemsControl.ItemContainerStyle>
                             <Style TargetType="ContentPresenter">
-                                <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                                <!-- Never empty: an empty name is announced as the type name. TrayIconName. -->
+                                <Setter Property="AutomationProperties.Name">
+                                    <Setter.Value>
+                                        <MultiBinding Converter="{StaticResource TrayIconName}">
+                                            <Binding Path="Title" />
+                                            <Binding Path="GUID" />
+                                            <Binding Path="Path" />
+                                        </MultiBinding>
+                                    </Setter.Value>
+                                </Setter>
                             </Style>
                         </ItemsControl.ItemContainerStyle>
 
@@ -1079,7 +1090,16 @@
                               ItemTemplate="{StaticResource TrayIconTemplate}">
                     <ItemsControl.ItemContainerStyle>
                         <Style TargetType="ContentPresenter">
-                            <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                            <!-- Never empty: an empty name is announced as the type name. TrayIconName. -->
+                            <Setter Property="AutomationProperties.Name">
+                                <Setter.Value>
+                                    <MultiBinding Converter="{StaticResource TrayIconName}">
+                                        <Binding Path="Title" />
+                                        <Binding Path="GUID" />
+                                        <Binding Path="Path" />
+                                    </MultiBinding>
+                                </Setter.Value>
+                            </Setter>
                         </Style>
                     </ItemsControl.ItemContainerStyle>
 
