@@ -229,16 +229,39 @@ public class CrashGuardTests : IDisposable
     public void Only_A_Leading_Launcher_Flag_Makes_A_Launcher(string[] args, bool expected) =>
         Assert.Equal(expected, CrashGuard.IsLauncherLaunch(args));
 
+    // These go through the functions Launch and RunLauncher really call, and Start takes nothing
+    // but a finished command line, so they fail if either hop starts the wrong flag.
+    // Mutation-checked: the bar starting --guard directly (the guard back inside its process
+    // tree), and the launcher starting another launcher (an endless chain, no guard), each turn
+    // this red.
     [Fact]
-    public void Each_Hop_Passes_The_Bar_Id_On_Under_The_Next_Flag()
+    public void The_Bar_Starts_A_Launcher_Not_A_Guard()
     {
-        string first = CrashGuard.Arguments(CrashGuard.LauncherFlag, 4321);
-        string[] launcher = first.Split(' ');
+        string[] launcher = CrashGuard.LauncherArguments(4321).Split(' ');
+
         Assert.True(CrashGuard.IsLauncherLaunch(launcher));
         Assert.False(CrashGuard.IsGuardLaunch(launcher));
+        Assert.Equal("4321", launcher[1]);
+    }
 
-        string[] guard = CrashGuard.Arguments(CrashGuard.Flag, int.Parse(launcher[1])).Split(' ');
+    [Fact]
+    public void The_Launcher_Starts_A_Guard_For_The_Same_Bar_Not_Another_Launcher()
+    {
+        string? guardArgs = CrashGuard.GuardArgumentsFor(CrashGuard.LauncherArguments(4321).Split(' '));
+
+        Assert.NotNull(guardArgs);
+        string[] guard = guardArgs.Split(' ');
         Assert.True(CrashGuard.IsGuardLaunch(guard));
+        Assert.False(CrashGuard.IsLauncherLaunch(guard));
         Assert.Equal("4321", guard[1]);
     }
+
+    [Theory]
+    [InlineData("--guard-launch")]
+    [InlineData("--guard-launch abc")]
+    [InlineData("--guard-launch ")]
+    [InlineData("--guard 1234")]
+    [InlineData("")]
+    public void A_Launcher_Without_A_Bar_Id_Starts_Nothing(string commandLine) =>
+        Assert.Null(CrashGuard.GuardArgumentsFor(commandLine.Length == 0 ? [] : commandLine.Split(' ')));
 }

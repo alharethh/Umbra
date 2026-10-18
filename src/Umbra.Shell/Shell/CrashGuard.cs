@@ -101,8 +101,39 @@ internal static class CrashGuard
     public static bool IsLauncherLaunch(string[] args) =>
         args.Length >= 1 && string.Equals(args[0], LauncherFlag, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>The command line each hop passes on: the flag, then the bar's process id.</summary>
-    public static string Arguments(string flag, int barId) =>
+    /// <summary>
+    /// The bar's command line for the launcher hop. <see cref="Launch"/> starts exactly this, and
+    /// <see cref="Start"/> takes a finished command line rather than a flag, so a test of this is
+    /// a test of what the bar actually starts.
+    /// </summary>
+    /// <remarks>
+    /// The flag is the whole point. Starting <see cref="Flag"/> here instead would still work —
+    /// the guard would watch the bar and restore after a crash — and would put the guard straight
+    /// back inside the bar's process tree, where a tree kill takes it too.
+    /// </remarks>
+    public static string LauncherArguments(int barId) => Arguments(LauncherFlag, barId);
+
+    /// <summary>
+    /// The launcher's command line for the guard, from the launcher's own arguments, or null when
+    /// they carry no bar process id. <see cref="RunLauncher"/> starts exactly this.
+    /// </summary>
+    /// <remarks>
+    /// It must name <see cref="Flag"/>, never <see cref="LauncherFlag"/>: a launcher that started
+    /// another launcher would exit, and that one would start another, a chain of processes with no
+    /// guard at the end of it.
+    /// </remarks>
+    public static string? GuardArgumentsFor(string[] launcherArgs)
+    {
+        if (!IsLauncherLaunch(launcherArgs) || launcherArgs.Length < 2 ||
+            !int.TryParse(launcherArgs[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int barId))
+        {
+            return null;
+        }
+
+        return Arguments(Flag, barId);
+    }
+
+    private static string Arguments(string flag, int barId) =>
         string.Create(CultureInfo.InvariantCulture, $"{flag} {barId}");
 
     /// <summary>
@@ -115,7 +146,7 @@ internal static class CrashGuard
     /// the bar gone, and the lock and the marker decide what happens, exactly as for a bar that
     /// died during its own startup.
     /// </remarks>
-    public static void Launch() => Start(LauncherFlag, Environment.ProcessId, "crash guard launcher");
+    public static void Launch() => Start(LauncherArguments(Environment.ProcessId), "crash guard launcher");
 
     /// <summary>
     /// The launcher's whole life: start the guard for the bar it was given, and exit, which is
@@ -123,17 +154,17 @@ internal static class CrashGuard
     /// </summary>
     public static int RunLauncher(string[] args)
     {
-        if (args.Length < 2 ||
-            !int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int barId))
+        string? guardArgs = GuardArgumentsFor(args);
+        if (guardArgs is null)
         {
             BringUpLog.Write("crash guard launcher: no bar process id given; exiting");
             return 2;
         }
 
-        return Start(Flag, barId, "crash guard") ? 0 : 1;
+        return Start(guardArgs, "crash guard") ? 0 : 1;
     }
 
-    private static bool Start(string flag, int barId, string what)
+    private static bool Start(string arguments, string what)
     {
         string? exe = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exe))
@@ -147,10 +178,10 @@ internal static class CrashGuard
             using Process? started = Process.Start(new ProcessStartInfo(exe)
             {
                 UseShellExecute = false,
-                Arguments = Arguments(flag, barId),
+                Arguments = arguments,
             });
 
-            BringUpLog.Write($"{what} started for bar {barId}, pid {started?.Id}");
+            BringUpLog.Write($"{what} started as \"{arguments}\", pid {started?.Id}");
             return started is not null;
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
