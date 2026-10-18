@@ -25,9 +25,18 @@ $ErrorActionPreference = "Stop"
 # Checked before anything is built rather than at the step that needs it. A bar running out of
 # artifacts\Umbra holds Umbra.exe open, and being told that after three minutes of publishing is
 # a worse way to find out than being told straight away.
+#
+# The folder is matched with its trailing separator. Without it, "artifacts\Umbra" is also a
+# prefix of "artifacts\Umbra-dev", where the debug bar lives for the whole of development, so the
+# script refused to run whenever anyone was working on the bar.
+function Test-RunsFromFolder([string]$ProcessPath, [string]$Folder) {
+    $prefix = $Folder.TrimEnd('\') + '\'
+    return [bool]$ProcessPath -and $ProcessPath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+}
+
 $runnable = Join-Path $Repo "artifacts\Umbra"
 $holding = @(Get-Process -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -and $_.Path.StartsWith($runnable, [StringComparison]::OrdinalIgnoreCase) })
+    Where-Object { Test-RunsFromFolder $_.Path $runnable })
 
 if ($holding.Count -gt 0) {
     $pid0 = $holding[0].Id
