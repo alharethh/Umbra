@@ -163,6 +163,11 @@ public partial class App : Application
     {
         BringUpLog.Write("--- clean shutdown ---");
 
+        // First, before anything below can stall: a bar the hang watch ends on its way out must
+        // not be relaunched by the guard. Exit and Restart have declared already; this catches
+        // every other way to Shutdown. See ExitIntent.
+        ExitIntent.Declare("exit");
+
 #if DEBUG
         _devControl?.Dispose();
         _devControl = null;
@@ -179,6 +184,18 @@ public partial class App : Application
         _instance = null;
 
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// Logoff or shutdown. Declared here rather than left to <see cref="OnExit"/>, because a
+    /// session that is ending can stall the bar long before WPF gets as far as exiting, and a bar
+    /// relaunched into a closing session would be ended again by Windows anyway, after suppressing
+    /// Explorer's taskbar on the way.
+    /// </summary>
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        ExitIntent.Declare($"session ending ({e.ReasonSessionEnding})");
+        base.OnSessionEnding(e);
     }
 
     /// <summary>
@@ -232,6 +249,10 @@ public partial class App : Application
                 Arguments = string.Join(' ', args.Select(a => a.Contains(' ') ? $"\"{a}\"" : a)),
             });
 
+            // Once the replacement is started, not before: a restart that failed leaves this bar
+            // running, and a real hang later must still be relaunched. From here on a stall on the
+            // way out must not have the guard start a third bar against the replacement.
+            ExitIntent.Declare("restart");
             BringUpLog.Write("restarting");
             Shutdown();
         }

@@ -25,9 +25,12 @@ public class CrashGuardTests : IDisposable
     private readonly string _statePath = Path.Combine(Path.GetTempPath(), $"umbra-guard-test-{Guid.NewGuid():N}");
     private readonly string _lockName = $@"Local\umbra-guard-test-{Guid.NewGuid():N}";
 
+    private readonly string _stampPath = Path.Combine(Path.GetTempPath(), $"umbra-relaunch-test-{Guid.NewGuid():N}");
+
     public void Dispose()
     {
         if (File.Exists(_statePath)) File.Delete(_statePath);
+        if (File.Exists(_stampPath)) File.Delete(_stampPath);
         GC.SuppressFinalize(this);
     }
 
@@ -294,4 +297,102 @@ public class CrashGuardTests : IDisposable
         // window has to cover that comfortably, or the "once" is not once.
         Assert.True(CrashGuard.RelaunchWindow >= TimeSpan.FromMinutes(2));
     }
+
+    // What Run does once the bar is gone, driven through the same method Run calls, with a fake
+    // start. Every refusal below is a bar started against the user's wishes if it goes: after
+    // their Exit, against a Restart's replacement, or after a crash the guard did not cause.
+
+    private int _starts;
+
+    private bool Conclude(bool ended, bool exitDeclared, CrashGuard.Outcome outcome, bool startSucceeds = true) =>
+        CrashGuard.ConcludeAfterBar(ended, exitDeclared, outcome, _stampPath, Now, () =>
+        {
+            _starts++;
+            return startSucceeds;
+        });
+
+    [Fact]
+    public void A_Hung_Bar_That_Was_Not_Leaving_Is_Started_Again_And_Recorded()
+    {
+        Assert.True(Conclude(ended: true, exitDeclared: false, CrashGuard.Outcome.Restored));
+        Assert.Equal(1, _starts);
+        Assert.True(File.Exists(_stampPath));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_Bar_The_Guard_Did_Not_End_Is_Never_Started_Again(bool restored)
+    {
+        // A crash, a kill, Task Manager, or a clean exit: the guard restores and leaves it there.
+        Assert.False(Conclude(ended: false, exitDeclared: false, restored ? CrashGuard.Outcome.Restored : CrashGuard.Outcome.NothingToDo));
+        Assert.Equal(0, _starts);
+        Assert.False(File.Exists(_stampPath));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_Bar_That_Stalled_On_Its_Way_Out_Is_Not_Started_Again(bool restored)
+    {
+        // Exit, Restart, dev-restart or logoff, then a stall before (Restored) or after
+        // (NothingToDo) ShellHost handed the taskbar back. The hang watch ends it; that is right.
+        Assert.False(Conclude(ended: true, exitDeclared: true, restored ? CrashGuard.Outcome.Restored : CrashGuard.Outcome.NothingToDo));
+        Assert.Equal(0, _starts);
+    }
+
+    [Fact]
+    public void A_Bar_That_Had_Already_Restored_Explorer_Is_Not_Started_Again_Even_Undeclared()
+    {
+        // No marker means ShellHost.Dispose had run, which only an exit reaches: the backstop for
+        // a bar whose exit intent could not be declared.
+        Assert.False(Conclude(ended: true, exitDeclared: false, CrashGuard.Outcome.NothingToDo));
+        Assert.Equal(0, _starts);
+    }
+
+    [Fact]
+    public void A_Hung_Bar_Is_Not_Started_Again_When_Another_Bar_Holds_The_Lock()
+    {
+        Assert.False(Conclude(ended: true, exitDeclared: false, CrashGuard.Outcome.AnotherBarIsRunning));
+        Assert.Equal(0, _starts);
+    }
+
+    [Fact]
+    public void A_Second_Hang_Inside_The_Window_Is_Not_Started_Again()
+    {
+        Assert.True(Conclude(ended: true, exitDeclared: false, CrashGuard.Outcome.Restored));
+        Assert.False(Conclude(ended: true, exitDeclared: false, CrashGuard.Outcome.Restored));
+        Assert.Equal(1, _starts);
+    }
+
+    [Fact]
+    public void A_Failed_Start_Still_Uses_The_Allowance()
+    {
+        // The stamp is the loop bound, so it is written first and kept.
+        Assert.False(Conclude(ended: true, exitDeclared: false, CrashGuard.Outcome.Restored, startSucceeds: false));
+        Assert.True(File.Exists(_stampPath));
+        Assert.False(Conclude(ended: true, exitDeclared: false, CrashGuard.Outcome.Restored));
+        Assert.Equal(1, _starts);
+    }
+
+    [Fact]
+    public void An_Exit_Declared_By_The_Bar_Is_Seen_By_A_Guard_Whichever_Opens_First()
+    {
+        // Ids no real process has, so the test cannot see a real bar's event or set one.
+        int guardFirst = -Random.Shared.Next(1, int.MaxValue);
+        int barFirst = guardFirst == -1 ? -2 : guardFirst + 1;
+
+        using var watched = ExitIntent.Watch(guardFirst);
+        Assert.False(ExitIntent.WasDeclared(watched));
+        ExitIntent.Declare(guardFirst, "test");
+        Assert.True(ExitIntent.WasDeclared(watched));
+
+        ExitIntent.Declare(barFirst, "test");
+        using var late = ExitIntent.Watch(barFirst);
+        Assert.True(ExitIntent.WasDeclared(late));
+    }
+
+    [Fact]
+    public void A_Guard_Without_An_Exit_Intent_Reads_It_As_Undeclared() =>
+        Assert.False(ExitIntent.WasDeclared(null));
 }

@@ -1950,6 +1950,9 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>Closes the bar, which the AppBar base class otherwise refuses to do.</summary>
     public void CloseForShutdown()
     {
+        // Before the close, which runs window teardown that can stall ahead of App.OnExit. Covers
+        // Exit and dev-restart's exit event. See ExitIntent.
+        Shell.ExitIntent.Declare("bar closing for shutdown");
         AllowClose = true;
         Close();
     }
