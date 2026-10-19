@@ -10,7 +10,8 @@
     3. Waits until the process has really gone: its windows disappear several seconds before it
        releases the single-instance lock, and a launch inside that gap is refused as a duplicate.
     4. Publishes into artifacts\Umbra-dev and starts it through explorer.exe, so it runs outside
-       whatever container the caller is in and reads the user's real %LOCALAPPDATA%.
+       whatever container the caller is in and reads the user's real %LOCALAPPDATA%. If no bar
+       process appears within 10 s, launches once more; the single-instance lock makes that safe.
 
     A release bar (artifacts\Umbra, the download, the sign-in entry) has no exit event. If one is
     running the script says so and, with -WaitForManualExit, waits for it to be exited by hand
@@ -18,9 +19,14 @@
 
 .PARAMETER WaitForManualExit
     Minutes to wait for a non-dev bar to be exited by hand. 0 fails immediately instead.
+
+.PARAMETER SimulateLostLaunch
+    Skips the first launch, as if explorer.exe's handoff had produced nothing, so the retry in
+    step 4 can be exercised. For testing this script only.
 #>
 param(
-    [int]$WaitForManualExit = 0
+    [int]$WaitForManualExit = 0,
+    [switch]$SimulateLostLaunch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,8 +89,31 @@ if (-not $unlocked) { throw "$exe is still locked." }
 & dotnet publish $project -c Debug -o $out --no-build --nologo -v q
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed. No bar is running; start the last good one by hand.' }
 
-Start-Process explorer.exe -ArgumentList "`"$exe`""
+# Through explorer.exe, which hands the launch to the running shell and exits — so its exit code
+# says nothing, and once (2026-10-17, shortly after Explorer had been restarted under the bar) the
+# handoff produced no process at all. What tells the two apart is whether an Umbra.exe from this
+# folder appears, not whether the lock does: the lock comes seconds later, after startup work.
+# One retry, and only when no process appeared. A slow bar that is merely late is still caught by
+# the single-instance lock, which refuses the second before it touches Explorer, so a retry cannot
+# make two bars; but it would add a "--- startup --- / already holds the bar" pair to the log for
+# nothing, which is why the wait for a process is generous rather than tight.
+function Test-NewBarProcess([datetime]$Since) {
+    foreach ($p in Get-Process Umbra -ErrorAction SilentlyContinue) {
+        try { if ($p.Path -eq $exe -and $p.StartTime -ge $Since) { return $true } } catch { }
+    }
+    return $false
+}
 
-if (-not (Wait-Until { Test-BarRunning } 20)) { throw 'The new bar did not start. Check bring-up.log.' }
+for ($attempt = 1; $attempt -le 2; $attempt++) {
+    $launchedAt = (Get-Date).AddMilliseconds(-500)
+    if ($attempt -eq 1 -and $SimulateLostLaunch) { Write-Host 'Simulating a lost launch: not starting the bar this time.' }
+    else { Start-Process explorer.exe -ArgumentList "`"$exe`"" }
+
+    if (Wait-Until { (Test-BarRunning) -or (Test-NewBarProcess $launchedAt) } 10) { break }
+    if ($attempt -eq 2) { throw 'The new bar did not start: two launches through explorer.exe produced no process. Start it by hand from artifacts\Umbra-dev.' }
+    Write-Host 'No bar process appeared within 10 s of the launch; launching once more.'
+}
+
+if (-not (Wait-Until { Test-BarRunning } 20)) { throw 'The new bar started but did not take the single-instance lock. Check bring-up.log.' }
 
 Write-Host ("Dev bar started {0:HH:mm:ss}, code built {1:HH:mm:ss}." -f (Get-Date), (Get-Item (Join-Path $out 'Umbra.dll')).LastWriteTime)
