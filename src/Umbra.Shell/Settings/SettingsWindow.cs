@@ -42,6 +42,9 @@ internal partial class SettingsWindow : Window
 
         InitializeComponent();
 
+        // Taller than some screens' work areas; the settings scroll and the footer stays put.
+        WorkAreaFit.Attach(this);
+
         PopulateEdges();
         PopulateAlignments();
         PopulateMonitors();

@@ -116,163 +116,222 @@
         </Style>
     </Window.Resources>
 
-    <StackPanel Margin="18">
+    <!--
+        Settings scroll, the footer does not. WorkAreaFit caps the window at its monitor's work
+        area; under the cap the star row is given everything its content asks for and the bar never
+        appears, so on a screen that fits it this is the same window as before. Over it, Close and
+        Restart stay in the window and the settings scroll instead of running off the screen.
+        Measured on a 2256×1504 panel at 150%: 1412 of 1432 physical px of work area, uncapped.
+    -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-        <TextBlock Text="Placement" FontWeight="SemiBold" Margin="0,0,0,6" />
+        <ScrollViewer x:Name="Body" Grid.Row="0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Focusable="False">
+            <ScrollViewer.Resources>
+                <!--
+                    Scoped to this viewer: the stock bar is light chrome on a dark window, the same
+                    problem the ComboBox template above exists for. A thumb and nothing else, like
+                    Windows 11's own overlay bars; the track either side of it still pages.
+                -->
+                <Style TargetType="ScrollBar">
+                    <Setter Property="Width" Value="10" />
+                    <Setter Property="MinWidth" Value="10" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ScrollBar">
+                                <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False" />
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False" />
+                                    </Track.IncreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb>
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Border Background="#FF46463E" CornerRadius="3" Margin="3,2" />
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                    </Track.Thumb>
+                                </Track>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ScrollViewer.Resources>
 
-        <Grid Margin="0,0,0,4">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Screen edge" />
-            <ComboBox Grid.Column="1" x:Name="EdgeBox" />
-        </Grid>
+            <StackPanel Margin="18,18,18,0">
 
-        <Grid Margin="0,0,0,4">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Icon row" />
-            <ComboBox Grid.Column="1" x:Name="AlignmentBox" />
-        </Grid>
+                <TextBlock Text="Placement" FontWeight="SemiBold" Margin="0,0,0,6" />
 
-        <Grid Margin="0,0,0,4">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Monitor" />
-            <ComboBox Grid.Column="1" x:Name="MonitorBox" />
-        </Grid>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Screen edge" />
+                    <ComboBox Grid.Column="1" x:Name="EdgeBox" />
+                </Grid>
 
-        <TextBlock Style="{StaticResource Hint}"
-                   Text="All three apply immediately. Moving the bar re-registers its reserved space, so every maximised window on the desktop reflows — that is expected." />
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Icon row" />
+                    <ComboBox Grid.Column="1" x:Name="AlignmentBox" />
+                </Grid>
 
-        <TextBlock Text="Wear" FontWeight="SemiBold" Margin="0,8,0,6" />
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Monitor" />
+                    <ComboBox Grid.Column="1" x:Name="MonitorBox" />
+                </Grid>
 
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Resting icon size" />
-            <Slider Grid.Column="1" x:Name="IconSize"
-                    Minimum="12" Maximum="24" TickFrequency="1"
-                    IsSnapToTickEnabled="True"
-                    ValueChanged="OnIconSizeChanged" />
-            <TextBlock Grid.Column="2" x:Name="IconSizeReadout"
-                       MinWidth="112" TextAlignment="Right" FontFamily="Consolas" FontSize="11" />
-        </Grid>
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="All three apply immediately. Moving the bar re-registers its reserved space, so every maximised window on the desktop reflows — that is expected." />
 
-        <TextBlock Style="{StaticResource Hint}"
-                   Text="Icons shrink while the bar is resting and grow back to 24 px when you point at it, so the smaller size is only ever seen out of the corner of your eye. Applies immediately." />
+                <TextBlock Text="Wear" FontWeight="SemiBold" Margin="0,8,0,6" />
 
-        <CheckBox x:Name="StartupBox" Content="Start Umbra when I sign in" Margin="0,0,0,2" />
-        <TextBlock Style="{StaticResource Hint}"
-                   Text="Adds Umbra to the sign-in programs for your account only. It appears in Task Manager's Startup tab, so you can turn it off from there too. Applies immediately." />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Resting icon size" />
+                    <Slider Grid.Column="1" x:Name="IconSize"
+                            Minimum="12" Maximum="24" TickFrequency="1"
+                            IsSnapToTickEnabled="True"
+                            ValueChanged="OnIconSizeChanged" />
+                    <TextBlock Grid.Column="2" x:Name="IconSizeReadout"
+                               MinWidth="112" TextAlignment="Right" FontFamily="Consolas" FontSize="11" />
+                </Grid>
 
-        <CheckBox x:Name="MotionBox" Content="Drift and micro-jitter" Margin="0,0,0,2" />
-        <TextBlock Style="{StaticResource Hint}"
-                   Text="Moves the bar's contents within their own slots, far too slowly to see. Applies immediately." />
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="Icons shrink while the bar is resting and grow back to 24 px when you point at it, so the smaller size is only ever seen out of the corner of your eye. Applies immediately." />
 
-        <CheckBox x:Name="EveryMonitorBox" Content="A bar on every monitor" Margin="0,0,0,2" />
-        <TextBlock Style="{StaticResource Hint}"
-                   Text="Off by default. A non-OLED second screen pays for the dim resting state and the monochrome icons and gets nothing back, so this is only worth it if every screen is OLED. The notification area stays on the primary either way. Needs a restart." />
+                <CheckBox x:Name="StartupBox" Content="Start Umbra when I sign in" Margin="0,0,0,2" />
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="Adds Umbra to the sign-in programs for your account only. It appears in Task Manager's Startup tab, so you can turn it off from there too. Applies immediately." />
 
-        <CheckBox x:Name="TrayBox" Content="Host the notification area" Margin="0,0,0,2" />
-        <TextBlock Style="{StaticResource Hint}"
-                   Text="On by default. Shows the notification icons next to the clock, at the cost of a permanent 100 ms timer that makes sure applications keep sending their icons to Umbra rather than to Windows. An icon that is missing appears once its application next updates it, or from Refresh tray icons in the bar's menu. Needs a restart." />
+                <CheckBox x:Name="MotionBox" Content="Drift and micro-jitter" Margin="0,0,0,2" />
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="Moves the bar's contents within their own slots, far too slowly to see. Applies immediately." />
 
-        <TextBlock Text="Hover" FontWeight="SemiBold" Margin="0,8,0,6" />
+                <CheckBox x:Name="EveryMonitorBox" Content="A bar on every monitor" Margin="0,0,0,2" />
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="Off by default. A non-OLED second screen pays for the dim resting state and the monochrome icons and gets nothing back, so this is only worth it if every screen is OLED. The notification area stays on the primary either way. Needs a restart." />
 
-        <Grid Margin="0,0,0,2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+                <CheckBox x:Name="TrayBox" Content="Host the notification area" Margin="0,0,0,2" />
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="On by default. Shows the notification icons next to the clock, at the cost of a permanent 100 ms timer that makes sure applications keep sending their icons to Umbra rather than to Windows. An icon that is missing appears once its application next updates it, or from Refresh tray icons in the bar's menu. Needs a restart." />
 
-            <TextBlock Grid.Column="0" Text="Accent colour" VerticalAlignment="Center" />
-            <ComboBox Grid.Column="1" x:Name="AccentBox" />
-            <Border Grid.Column="2" x:Name="AccentSwatch"
-                    Width="26" Height="18" Margin="8,0,0,0"
-                    CornerRadius="3" BorderThickness="1" BorderBrush="#FF3A3A33" />
-        </Grid>
+                <TextBlock Text="Hover" FontWeight="SemiBold" Margin="0,8,0,6" />
 
-        <Grid Margin="0,4,0,2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+                <Grid Margin="0,0,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Column="0" Text="Or a hex value" VerticalAlignment="Center" />
-            <TextBox Grid.Column="1" x:Name="AccentHex"
-                     Background="#FF1B1B18" Foreground="#FFE8E4DA"
-                     BorderBrush="#FF3A3A33" BorderThickness="1"
-                     Padding="6,3" FontFamily="Consolas" />
-        </Grid>
+                    <TextBlock Grid.Column="0" Text="Accent colour" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" x:Name="AccentBox" />
+                    <Border Grid.Column="2" x:Name="AccentSwatch"
+                            Width="26" Height="18" Margin="8,0,0,0"
+                            CornerRadius="3" BorderThickness="1" BorderBrush="#FF3A3A33" />
+                </Grid>
 
-        <TextBlock Style="{StaticResource Hint}"
-                   Text="The colour of the sweep, the glow and the edge on the notification area, the clock and the Start button. Whatever you choose is capped to the brightest a hover is allowed to be, so this picks the hue and not the amount of light. Applies immediately." />
+                <Grid Margin="0,4,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-        <Grid Margin="0,4,0,2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Or a hex value" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" x:Name="AccentHex"
+                             Background="#FF1B1B18" Foreground="#FFE8E4DA"
+                             BorderBrush="#FF3A3A33" BorderThickness="1"
+                             Padding="6,3" FontFamily="Consolas" />
+                </Grid>
 
-            <TextBlock Grid.Column="0" Text="Application icons" VerticalAlignment="Center" />
-            <ComboBox Grid.Column="1" x:Name="AppHoverBox" />
-        </Grid>
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="The colour of the sweep, the glow and the edge on the notification area, the clock and the Start button. Whatever you choose is capped to the brightest a hover is allowed to be, so this picks the hue and not the amount of light. Applies immediately." />
 
-        <Grid Margin="0,4,0,2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+                <Grid Margin="0,4,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Column="0" Text="Chip colour" VerticalAlignment="Center" />
-            <TextBox Grid.Column="1" x:Name="AppHoverHex"
-                     Background="#FF1B1B18" Foreground="#FFE8E4DA"
-                     BorderBrush="#FF3A3A33" BorderThickness="1"
-                     Padding="6,3" FontFamily="Consolas" />
-            <Border Grid.Column="2" x:Name="AppHoverSwatch"
-                    Width="26" Height="18" Margin="8,0,0,0"
-                    CornerRadius="3" BorderThickness="1" BorderBrush="#FF3A3A33" />
-        </Grid>
+                    <TextBlock Grid.Column="0" Text="Application icons" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" x:Name="AppHoverBox" />
+                </Grid>
 
-        <TextBlock Style="{StaticResource Hint}"
-                   Text="The row can keep its plain chip or take the same holographic pane the notification area uses. The chip is the cheaper of the two by a wide margin — it is one dim rounded rectangle, where the pane is a lit surface with a glow — but both are only ever drawn while you are pointing at the bar. The chip colour applies to the plain one. Applies immediately." />
+                <Grid Margin="0,4,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-        <Border Height="1" Background="#FF2E2E28" Margin="0,6,0,12" />
+                    <TextBlock Grid.Column="0" Text="Chip colour" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" x:Name="AppHoverHex"
+                             Background="#FF1B1B18" Foreground="#FFE8E4DA"
+                             BorderBrush="#FF3A3A33" BorderThickness="1"
+                             Padding="6,3" FontFamily="Consolas" />
+                    <Border Grid.Column="2" x:Name="AppHoverSwatch"
+                            Width="26" Height="18" Margin="8,0,0,0"
+                            CornerRadius="3" BorderThickness="1" BorderBrush="#FF3A3A33" />
+                </Grid>
 
-        <Grid>
-            <TextBlock x:Name="RestartNote" HorizontalAlignment="Left"
-                       FontSize="11" Foreground="#FFC8B48A" TextWrapping="Wrap" MaxWidth="290" />
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Restart Umbra" x:Name="RestartButton" Padding="12,5" Margin="0,0,8,0" Click="OnRestartClick" />
-                <Button Content="Close" Padding="16,5" Click="OnCloseClick" />
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="The row can keep its plain chip or take the same holographic pane the notification area uses. The chip is the cheaper of the two by a wide margin — it is one dim rounded rectangle, where the pane is a lit surface with a glow — but both are only ever drawn while you are pointing at the bar. The chip colour applies to the plain one. Applies immediately." />
+
             </StackPanel>
-        </Grid>
+        </ScrollViewer>
 
-        <!--
-            How to leave, at the bottom where it is out of the way. A pointer rather than a Remove
-            button: the front page already has the steps in the order that cannot strand a user
-            without a taskbar, and a second copy of them here would drift.
-        -->
-        <TextBlock Style="{StaticResource Hint}" Margin="0,14,0,0">
-            <Run Text="To go back to the Windows taskbar, right-click the bar → Exit Umbra. To remove Umbra completely, see" />
-            <Hyperlink Click="OnRemovalHelpClick"
-                       Foreground="#FFB6B6AD"><Run Text="Getting your Windows taskbar back" /></Hyperlink>
-            <Run Text="on the front page." />
-        </TextBlock>
+        <StackPanel Grid.Row="1" Margin="18,0,18,18">
 
-    </StackPanel>
+            <Border Height="1" Background="#FF2E2E28" Margin="0,6,0,12" />
+
+            <Grid>
+                <TextBlock x:Name="RestartNote" HorizontalAlignment="Left"
+                           FontSize="11" Foreground="#FFC8B48A" TextWrapping="Wrap" MaxWidth="290" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Restart Umbra" x:Name="RestartButton" Padding="12,5" Margin="0,0,8,0" Click="OnRestartClick" />
+                    <Button Content="Close" x:Name="CloseButton" Padding="16,5" Click="OnCloseClick" />
+                </StackPanel>
+            </Grid>
+
+            <!--
+                How to leave, at the bottom where it is out of the way. A pointer rather than a Remove
+                button: the front page already has the steps in the order that cannot strand a user
+                without a taskbar, and a second copy of them here would drift.
+            -->
+            <TextBlock Style="{StaticResource Hint}" Margin="0,14,0,0">
+                <Run Text="To go back to the Windows taskbar, right-click the bar → Exit Umbra. To remove Umbra completely, see" />
+                <Hyperlink Click="OnRemovalHelpClick"
+                           Foreground="#FFB6B6AD"><Run Text="Getting your Windows taskbar back" /></Hyperlink>
+                <Run Text="on the front page." />
+            </TextBlock>
+
+        </StackPanel>
+
+    </Grid>
 
 </Window>
