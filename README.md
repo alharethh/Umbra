@@ -6,7 +6,7 @@
 
 **The Windows 11 taskbar burns into OLED panels. This one doesn't.**
 
-[![Download Umbra 0.1.2 for Windows](https://img.shields.io/badge/Download-Umbra%200.1.2-B0F7FB?style=for-the-badge&logo=windows11&logoColor=B0F7FB&labelColor=0B0B0B)](https://github.com/alharethh/Umbra/releases/download/v0.1.2/Umbra-0.1.2-win-x64.exe)
+[![Download Umbra 0.2.0 for Windows](https://img.shields.io/badge/Download-Umbra%200.2.0-B0F7FB?style=for-the-badge&logo=windows11&logoColor=B0F7FB&labelColor=0B0B0B)](https://github.com/alharethh/Umbra/releases/download/v0.2.0/Umbra-0.2.0-win-x64.exe)
 
 <sub>Windows 11 · x64 · 73 MB · nothing to install &nbsp;·&nbsp; [smaller build and all releases](https://github.com/alharethh/Umbra/releases/latest)</sub>
 
@@ -162,8 +162,8 @@ Two downloads, and the difference is only what your machine already has:
 
 | | |
 | :---- | :---- |
-| **[`Umbra-0.1.2-win-x64.exe`](https://github.com/alharethh/Umbra/releases/download/v0.1.2/Umbra-0.1.2-win-x64.exe)** · 73 MB | One file. Double-click it. Nothing to install. |
-| [`Umbra-0.1.2-win-x64.zip`](https://github.com/alharethh/Umbra/releases/download/v0.1.2/Umbra-0.1.2-win-x64.zip) · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
+| **[`Umbra-0.2.0-win-x64.exe`](https://github.com/alharethh/Umbra/releases/download/v0.2.0/Umbra-0.2.0-win-x64.exe)** · 73 MB | One file. Double-click it. Nothing to install. |
+| [`Umbra-0.2.0-win-x64.zip`](https://github.com/alharethh/Umbra/releases/download/v0.2.0/Umbra-0.2.0-win-x64.zip) · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
 
 Or build it, which needs the [.NET 10 SDK](https://dotnet.microsoft.com/download):
 
@@ -230,8 +230,8 @@ Pressing the Windows key on its own does not bring the taskbar back in this stat
 
 ## Status
 
-Runs daily on Windows 11 25H2. Latest release is `0.1.2`, built and used on one machine — treat it
-as early.
+Runs daily on Windows 11 25H2. Latest release is `0.2.0`, built and used on one machine and tried on
+a second — treat it as early.
 
 **Works:** every edge on one monitor · space-reserving AppBar · Explorer suppressed and restored ·
 pinning, launching and free drag-reorder · window previews · jump lists · notification area with
