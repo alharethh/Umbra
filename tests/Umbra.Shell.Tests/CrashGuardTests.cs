@@ -264,4 +264,34 @@ public class CrashGuardTests : IDisposable
     [InlineData("")]
     public void A_Launcher_Without_A_Bar_Id_Starts_Nothing(string commandLine) =>
         Assert.Null(CrashGuard.GuardArgumentsFor(commandLine.Length == 0 ? [] : commandLine.Split(' ')));
+
+    // A bar the hang watch ended may have been healthy and merely stalled (a driver reset, a slow
+    // sign-in), so the guard starts it again — but not every time, or a bar that hangs on every
+    // start would be ended and relaunched for ever.
+
+    private static readonly DateTime Now = new(2026, 10, 19, 23, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void The_First_Hang_Is_Relaunched() =>
+        Assert.True(CrashGuard.ShouldRelaunch(null, Now));
+
+    [Fact]
+    public void A_Second_Hang_Soon_After_A_Relaunch_Is_Not() =>
+        Assert.False(CrashGuard.ShouldRelaunch(Now - TimeSpan.FromSeconds(20), Now));
+
+    [Fact]
+    public void A_Hang_Long_After_The_Last_Relaunch_Is_Relaunched_Again() =>
+        Assert.True(CrashGuard.ShouldRelaunch(Now - CrashGuard.RelaunchWindow, Now));
+
+    [Fact]
+    public void A_Clock_That_Went_Backwards_Does_Not_Strand_The_User() =>
+        Assert.True(CrashGuard.ShouldRelaunch(Now + TimeSpan.FromHours(1), Now));
+
+    [Fact]
+    public void The_Relaunch_Window_Outlasts_A_Bar_That_Hangs_On_Every_Start()
+    {
+        // A bar that hangs at once is ended after at most ~17 s, plus the start before it. The
+        // window has to cover that comfortably, or the "once" is not once.
+        Assert.True(CrashGuard.RelaunchWindow >= TimeSpan.FromMinutes(2));
+    }
 }

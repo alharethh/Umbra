@@ -48,6 +48,95 @@ public class HangWatchTests
     }
 
     [Fact]
+    public void Checks_At_Their_Slowest_Normal_Spacing_Still_Add_Up()
+    {
+        // An interval plus a timed-out question is the widest a normal gap gets. Mistaking that
+        // for a sleep would mean a real hang is never counted.
+        long now = 0;
+        HangWatch watch = new(() => now);
+        long step = (long)(HangWatch.Interval + HangWatch.Timeout).TotalMilliseconds;
+
+        for (int i = 1; i < HangWatch.Strikes; i++)
+        {
+            now += step;
+            Assert.False(watch.Record(answered: false));
+        }
+
+        now += step;
+        Assert.True(watch.Record(answered: false));
+    }
+
+    [Fact]
+    public void Silences_After_The_Guard_Itself_Was_Asleep_Are_Not_Counted()
+    {
+        // Resume from sleep: the guard was frozen as well, its next check is minutes late, and
+        // the bar may take a while to start pumping again. Measured as a TickCount64 gap.
+        long now = 0;
+        HangWatch watch = new(() => now);
+        long step = (long)HangWatch.Interval.TotalMilliseconds;
+
+        for (int i = 1; i < HangWatch.Strikes; i++)
+        {
+            now += step;
+            watch.Record(answered: false);
+        }
+
+        now += (long)TimeSpan.FromMinutes(20).TotalMilliseconds;
+        Assert.False(watch.Record(answered: false));
+
+        long graceEnds = now + (long)HangWatch.Grace.TotalMilliseconds;
+        while (now + step < graceEnds)
+        {
+            now += step;
+            Assert.False(watch.Record(answered: false));
+        }
+
+        // Grace over: a bar that is still silent is hung, and is counted from scratch.
+        now = graceEnds;
+        for (int i = 1; i < HangWatch.Strikes; i++)
+        {
+            now += step;
+            Assert.False(watch.Record(answered: false));
+        }
+
+        now += step;
+        Assert.True(watch.Record(answered: false));
+    }
+
+    [Fact]
+    public async Task The_Guard_Ends_A_Process_That_Stops_Answering()
+    {
+        // The wiring, not the counting: CrashGuard's wait has to be the hang watch. Reverting it to
+        // a plain WaitForExit left every other test green, and leaves this one waiting on a child
+        // that sleeps for ten minutes. The child shows a form and then sleeps without pumping,
+        // which is what the hung bar did. Thread.Sleep, not Start-Sleep: PowerShell runs its
+        // pipeline on an STA thread, where Start-Sleep's managed wait pumps, and the form answers.
+        using Process child = Process.Start(new ProcessStartInfo("powershell.exe")
+        {
+            Arguments = "-NoProfile -NonInteractive -Command \"Add-Type -AssemblyName System.Windows.Forms; " +
+                        "$f = New-Object System.Windows.Forms.Form; $f.ShowInTaskbar = $false; " +
+                        "$f.StartPosition = 'Manual'; $f.Location = New-Object System.Drawing.Point(-32000, -32000); " +
+                        "$f.Show(); [System.Windows.Forms.Application]::DoEvents(); [System.Threading.Thread]::Sleep(600000)\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        })!;
+
+        try
+        {
+            Task<bool> watched = Task.Run(() => CrashGuard.Watch(child, TimeSpan.FromMilliseconds(500)));
+
+            Task first = await Task.WhenAny(watched, Task.Delay(TimeSpan.FromSeconds(60)));
+            Assert.True(first == watched, "the guard went on waiting on a hung process");
+            Assert.True(await watched);
+            Assert.True(child.HasExited);
+        }
+        finally
+        {
+            if (!child.HasExited) child.Kill();
+        }
+    }
+
+    [Fact]
     public void A_Window_Whose_Thread_Stops_Pumping_Does_Not_Answer()
     {
         using ManualResetEventSlim created = new();
