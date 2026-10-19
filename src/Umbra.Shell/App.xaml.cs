@@ -19,6 +19,7 @@ public partial class App : Application
     private SingleInstance? _instance;
 #if DEBUG
     private DevControl? _devControl;
+    private DevFaults? _devFaults;
 #endif
     private string[] _args = [];
 
@@ -31,6 +32,12 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
         AppDomain.CurrentDomain.ProcessExit += (_, _) => _host?.RestoreExplorer();
+
+        // Not fatal on .NET, and the bar is right to carry on: measured with a Debug fault hook, an
+        // unobserved task left a working bar with the taskbar correctly suppressed. Logged, because
+        // otherwise it is the one fault that leaves no trace at all.
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+            BringUpLog.Write(args.Exception, "unobserved task exception; the bar carries on");
 
         _args = e.Args;
         BringUpLog.Write("--- startup ---");
@@ -65,6 +72,7 @@ public partial class App : Application
         {
             foreach (BarWindow bar in _bars.ToList()) bar.CloseForShutdown();
         });
+        _devFaults = new DevFaults(Dispatcher);
 #endif
 
         Settings = UmbraSettings.Load();
@@ -91,6 +99,11 @@ public partial class App : Application
         // every death no handler in this process can see: a kill, a native crash, FailFast, a
         // stack overflow, "close the program" on a hung window. See CrashGuard.
         CrashGuard.Launch();
+
+#if DEBUG
+        // After the guard, with Explorer suppressed and no bar drawn: the worst moment to fail.
+        if (DevFaults.StartupRequested(e.Args)) DevFaults.ThrowStartupFault();
+#endif
 
         // Bottom is the shipping default (§7.1) and the only edge that contends with Explorer's
         // autohidden taskbar (shell-integration §2.5). Left is the control: it is the one edge
@@ -153,6 +166,8 @@ public partial class App : Application
 #if DEBUG
         _devControl?.Dispose();
         _devControl = null;
+        _devFaults?.Dispose();
+        _devFaults = null;
 #endif
 
         _host?.Dispose();

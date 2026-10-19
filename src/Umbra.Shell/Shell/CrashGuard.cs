@@ -268,7 +268,8 @@ internal static class CrashGuard
             }
 
             BringUpLog.Write($"crash guard: watching bar {barId}");
-            bar.WaitForExit();
+            // Not a plain WaitForExit: a hung bar never exits, and keeps the taskbar suppressed.
+            HangWatch.WaitForExitOrHang(bar);
         }
         catch (ArgumentException)
         {
@@ -349,6 +350,6 @@ internal static class CrashGuard
     {
         Outcome.Restored => "it left Explorer's taskbar suppressed, and it has been restored",
         Outcome.AnotherBarIsRunning => "another bar holds the lock, so nothing was touched",
-        _ => "it exited cleanly, so there was nothing to do",
+        _ => "it left no marker, so it had restored Explorer itself (a clean exit, or a crash its own handlers caught)",
     };
 }
