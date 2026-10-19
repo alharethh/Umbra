@@ -3556,7 +3556,21 @@ internal partial class BarWindow : AppBarWindow
 
         AllowIconOwnerForeground(icon);
 
-        icon.IconMouseUp(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);
+        uint cursor = PackedCursorPosition();
+        icon.IconMouseUp(e.ChangedButton, cursor, DoubleClickTime);
+
+        // Explorer's battery icon reports version 0, so ManagedShell stops at the button-up, which
+        // it ignores; it answers only WM_CONTEXTMENU, in the version-4 packing. See TrayRightClick.
+        if (e.ChangedButton == MouseButton.Right)
+        {
+            string ownerClass = TrayRightClick.ClassOf(icon.HWnd);
+            if (TrayRightClick.NeedsContextMenu(icon.Version, ownerClass, icon.CallbackMessage))
+            {
+                bool sent = TrayRightClick.Send(icon.HWnd, icon.CallbackMessage, cursor, icon.UID);
+                BringUpLog.Write($"tray right click: context menu sent to {ownerClass} for '{icon.Title}' (version {icon.Version}), sent={sent}");
+            }
+        }
+
         double trayDpi = DpiScale <= 0 ? 1.0 : DpiScale;
         _trayMenus.Watch(
             icon.HWnd,
