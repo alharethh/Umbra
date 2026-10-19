@@ -57,6 +57,17 @@ internal interface ITaskbarState
     /// when there is none. Two different answers in one run mean Explorer restarted.
     /// </summary>
     string? GetShellIdentity();
+
+    /// <summary>
+    /// Calls <paramref name="onChange"/> once straight away and again whenever Explorer's saved
+    /// taskbar settings are written, until the result is disposed. Null when watching is not
+    /// possible, which costs only the in-run repair; the one at exit still happens.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="onChange"/> runs on a background thread. The call straight away is there
+    /// because a write between deciding to watch and the watch starting would otherwise be missed.
+    /// </remarks>
+    IDisposable? WatchSavedSettings(Action onChange) => null;
 }
 
 /// <summary>The live implementation, over ManagedShell's <see cref="ExplorerHelper"/>.</summary>
@@ -175,6 +186,107 @@ internal sealed class ExplorerTaskbarState : ITaskbarState
             return null;
         }
     }
+
+    /// <remarks>
+    /// <c>RegNotifyChangeKeyValue</c> rather than a timer: Explorer's write is a single event at an
+    /// unpredictable moment (+6.5 s and +7.6 s after a restart, measured), and a notification
+    /// answers it within milliseconds while costing no wake-ups in between. The notification is
+    /// one-shot, so it is re-armed <i>before</i> each check — armed after, a write landing between
+    /// the two would go unseen. A dedicated thread, because an asynchronous registration is
+    /// cancelled when the thread that made it exits, and a pool thread can exit at any moment.
+    /// </remarks>
+    public IDisposable? WatchSavedSettings(Action onChange)
+    {
+        ArgumentNullException.ThrowIfNull(onChange);
+
+        Microsoft.Win32.RegistryKey? key;
+        try
+        {
+            key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(StuckRects.KeyPath);
+        }
+        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or System.IO.IOException)
+        {
+            return null;
+        }
+
+        if (key is null) return null;
+
+        SettingsWatch watch = new(key, onChange);
+        watch.Start();
+        return watch;
+    }
+
+    private sealed class SettingsWatch(Microsoft.Win32.RegistryKey key, Action onChange) : IDisposable
+    {
+        private readonly AutoResetEvent _changed = new(false);
+        private readonly ManualResetEvent _stop = new(false);
+        private Thread? _thread;
+        private int _disposed;
+
+        public void Start()
+        {
+            _thread = new Thread(Run) { IsBackground = true, Name = "Umbra saved taskbar settings watch" };
+            _thread.Start();
+        }
+
+        private void Run()
+        {
+            try
+            {
+                while (true)
+                {
+                    int armed = RegNotifyChangeKeyValue(
+                        key.Handle, watchSubtree: false, RegNotifyChangeLastSet, _changed.SafeWaitHandle, asynchronous: true);
+
+                    try
+                    {
+                        onChange();
+                    }
+                    catch (Exception e)
+                    {
+                        // A watch that dies takes the in-run repair with it, never the bar.
+                        Diagnostics.BringUpLog.Write(e, "saved taskbar settings watch");
+                    }
+
+                    // Unarmed, a wait would never wake for a write; stop rather than spin.
+                    if (armed != 0)
+                    {
+                        Diagnostics.BringUpLog.Write($"saved taskbar settings watch: RegNotifyChangeKeyValue failed ({armed})");
+                        return;
+                    }
+
+                    if (WaitHandle.WaitAny([_stop, _changed]) == 0) return;
+                }
+            }
+            catch (Exception e) when (e is ObjectDisposedException or System.IO.IOException)
+            {
+            }
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
+            _stop.Set();
+
+            // Bounded: the thread only ever blocks in WaitAny, which the stop event ends.
+            if (_thread is not null && _thread != Thread.CurrentThread) _thread.Join(TimeSpan.FromSeconds(2));
+
+            key.Dispose();
+            _changed.Dispose();
+            _stop.Dispose();
+        }
+    }
+
+    private const uint RegNotifyChangeLastSet = 0x4;
+
+    [System.Runtime.InteropServices.DllImport("advapi32.dll")]
+    private static extern int RegNotifyChangeKeyValue(
+        Microsoft.Win32.SafeHandles.SafeRegistryHandle key,
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)] bool watchSubtree,
+        uint notifyFilter,
+        Microsoft.Win32.SafeHandles.SafeWaitHandle eventHandle,
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)] bool asynchronous);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern IntPtr GetShellWindow();

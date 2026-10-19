@@ -136,6 +136,17 @@ internal sealed class ShellHost : IDisposable
     /// </summary>
     public void RestoreExplorer() => _explorerState.Restore();
 
+    /// <summary>
+    /// Called when a bar sees a new Explorer announce itself. Watches for Explorer saving the
+    /// suppression as the user's auto-hide setting and puts it back as soon as it does, rather
+    /// than only at exit. See <see cref="ExplorerStateGuard.WatchForLateSave"/>.
+    /// </summary>
+    /// <remarks>
+    /// Every bar receives the broadcast, so with a bar on every monitor this is called once per
+    /// bar; each call restarts the one watch, which is harmless.
+    /// </remarks>
+    public void OnExplorerRestarted() => _explorerState.WatchForLateSave(ExplorerStateGuard.LateSaveWindow);
+
     public void Dispose()
     {
         if (_disposed) return;

@@ -79,6 +79,40 @@ public class ExplorerStateGuardTests : IDisposable
 
         public string? GetShellIdentity() => Shell;
 
+        private Action? _onSave;
+
+        /// <summary>Whether a watch on the saved settings is open.</summary>
+        public bool Watching => _onSave is not null;
+
+        public int WatchesOpened { get; private set; }
+
+        public IDisposable? WatchSavedSettings(Action onChange)
+        {
+            // Like the live one: a call straight away, then one per write.
+            _onSave = onChange;
+            WatchesOpened++;
+            onChange();
+            return new Unwatch(this, onChange);
+        }
+
+        private sealed class Unwatch(FakeTaskbar owner, Action onChange) : IDisposable
+        {
+            public void Dispose()
+            {
+                if (owner._onSave == onChange) owner._onSave = null;
+            }
+        }
+
+        /// <summary>
+        /// QA 2026-10-18, case 0.6: the restarted Explorer saves its settings some seconds after
+        /// starting, after the bar's reservation has already settled.
+        /// </summary>
+        public void ExplorerSavesItsSettings(bool autoHide)
+        {
+            SavedAutoHide = autoHide;
+            _onSave?.Invoke();
+        }
+
         /// <summary>
         /// QA case 0.6: Explorer is killed and Windows starts a new one, which saves the
         /// suppression it was handed while starting up as the user's own setting.
@@ -428,5 +462,127 @@ public class ExplorerStateGuardTests : IDisposable
 
         Assert.False(guard.RecoveredFromUncleanExit);
         Assert.Equal(NativeMethods.ABState.Default, guard.OriginalState);
+    }
+
+    /// <summary>The bar is running, Explorer has just been killed and Windows has started a new one.</summary>
+    private (FakeTaskbar Taskbar, ExplorerStateGuard Guard) RunningBarAfterAnExplorerRestart()
+    {
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = false };
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+
+        guard.Capture();
+        taskbar.SuppressLikeUmbraDoes();
+        taskbar.Shell = "explorer-2";
+
+        return (taskbar, guard);
+    }
+
+    [Fact]
+    public void A_Late_Save_After_An_Explorer_Restart_Is_Put_Back_While_The_Bar_Runs()
+    {
+        // QA 2026-10-18, case 0.6 (backlog 1g): the save landed at +7.6 s, after the reservation
+        // had settled, and stayed 0x03 until exit. Anything that ended the session without an
+        // exit or a relaunch would have left the user's taskbar set to hide.
+        (FakeTaskbar taskbar, ExplorerStateGuard guard) = RunningBarAfterAnExplorerRestart();
+
+        guard.WatchForLateSave(TimeSpan.FromMinutes(1));
+        Assert.Equal(0, taskbar.SavedAutoHideWrites);
+
+        taskbar.ExplorerSavesItsSettings(autoHide: true);
+
+        // Before Restore: this is the whole point.
+        Assert.False(taskbar.SavedAutoHide);
+        Assert.True(guard.RepairedSavedAutoHide);
+
+        guard.Restore();
+        Assert.False(taskbar.SavedAutoHide);
+    }
+
+    [Fact]
+    public void A_Save_That_Landed_Before_The_Watch_Started_Is_Put_Back_At_Once()
+    {
+        (FakeTaskbar taskbar, ExplorerStateGuard guard) = RunningBarAfterAnExplorerRestart();
+        taskbar.SavedAutoHide = true;
+
+        guard.WatchForLateSave(TimeSpan.FromMinutes(1));
+
+        Assert.False(taskbar.SavedAutoHide);
+        Assert.Equal(1, taskbar.SavedAutoHideWrites);
+    }
+
+    [Fact]
+    public void Every_Save_In_The_Window_Is_Put_Back_Not_Only_The_First()
+    {
+        (FakeTaskbar taskbar, ExplorerStateGuard guard) = RunningBarAfterAnExplorerRestart();
+        guard.WatchForLateSave(TimeSpan.FromMinutes(1));
+
+        taskbar.ExplorerSavesItsSettings(autoHide: true);
+        taskbar.ExplorerSavesItsSettings(autoHide: true);
+
+        Assert.False(taskbar.SavedAutoHide);
+        Assert.Equal(2, taskbar.SavedAutoHideWrites);
+    }
+
+    [Fact]
+    public void A_Save_Without_A_Restart_Is_The_Users_And_Is_Kept()
+    {
+        // The watch may be started by a broadcast that was not a restart at all. The repair's own
+        // condition, a different Explorer, is what keeps it from reverting the user.
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = false };
+        ExplorerStateGuard guard = new(taskbar, _statePath);
+        guard.Capture();
+        taskbar.SuppressLikeUmbraDoes();
+
+        guard.WatchForLateSave(TimeSpan.FromMinutes(1));
+        taskbar.ExplorerSavesItsSettings(autoHide: true);
+
+        Assert.True(taskbar.SavedAutoHide);
+        Assert.Equal(0, taskbar.SavedAutoHideWrites);
+    }
+
+    [Fact]
+    public void Restore_Ends_The_Watch()
+    {
+        (FakeTaskbar taskbar, ExplorerStateGuard guard) = RunningBarAfterAnExplorerRestart();
+        guard.WatchForLateSave(TimeSpan.FromMinutes(1));
+
+        guard.Restore();
+
+        Assert.False(taskbar.Watching);
+        Assert.False(guard.WatchingForLateSave);
+
+        // And a watch asked for after exit is never opened.
+        guard.WatchForLateSave(TimeSpan.FromMinutes(1));
+        Assert.Equal(1, taskbar.WatchesOpened);
+    }
+
+    [Fact]
+    public void The_Watch_Ends_When_Its_Window_Does()
+    {
+        (FakeTaskbar taskbar, ExplorerStateGuard guard) = RunningBarAfterAnExplorerRestart();
+        guard.WatchForLateSave(TimeSpan.FromMilliseconds(20));
+
+        DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+        while (guard.WatchingForLateSave && DateTime.UtcNow < deadline) Thread.Sleep(10);
+
+        Assert.False(guard.WatchingForLateSave);
+        Assert.False(taskbar.Watching);
+    }
+
+    [Fact]
+    public void Repairs_Per_Watch_Are_Bounded()
+    {
+        // In case Explorer ever answers our write with one of its own: a bounded exchange, then
+        // the exit repair has the last word as before.
+        (FakeTaskbar taskbar, ExplorerStateGuard guard) = RunningBarAfterAnExplorerRestart();
+        guard.WatchForLateSave(TimeSpan.FromMinutes(1));
+
+        for (int i = 0; i < ExplorerStateGuard.MaxRepairsPerWatch + 3; i++)
+            taskbar.ExplorerSavesItsSettings(autoHide: true);
+
+        Assert.Equal(ExplorerStateGuard.MaxRepairsPerWatch, taskbar.SavedAutoHideWrites);
+
+        guard.Restore();
+        Assert.False(taskbar.SavedAutoHide);
     }
 }

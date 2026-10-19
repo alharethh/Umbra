@@ -99,6 +99,7 @@ internal partial class BarWindow : AppBarWindow
             metrics.ReservedExtent)
     {
         Metrics = metrics;
+        _host = host;
         Windows = host.ShellManager.Tasks.GroupedWindows;
 
         _tasks = new TaskbarModel(Windows, Pins);
@@ -764,6 +765,8 @@ internal partial class BarWindow : AppBarWindow
 
     private static readonly int TaskbarCreatedMessage = (int)RegisterWindowMessage("TaskbarCreated");
 
+    private readonly ShellHost _host;
+
     private ExplorerRestartWatch? _explorerWatch;
     private DispatcherTimer? _explorerWatchTimer;
 
@@ -792,7 +795,15 @@ internal partial class BarWindow : AppBarWindow
             BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
                 $"TaskbarCreated: shell pid {shell}, registered with {known} -> {(armed ? "watching the reservation" : "ignored")}"));
 
-            if (armed) _explorerWatchTimer?.Start();
+            if (armed)
+            {
+                _explorerWatchTimer?.Start();
+
+                // The reservation and the saved auto-hide bit settle on different clocks: the
+                // reservation within about three seconds, Explorer's save of its settings several
+                // seconds later. So the saved bit gets a watch of its own. See ShellHost.
+                _host.OnExplorerRestarted();
+            }
         }
 
         return base.WndProc(hwnd, msg, wParam, lParam, ref handled);
