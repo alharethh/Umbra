@@ -844,6 +844,7 @@ internal partial class BarWindow : AppBarWindow
             nameof(StartHitWidth), nameof(StartHitHeight), nameof(StartGlyphMargin),
             nameof(TrayHorizontalAlignment), nameof(TrayVerticalAlignment), nameof(TrayMargin),
             nameof(TraySlotWidth), nameof(TraySlotHeight), nameof(TrayIconExtent),
+            nameof(TrayOverflowCellWidth), nameof(TrayOverflowCellHeight),
             nameof(PillWidth), nameof(PillHeight), nameof(PillMargin),
             nameof(PillHorizontalAlignment), nameof(PillVerticalAlignment),
             nameof(IconExtent), nameof(HoverChipExtent), nameof(StartGlyphScale),
@@ -1052,6 +1053,26 @@ internal partial class BarWindow : AppBarWindow
 
     /// <summary>Drawn extent of a tray icon.</summary>
     public double TrayIconExtent => TraySlotMetrics.IconExtent;
+
+    /// <summary>
+    /// One cell of the overflow flyout, the same on every edge: a horizontal bar's tray slot.
+    /// </summary>
+    /// <remarks>
+    /// The flyout is a grid that lays out left to right whichever edge the bar is on, so the bar's
+    /// own slot is the wrong shape for it on a vertical bar: <see cref="TraySlotWidth"/> is the
+    /// bar's thickness there, and four icons came out as a 357×60 px strip against 177×93 on the
+    /// bottom edge (QA 2026-10-17, backlog 3b). Drift still reaches the flyout through
+    /// <see cref="TrayOffset"/>, so on a vertical bar the short-axis travel lands on the cell's
+    /// narrow axis; <c>TrayOverflowCellTests</c> checks that it still fits (P5).
+    /// </remarks>
+    internal static Size TrayOverflowCellFor(BarMetrics metrics) =>
+        new(TrayPitchExtent * metrics.Scale, BarMetrics.BaseHorizontalContentBand * metrics.Scale);
+
+    /// <inheritdoc cref="TrayOverflowCellFor"/>
+    public double TrayOverflowCellWidth => TrayOverflowCellFor(Metrics).Width;
+
+    /// <inheritdoc cref="TrayOverflowCellFor"/>
+    public double TrayOverflowCellHeight => TrayOverflowCellFor(Metrics).Height;
 
     /// <summary>
     /// Width of the overflow chevron's glyph.

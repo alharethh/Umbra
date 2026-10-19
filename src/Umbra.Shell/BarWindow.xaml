@@ -59,8 +59,10 @@
         <render:TierBrushConverter x:Key="StartGlyphBrush" Element="StartGlyph" />
 
         <!--
-            One tray icon. Shared by the strip on the bar and by the overflow flyout, so an icon
-            looks and behaves identically wherever it happens to be sitting.
+            One tray icon in the overflow flyout (TrayIconTemplate, below). Its cell is
+            TrayOverflowCellWidth/Height, the same on every edge: the flyout lays out left to right
+            wherever the bar is, and the bar's own slot (TraySlotWidth/Height) is the bar's
+            thickness wide on a vertical bar, which made the panel twice as wide as it needed to be.
         -->
         <!--
             Hover feedback for the small controls at the trailing end: a rounded wash that fades
@@ -255,8 +257,8 @@
                   MouseRightButtonUp="OnTrayIconMouseUp"
                   MouseEnter="OnTrayIconMouseEnter"
                   MouseLeave="OnTrayIconMouseLeave"
-                  Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-                  Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+                  Width="{Binding TrayOverflowCellWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                  Height="{Binding TrayOverflowCellHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
                 <Control Style="{StaticResource HolographicChip}" Margin="2,6">
                     <Control.RenderTransform>
