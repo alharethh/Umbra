@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Threading;
 using ManagedShell.AppBar;
 using Umbra.Shell.Diagnostics;
 
@@ -201,7 +202,10 @@ internal static class CrashGuard
             return 2;
         }
 
-        WaitForBar(barId);
+        // Opened before the wait, so a bar that declares while we watch sets the event we hold.
+        using EventWaitHandle? exitIntent = ExitIntent.Watch(barId);
+
+        bool ended = WaitForBar(barId);
 
         Outcome outcome = RecoverIfOrphaned(
             lockName: null,
@@ -209,7 +213,161 @@ internal static class CrashGuard
             taskbar: () => new OrphanedTaskbarState(new ExplorerTaskbarState(new ExplorerHelper())));
 
         BringUpLog.Write($"crash guard: bar {barId} has gone; {Describe(outcome)}");
+
+        // After the restore, never before: if the new bar fails to start, Explorer's taskbar is
+        // already back, and if it starts, it captures the user's taskbar rather than ours.
+        ConcludeAfterBar(
+            ended, ExitIntent.WasDeclared(exitIntent), outcome, DefaultRelaunchStampPath, DateTime.UtcNow,
+            () => Start("", "bar, after ending a hung one,"));
         return 0;
+    }
+
+    /// <summary>What the guard does about a bar that has gone, as far as starting another.</summary>
+    public enum RelaunchDecision
+    {
+        /// <summary>The guard ended a bar that was not leaving, and nothing argues against it.</summary>
+        Relaunch,
+
+        /// <summary>The bar went by itself: a crash, a kill, a clean exit. Never relaunched.</summary>
+        NotEndedByGuard,
+
+        /// <summary>The bar had declared it was ending on purpose and stalled on the way out.</summary>
+        BarWasExiting,
+
+        /// <summary>A bar holds the lock already: a Restart's replacement, or the user's own launch.</summary>
+        AnotherBarIsRunning,
+
+        /// <summary>
+        /// No marker was left, so the bar had already handed Explorer's taskbar back: it was in
+        /// <c>ShellHost.Dispose</c>, which only an exit reaches.
+        /// </summary>
+        BarHadRestoredExplorer,
+
+        /// <summary>One was relaunched inside <see cref="RelaunchWindow"/>.</summary>
+        TooSoon,
+    }
+
+    /// <summary>
+    /// Whether to start the bar again, from everything the guard knows once it has gone. Pure, so
+    /// each refusal can be tested without a process to hang.
+    /// </summary>
+    /// <remarks>
+    /// The exit intent and the outcome overlap on purpose. The intent covers a stall anywhere on
+    /// the way out, including before the restore; the outcome covers a bar that could not
+    /// declare (the event failed to open) but had already restored, which is a stall only an exit
+    /// reaches. Either alone leaves a case where the user's Exit is undone.
+    /// </remarks>
+    public static RelaunchDecision DecideRelaunch(
+        bool endedByGuard, bool exitDeclared, Outcome outcome, DateTime? lastRelaunchUtc, DateTime nowUtc)
+    {
+        if (!endedByGuard) return RelaunchDecision.NotEndedByGuard;
+        if (exitDeclared) return RelaunchDecision.BarWasExiting;
+        if (outcome == Outcome.AnotherBarIsRunning) return RelaunchDecision.AnotherBarIsRunning;
+        if (outcome != Outcome.Restored) return RelaunchDecision.BarHadRestoredExplorer;
+        return ShouldRelaunch(lastRelaunchUtc, nowUtc) ? RelaunchDecision.Relaunch : RelaunchDecision.TooSoon;
+    }
+
+    /// <summary>
+    /// Everything <see cref="Run"/> does after the restore: decide, record, start. Apart from
+    /// <see cref="Run"/> so a test drives the very code the guard runs, with a fake start and a
+    /// stamp of its own. True when a bar was started.
+    /// </summary>
+    /// <remarks>
+    /// <b>The stamp is written before the start, and stays written if the start fails.</b> That
+    /// is the loop bound: a stamp written after would be skipped by a start that throws, and a bar
+    /// that fails to start is no reason to try again in a few seconds. A failed start costs the
+    /// ten-minute allowance and leaves Windows' taskbar, which the restore has already put back.
+    /// </remarks>
+    internal static bool ConcludeAfterBar(
+        bool endedByGuard, bool exitDeclared, Outcome outcome, string stampPath, DateTime nowUtc, Func<bool> start)
+    {
+        ArgumentNullException.ThrowIfNull(start);
+
+        DateTime? last = endedByGuard ? ReadStamp(stampPath) : null;
+        RelaunchDecision decision = DecideRelaunch(endedByGuard, exitDeclared, outcome, last, nowUtc);
+
+        switch (decision)
+        {
+            case RelaunchDecision.NotEndedByGuard:
+                return false;
+            case RelaunchDecision.BarWasExiting:
+                BringUpLog.Write("crash guard: not relaunching, the bar was ending on purpose and stalled on the way out");
+                return false;
+            case RelaunchDecision.AnotherBarIsRunning:
+                BringUpLog.Write("crash guard: not relaunching after the hang, a bar is already running");
+                return false;
+            case RelaunchDecision.BarHadRestoredExplorer:
+                BringUpLog.Write("crash guard: not relaunching, the bar had already restored Explorer, so it was exiting");
+                return false;
+            case RelaunchDecision.TooSoon:
+                BringUpLog.Write(
+                    $"crash guard: not relaunching after the hang, one was relaunched at {last:O}; Windows' taskbar stays");
+                return false;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(stampPath)!);
+            File.WriteAllText(stampPath, nowUtc.Ticks.ToString(CultureInfo.InvariantCulture));
+            BringUpLog.Write($"crash guard: relaunch recorded in {stampPath}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Without the stamp a bar that hangs on every start would be relaunched every time,
+            // each one restoring Explorer in between. Bounded, but not worth risking for one bar.
+            BringUpLog.Write(e, "crash guard: could not record the relaunch, so not relaunching");
+            return false;
+        }
+
+        if (start()) return true;
+
+        BringUpLog.Write("crash guard: relaunch failed; Windows' taskbar stays");
+        return false;
+    }
+
+    /// <summary>
+    /// How long after one relaunch the guard will not relaunch again. Ten minutes: long enough
+    /// that a bar which hangs on every start is ended twice and then stays down, short enough
+    /// that tomorrow's resume from sleep still gets its bar back.
+    /// </summary>
+    public static readonly TimeSpan RelaunchWindow = TimeSpan.FromMinutes(10);
+
+    /// <summary>Where the last relaunch after a hang is recorded.</summary>
+    public static string DefaultRelaunchStampPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Umbra",
+        "hang-relaunch");
+
+    /// <summary>
+    /// Whether a bar ended for not answering should be started again, given when the last one
+    /// was. A clock that has gone backwards allows it: the loop this guards against is bounded by
+    /// the restore in between anyway, and refusing would leave the user without their bar.
+    /// </summary>
+    public static bool ShouldRelaunch(DateTime? lastRelaunchUtc, DateTime nowUtc) =>
+        lastRelaunchUtc is not { } last || nowUtc < last || nowUtc - last >= RelaunchWindow;
+
+    // The hang watch cannot tell a hung bar from one stalled by a graphics driver reset or a slow
+    // sign-in, and ending a healthy bar used to leave the user on Windows' taskbar until they
+    // noticed and started Umbra by hand. Relaunching makes any such mistake cost a few seconds of
+    // Windows' taskbar. The window, rather than "once per bar", is so a bar that hangs on every
+    // start cannot loop, without making the second false positive of a long session permanent.
+    // No arguments: the settings file carries the configuration, and the command-line flags are
+    // development overrides that a guard has no way to read back off another process.
+
+    private static DateTime? ReadStamp(string path)
+    {
+        try
+        {
+            return long.TryParse(File.ReadAllText(path).Trim(), NumberStyles.Integer,
+                                 CultureInfo.InvariantCulture, out long ticks) &&
+                   ticks >= DateTime.MinValue.Ticks && ticks <= DateTime.MaxValue.Ticks
+                ? new DateTime(ticks, DateTimeKind.Utc)
+                : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -251,8 +409,11 @@ internal static class CrashGuard
         return Outcome.Restored;
     }
 
-    /// <summary>Blocks until the bar process has exited, or returns at once if it already has.</summary>
-    private static void WaitForBar(int barId)
+    /// <summary>
+    /// Blocks until the bar process has exited, or returns at once if it already has. True if
+    /// the guard ended it for not answering.
+    /// </summary>
+    private static bool WaitForBar(int barId)
     {
         try
         {
@@ -264,12 +425,11 @@ internal static class CrashGuard
                                StringComparison.OrdinalIgnoreCase))
             {
                 BringUpLog.Write($"crash guard: process {barId} is not Umbra; treating the bar as gone");
-                return;
+                return false;
             }
 
             BringUpLog.Write($"crash guard: watching bar {barId}");
-            // Not a plain WaitForExit: a hung bar never exits, and keeps the taskbar suppressed.
-            HangWatch.WaitForExitOrHang(bar);
+            return Watch(bar);
         }
         catch (ArgumentException)
         {
@@ -279,7 +439,19 @@ internal static class CrashGuard
         catch (InvalidOperationException)
         {
         }
+
+        return false;
     }
+
+    /// <summary>
+    /// The guard's wait on a bar it has identified. Apart from <see cref="WaitForBar"/> so a test
+    /// can hand it a process that hangs: reverting this to <c>bar.WaitForExit()</c> passed every
+    /// other test in the suite.
+    /// </summary>
+    /// <param name="interval">Between checks; the real <see cref="HangWatch.Interval"/> unless a test is in a hurry.</param>
+    internal static bool Watch(Process bar, TimeSpan? interval = null) =>
+        // Not a plain WaitForExit: a hung bar never exits, and keeps the taskbar suppressed.
+        HangWatch.WaitForExitOrHang(bar, interval);
 
     /// <summary>
     /// Explorer's taskbar as a process that did not suppress it has to see it.

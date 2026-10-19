@@ -23,9 +23,27 @@ namespace Umbra.Shell.Shell;
 /// </para>
 /// <para>
 /// So the guard asks the bar's own windows directly, every <see cref="Interval"/>, and only a
-/// run of <see cref="Strikes"/> consecutive failures counts. One slow answer is a busy bar; a
-/// quarter of a minute of none is a bar that is not coming back. A bar under a debugger is never
-/// counted, because a breakpoint looks exactly like this.
+/// run of <see cref="Strikes"/> consecutive failures counts. One slow answer is a busy bar; 10 to
+/// 15 s of none is a bar that is not coming back. A bar under a debugger is never counted,
+/// because a breakpoint looks exactly like this.
+/// </para>
+/// <para>
+/// <b>Only silences the guard was awake to hear count.</b> A healthy bar can stop answering for
+/// longer than that: resuming from sleep, a graphics driver reset while WPF waits on its render
+/// thread, a cold sign-in. The first leaves a mark the guard can read, because the guard was
+/// frozen too: two checks that should be ~5 s apart are minutes apart on
+/// <see cref="Environment.TickCount64"/>, which keeps counting through sleep. A gap longer than
+/// <see cref="Gap"/> clears the count and starts <see cref="Grace"/>, during which silences are
+/// not counted. The same holds for a guard that was merely not scheduled for that long: whatever
+/// stalled it may have stalled the bar, and it heard nothing either way. The other two causes
+/// leave no such mark, which is why the guard also relaunches a bar it ended
+/// (<see cref="CrashGuard"/>): that bounds the cost of every false positive, including ones
+/// nobody has thought of, where a gap test bounds only the one it recognises.
+/// </para>
+/// <para>
+/// <b>The threshold was deliberately not raised.</b> A real hang blocks every
+/// <c>SHAppBarMessage</c> on the desktop, not just the bar, so each extra second of patience is
+/// paid by every other application, and it is already twice Windows' own five seconds.
 /// </para>
 /// </remarks>
 internal sealed class HangWatch
@@ -39,12 +57,48 @@ internal sealed class HangWatch
     /// <summary>Consecutive unanswered questions before the bar is ended.</summary>
     public const int Strikes = 3;
 
+    /// <summary>
+    /// A gap between two checks longer than this means the guard itself was not running: the
+    /// machine slept, or was too stalled to schedule it. A normal gap is one interval plus at
+    /// most one <see cref="Timeout"/>.
+    /// </summary>
+    public static readonly TimeSpan Gap = TimeSpan.FromSeconds(15);
+
+    /// <summary>How long after such a gap silences are not counted.</summary>
+    public static readonly TimeSpan Grace = TimeSpan.FromSeconds(60);
+
+    private readonly Func<long> _clock;
+    private long _last;
+    private long _quietUntil = long.MinValue;
     private int _strikes;
+
+    /// <param name="clock">
+    /// Milliseconds that keep counting through sleep: <see cref="Environment.TickCount64"/>
+    /// unless a test passes its own.
+    /// </param>
+    public HangWatch(Func<long>? clock = null)
+    {
+        _clock = clock ?? (() => Environment.TickCount64);
+        _last = _clock();
+    }
 
     /// <summary>Records one answer, or its absence. True once the bar should be ended.</summary>
     public bool Record(bool answered)
     {
-        _strikes = answered ? 0 : _strikes + 1;
+        long now = _clock();
+        long since = now - _last;
+        _last = now;
+
+        if (since > (long)Gap.TotalMilliseconds)
+        {
+            _strikes = 0;
+            _quietUntil = now + (long)Grace.TotalMilliseconds;
+            BringUpLog.Write(
+                $"crash guard: {since / 1000} s since the last check, so the guard was not running; " +
+                $"not counting silences for {Grace.TotalSeconds:0} s");
+        }
+
+        _strikes = answered || now < _quietUntil ? 0 : _strikes + 1;
         return _strikes >= Strikes;
     }
 
@@ -93,13 +147,15 @@ internal sealed class HangWatch
     }
 
     /// <summary>
-    /// Waits for the bar to exit, ending it first if it stops answering. Returns once it is gone.
+    /// Waits for the bar to exit, ending it first if it stops answering. Returns once it is gone:
+    /// true if it was ended here, false if it exited by itself.
     /// </summary>
-    public static void WaitForExitOrHang(Process bar)
+    /// <param name="interval">Between checks: <see cref="Interval"/> unless a test is in a hurry.</param>
+    public static bool WaitForExitOrHang(Process bar, TimeSpan? interval = null)
     {
         HangWatch watch = new();
 
-        while (!bar.WaitForExit(Interval))
+        while (!bar.WaitForExit(interval ?? Interval))
         {
             if (!watch.Record(Answers(bar))) continue;
 
@@ -115,8 +171,10 @@ internal sealed class HangWatch
             }
 
             bar.WaitForExit();
-            return;
+            return true;
         }
+
+        return false;
     }
 
     private const uint WmNull = 0x0000;
