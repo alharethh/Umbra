@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Umbra.Shell.Rendering;
 
 namespace Umbra.Shell.Tests;
@@ -46,6 +47,97 @@ public class RowOrderTests
 
             for (int i = 0; i < before.Length; i++) Assert.Equal(before[i], after[i]);
         });
+    }
+
+    [Fact]
+    public void A_New_Icon_On_A_Vertical_Row_Starts_No_Slide()
+    {
+        OnSta(() =>
+        {
+            // The layout check above holds on the bouncing code too: it is the paint that moved.
+            // The panel's top edge rises a pitch when it grows, so every existing icon's top-down
+            // coordinate rises with it while its place on screen does not, and a panel measuring
+            // slides from its own top reads that as a move.
+            var panel = Panel(Orientation.Vertical, fromEnd: true, anchor: 1, count: 3);
+            UIElement[] existing = [.. panel.Children.Cast<UIElement>()];
+
+            panel.Children.Add(Slot());
+            Layout(panel);
+
+            Assert.All(existing, child => Assert.False(Sliding(child)));
+        });
+    }
+
+    [Fact]
+    public void Closing_The_Icon_Beside_Start_Slides_The_Rest_Down_Into_The_Gap()
+    {
+        OnSta(() =>
+        {
+            var panel = Panel(Orientation.Vertical, fromEnd: true, anchor: 1, count: 4);
+            UIElement[] rest = [.. panel.Children.Cast<UIElement>().Skip(1)];
+
+            panel.Children.RemoveAt(0);
+            Layout(panel);
+
+            // Each one moves a slot towards Start on screen, so each one slides.
+            Assert.All(rest, child => Assert.True(Sliding(child)));
+        });
+    }
+
+    [Fact]
+    public void Closing_The_Icon_Furthest_From_Start_Moves_Nothing()
+    {
+        OnSta(() =>
+        {
+            var panel = Panel(Orientation.Vertical, fromEnd: true, anchor: 1, count: 4);
+            UIElement[] rest = [.. panel.Children.Cast<UIElement>().Take(3)];
+
+            panel.Children.RemoveAt(3);
+            Layout(panel);
+
+            Assert.All(rest, child => Assert.False(Sliding(child)));
+        });
+    }
+
+    [Fact]
+    public void A_New_Icon_On_A_Left_Aligned_Row_Starts_No_Slide()
+    {
+        OnSta(() =>
+        {
+            var panel = Panel(Orientation.Horizontal, fromEnd: false, anchor: 0, count: 3);
+            UIElement[] existing = [.. panel.Children.Cast<UIElement>()];
+
+            panel.Children.Add(Slot());
+            Layout(panel);
+
+            Assert.All(existing, child => Assert.False(Sliding(child)));
+        });
+    }
+
+    [Theory]
+    // previous, previous extent, target, extent, anchor -> how far from its slot it is still drawn
+    [InlineData(88, 132, 132, 176, 1.0, 0)]    // a bottom-pinned row grew above it: it did not move
+    [InlineData(44, 176, 0, 132, 1.0, 0)]      // it shrank above it: nor did it here
+    [InlineData(44, 176, 44, 132, 1.0, -44)]   // it shrank below it: drawn a slot higher, slides down
+    [InlineData(44, 132, 44, 176, 0.0, 0)]     // a left-pinned row grows at its far end
+    [InlineData(44, 132, 44, 176, 0.5, 22)]    // a centred one grows at both ends, half a pitch each
+    [InlineData(88, 132, 132, 176, 0.5, -22)]  // and run from the end, the other way
+    public void A_Slide_Starts_Where_The_Icon_Was_On_Screen(
+        double previous, double previousExtent, double target, double extent, double anchor, double from)
+    {
+        Assert.Equal(from, SlidingStackPanel.SlideFrom(previous, previousExtent, target, extent, anchor));
+    }
+
+    [Theory]
+    [InlineData(Orientation.Vertical, HorizontalAlignment.Center, VerticalAlignment.Bottom, 1.0)]
+    [InlineData(Orientation.Vertical, HorizontalAlignment.Left, VerticalAlignment.Center, 0.5)]
+    [InlineData(Orientation.Horizontal, HorizontalAlignment.Left, VerticalAlignment.Bottom, 0.0)]
+    [InlineData(Orientation.Horizontal, HorizontalAlignment.Center, VerticalAlignment.Bottom, 0.5)]
+    public void The_Anchor_Is_Read_Off_The_Alignment_Along_The_Row(
+        Orientation orientation, HorizontalAlignment horizontal, VerticalAlignment vertical, double anchor)
+    {
+        // The across-axis alignment is deliberately the misleading one: it must not be consulted.
+        Assert.Equal(anchor, SlidingStackPanel.AnchorOf(orientation, horizontal, vertical));
     }
 
     [Fact]
@@ -103,6 +195,26 @@ public class RowOrderTests
             Assert.Equal(0, SlidingStackPanel.GapAt(count * Pitch + 20, Pitch, count, fromEnd: true));
         });
     }
+
+    private static SlidingStackPanel Panel(Orientation orientation, bool fromEnd, double anchor, int count)
+    {
+        var panel = new SlidingStackPanel { Orientation = orientation, FromEnd = fromEnd, Anchor = anchor };
+        for (int i = 0; i < count; i++) panel.Children.Add(Slot());
+        Layout(panel);
+        return panel;
+    }
+
+    private static Border Slot() => new() { Width = Pitch, Height = Pitch };
+
+    /// <summary>Lays the panel out at its own length, as the bar's row sizes itself to its icons.</summary>
+    private static void Layout(SlidingStackPanel panel)
+    {
+        panel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        panel.Arrange(new Rect(panel.DesiredSize));
+    }
+
+    private static bool Sliding(UIElement child) =>
+        child.RenderTransform is TranslateTransform offset && offset.HasAnimatedProperties;
 
     /// <summary>Lays out <paramref name="count"/> slot-sized children and returns where each went.</summary>
     private static double[] Arrange(Orientation orientation, bool fromEnd, int count)

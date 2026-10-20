@@ -87,12 +87,13 @@ internal sealed class SlidingStackPanel : Panel
     /// <para>
     /// It also broke the rule that an icon holds its place. The row is bottom-aligned, so a top-down
     /// stack grows at its <i>bottom</i>: every application opening pushed every icon already there
-    /// up by a slot. Run from the end, the row grows at the top and nothing already drawn moves.
+    /// up by a slot. Run from the end, the row grows at the top and no icon already there changes
+    /// place on screen — but its top-down coordinate does, which is what <see cref="Anchor"/> is for.
     /// </para>
     /// <para>
     /// Positions recorded by <see cref="ArrangedAt"/> stay in the panel's own top-down coordinates
-    /// either way, so holding, carrying and sliding need no case of their own. Only turning a point
-    /// on the row into an index does, which is <see cref="SlotAt"/> and <see cref="GapAt"/>.
+    /// either way, so holding and carrying need no case of their own. Turning a point on the row into
+    /// an index does, which is <see cref="SlotAt"/> and <see cref="GapAt"/>.
     /// </para>
     /// </remarks>
     public bool FromEnd
@@ -100,6 +101,63 @@ internal sealed class SlidingStackPanel : Panel
         get => (bool)GetValue(FromEndProperty);
         set => SetValue(FromEndProperty, value);
     }
+
+    /// <summary>Which point of the panel holds still when it changes length.</summary>
+    public static readonly DependencyProperty AnchorProperty = DependencyProperty.Register(
+        nameof(Anchor), typeof(double), typeof(SlidingStackPanel),
+        new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsArrange));
+
+    /// <summary>
+    /// Where along its length the panel is pinned in the bar: 0 at its start (a left-aligned row),
+    /// 1 at its end (a bottom-aligned one), ½ in the middle (a centred one).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The panel's coordinates are not the screen's once the panel changes length.</b> A row
+    /// pinned at its end grows towards its start, so the panel's top edge rises a pitch whenever an
+    /// application opens, and every icon's top-down coordinate rises with it while its place on
+    /// screen stays put. Slides measured from the panel's top read that as a move: on a vertical bar
+    /// every icon flicked up a slot and eased back down whenever anything opened, and closing an
+    /// application did the inverse. The layout was right throughout, so a test that read positions
+    /// passed; only the paint was wrong.
+    /// </para>
+    /// <para>
+    /// The panel cannot see this for itself, because the alignment that pins it belongs to its host,
+    /// and its own offset in that host is not final until after it has arranged. The bar says where
+    /// it is pinned, and slides are measured from there (<see cref="SlideFrom"/>).
+    /// </para>
+    /// </remarks>
+    public double Anchor
+    {
+        get => (double)GetValue(AnchorProperty);
+        set => SetValue(AnchorProperty, value);
+    }
+
+    /// <summary>
+    /// The <see cref="Anchor"/> a row stacked along <paramref name="orientation"/> has when its host
+    /// aligns it this way. Stretch and the near edge pin its start.
+    /// </summary>
+    public static double AnchorOf(
+        Orientation orientation, HorizontalAlignment horizontal, VerticalAlignment vertical) =>
+        orientation == Orientation.Vertical
+            ? vertical switch { VerticalAlignment.Bottom => 1, VerticalAlignment.Center => 0.5, _ => 0 }
+            : horizontal switch { HorizontalAlignment.Right => 1, HorizontalAlignment.Center => 0.5, _ => 0 };
+
+    /// <summary>The length the panel last arranged its children in, or NaN before the first pass.</summary>
+    private double _arrangedExtent = double.NaN;
+
+    /// <summary>
+    /// How far from its new slot a child is still drawn, measured from the point of the panel that
+    /// holds still on screen rather than from the panel's own start.
+    /// </summary>
+    /// <param name="previous">Where the child was arranged last pass, from the panel's start.</param>
+    /// <param name="previousExtent">The panel's length last pass.</param>
+    /// <param name="target">Where it is arranged now, from the panel's start.</param>
+    /// <param name="extent">The panel's length now.</param>
+    /// <param name="anchor">As <see cref="Anchor"/>.</param>
+    public static double SlideFrom(
+        double previous, double previousExtent, double target, double extent, double anchor) =>
+        (previous - anchor * previousExtent) - (target - anchor * extent);
 
     private bool IsVertical => Orientation == Orientation.Vertical;
 
@@ -213,23 +271,24 @@ internal sealed class SlidingStackPanel : Panel
                 ? new Rect(0, at, finalSize.Width, desired.Height)
                 : new Rect(at, 0, desired.Width, finalSize.Height));
 
-            Reposition(child, at);
+            Reposition(child, at, extent);
 
             along += length;
         }
 
+        _arrangedExtent = extent;
         return finalSize;
     }
 
-    /// <summary>Reacts to a child having been arranged somewhere other than last time.</summary>
-    private void Reposition(UIElement child, double target)
+    /// <summary>Reacts to a child having been drawn somewhere other than last time.</summary>
+    private void Reposition(UIElement child, double target, double extent)
     {
         double previous = ArrangedAt(child);
         child.SetValue(ArrangedAtProperty, target);
 
-        if (double.IsNaN(previous)) return;
+        if (double.IsNaN(previous) || double.IsNaN(_arrangedExtent)) return;
 
-        double shift = previous - target;
+        double shift = SlideFrom(previous, _arrangedExtent, target, extent, Anchor);
         if (Math.Abs(shift) < 0.5) return;
 
         if ((bool)child.GetValue(HeldProperty))

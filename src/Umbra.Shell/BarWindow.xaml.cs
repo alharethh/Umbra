@@ -848,7 +848,7 @@ internal partial class BarWindow : AppBarWindow
     {
         foreach (string name in (string[])[
             nameof(IsVertical), nameof(ContentBand),
-            nameof(RowOrientation), nameof(RowRunsFromEnd), nameof(RowWidth), nameof(RowHeight),
+            nameof(RowOrientation), nameof(RowRunsFromEnd), nameof(RowAnchor), nameof(RowWidth), nameof(RowHeight),
             nameof(RowHorizontalAlignment), nameof(RowVerticalAlignment), nameof(RowMargin),
             nameof(SlotWidth), nameof(SlotHeight),
             nameof(StartHorizontalAlignment), nameof(StartVerticalAlignment),
@@ -1693,6 +1693,13 @@ internal partial class BarWindow : AppBarWindow
     /// <see cref="SlidingStackPanel.FromEnd"/> for what the top-down stack got wrong.
     /// </remarks>
     public bool RowRunsFromEnd => IsVertical;
+
+    /// <summary>
+    /// Which point of the row holds still on screen as it grows and shrinks, read off the same
+    /// alignment that pins it, so the two cannot disagree. See <see cref="SlidingStackPanel.Anchor"/>.
+    /// </summary>
+    public double RowAnchor =>
+        SlidingStackPanel.AnchorOf(RowOrientation, RowHorizontalAlignment, RowVerticalAlignment);
 
     /// <summary>
     /// The row sits at the aligned end: bottom on a vertical bar (§7.3), left on a horizontal one
