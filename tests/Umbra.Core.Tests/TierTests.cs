@@ -289,7 +289,7 @@ public class TierTests
     /// </summary>
     /// <remarks>
     /// §3 specifies a 40 px band, which in use reads as the bar reacting to traffic passing by
-    /// rather than to the user arriving. The project owner asked for engagement on contact. What
+    /// rather than to the user arriving. Engagement on contact is a deliberate choice. What
     /// must survive that change is the Tier 0 → 1 ambient ramp: it is the near-invisible grey step
     /// §2.3's duty budget is built on, and collapsing it would quietly move the whole bar between
     /// two states instead of three.

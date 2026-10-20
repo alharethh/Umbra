@@ -40,7 +40,7 @@ internal sealed class ShellHost : IDisposable
     /// were being thrown away inside ManagedShell by a null <c>PinnedNotifyIcons</c>, silently. See
     /// docs/measurements.md step 7 for the full chain and how it was finally caught.
     /// <para>
-    /// <b>On by default since 2026-09-20</b>, by the project owner's decision. It costs a permanent
+    /// <b>On by default since 2026-09-20</b>, by deliberate choice. It costs a permanent
     /// 100 ms timer and §11.2 Q2 — whether ManagedShell's timers defeat display idle — is still
     /// unmeasured; that is a power question to answer, not a reason to ship a taskbar with no
     /// notification area.

@@ -198,7 +198,7 @@ everywhere.
 **And that is what ended it.** A feature worth enabling on two icons in nine needs a per-icon
 settings surface to be usable at all, which is a real cost in UI and in explanation. Weighed against
 34.6% of the lit area of a bar that §2.4 already places 86–191× below light-mode desktop content,
-the project owner judged the complexity not worth it and removed the mode in v4. Recorded here
+I judged the complexity not worth it and removed the mode in v4. Recorded here
 because the measurement is sound and the judgement built on it is a separate thing that a later
 reader may want to revisit.
 
