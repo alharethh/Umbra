@@ -10,14 +10,25 @@ manifests/a/alharethh/Umbra/<version>/
   alharethh.Umbra.locale.en-US.yaml    name, description, licence, links
 ```
 
-Schema 1.28.0, the newest one the community repository's pipeline is accepting new packages
-under (checked against new-package pull requests there on 2026-10-20). `winget validate` 1.29
-accepts it.
+Schema 1.12.0, because it is what the community repository actually merges. Of the last 30
+merged `New package` pull requests there (checked 2026-10-20), 24 used 1.12.0 and none used a
+newer schema; the new-package pull requests on 1.28.0 that passed the pipeline are all still
+waiting on a moderator. 1.12.0 is also what `wingetcreate submit` emits, the manifest uses no
+field newer than it, and `winget validate` 1.29 accepts it.
 
-**Only the standalone `.exe` is listed.** The 1.2 MB zip needs the .NET 10 Desktop Runtime, and
-a portable package cannot install that for the user. `InstallerType: portable` is what makes this
-work unsigned and with no installer: winget copies the file into its own packages folder, adds a
-`umbra` command, and writes the Apps & features entry itself.
+**Only the standalone `.exe` is listed, by choice.** The 1.2 MB zip would work too: winget
+installs a package's `Dependencies: PackageDependencies` before the package, and RetroBar, the
+closest peer, ships exactly that way, as a `zip` with `NestedInstallerType: portable` and a
+dependency on `Microsoft.DotNet.DesktopRuntime.10`. The exe was chosen because it needs nothing
+else: no machine-wide runtime install and no UAC prompt for one, one file for the pipeline's and
+users' antivirus to scan, and the same file as the direct download, so a bug report names the
+same build however it was installed. The cost is size: 73 MB, against 1.2 MB plus a runtime the
+user may already have. The zip with the runtime dependency stays a real option for later, for
+example as a second installer entry.
+
+`InstallerType: portable` is what makes this work unsigned and with no installer: winget copies
+the file into its own packages folder, adds a `umbra` command, and writes the Apps & features
+entry itself.
 
 ## Before it can be submitted
 
