@@ -81,8 +81,8 @@
 
             A dark pane with a faint accent edge, a cyan glow, and a band of light that sweeps
             across it once on the way in. The sweep is a rectangle of gradient rotated 45 degrees
-            and translated across the pane, clipped to it — the same construction as the CSS the
-            project owner asked for, where a ::before element is rotated and slid on hover.
+            and translated across the pane, clipped to it — the same construction as the CSS it was
+            modelled on, where a ::before element is rotated and slid on hover.
 
             Three things about it that are this bar rather than a web page:
 

@@ -40,7 +40,7 @@ public class UmbraSettingsTests : IDisposable
             "The dormant size must be below the full size, or nothing shrinks.");
         Assert.True(settings.Motion);
 
-        // On by default since 2026-09-20, by the project owner's decision: a taskbar
+        // On by default since 2026-09-20, by deliberate choice: a taskbar
         // replacement without a notification area is not one. It still costs a permanent
         // 100 ms timer, and §11.2 Q2 — whether those timers defeat display idle — is still
         // unmeasured; the default does not settle it.

@@ -59,8 +59,8 @@ internal sealed class UmbraSettings
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Defaults to 16, not to §7.1's 24.</b> This is a deliberate deviation, taken by the
-    /// project owner: the bar ships with idle icons shrunk and growing back on approach, rather
+    /// <b>Defaults to 16, not to §7.1's 24.</b> This is a deliberate deviation, a product
+    /// choice: the bar ships with idle icons shrunk and growing back on approach, rather
     /// than shipping at full size and leaving the shrink as something to find. The fidelity cost is
     /// paid only while the bar is dormant and the pointer is elsewhere, and the icon is at the
     /// Windows 11 size for the whole of the time anyone is actually looking at it.
@@ -131,7 +131,7 @@ internal sealed class UmbraSettings
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>On by default</b> — the project owner's decision, 2026-09-20. It was off because tray
+    /// <b>On by default</b> — a deliberate choice, 2026-09-20. It was off because tray
     /// hosting costs a permanent 100 ms timer and §11.2 Q2, whether ManagedShell's timers defeat
     /// display idle, is unmeasured. <b>Q2 is still unmeasured and this does not settle it</b>; what
     /// settled the default is that a taskbar replacement without a notification area is not one.

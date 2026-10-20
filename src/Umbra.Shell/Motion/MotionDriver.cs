@@ -234,7 +234,7 @@ internal sealed class MotionDriver : IDisposable
         // amplitude doubles peak duty: measured 0.162 → 0.324 for a 1.5 px stroke. And it lands on
         // horizontal strokes only, because vertical stems are protected by the long-axis drift,
         // which is untouched. Against §2.4's 86–191× gap to ordinary screen content, that is a
-        // rounding error on a rounding error, and the project owner judged the trade worth it.
+        // rounding error on a rounding error, and the trade is judged worth it.
         clock = clock with { Across = clock.Across * ClockShortAxisScale };
 
         (double cdx, double cdy) = clock.ToScreen(metrics.Edge);

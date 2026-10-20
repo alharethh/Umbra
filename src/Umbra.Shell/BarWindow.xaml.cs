@@ -998,8 +998,8 @@ internal partial class BarWindow : AppBarWindow
     /// <remarks>
     /// <b>A deliberate deviation from §7.1's 16 px</b>, in the same spirit as the icon row's
     /// dormant size: 16 px was measured against Windows 10's notification area and reads as small
-    /// beside a 24 px task icon on this panel. Tried at 20 px on hardware and judged too large by
-    /// the project owner; 18 is where it settled.
+    /// beside a 24 px task icon on this panel. Tried at 20 px on hardware and judged too large;
+    /// 18 is where it settled.
     /// </remarks>
     internal const double TrayGlyphExtent = 18.0;
 
