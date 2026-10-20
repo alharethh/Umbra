@@ -1,0 +1,100 @@
+using Umbra.Shell.Tasks;
+using Xunit;
+
+namespace Umbra.Shell.Tests;
+
+/// <summary>
+/// UWP applications are drawn inside <c>ApplicationFrameHost.exe</c>, so their executable names and
+/// draws every one of them as the host. Figures are what ManagedShell's <c>ApplicationWindow</c>
+/// reported for Settings and Calculator on the laptop, 2026-10-20.
+/// </summary>
+public sealed class PackagedAppTests
+{
+    private const string FrameHost = @"C:\Windows\System32\ApplicationFrameHost.exe";
+    private const string SettingsId = "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel";
+
+    [Fact]
+    public void A_Frame_Hosted_Window_Is_Not_Named_After_The_Host()
+    {
+        string? name = TaskbarSlot.NameFor(FrameHost, "Application Frame Host", SettingsId, "Settings", null);
+
+        Assert.Equal("Settings", name);
+    }
+
+    [Fact]
+    public void The_Packaged_Name_Beats_The_Title_Once_Resolved()
+    {
+        // A title is per-document; the packaged name is the application's.
+        string? name = TaskbarSlot.NameFor(FrameHost, "Application Frame Host", "Microsoft.Windows.Photos_8wekyb3d8bbwe!App", "IMG_0001.jpg - Photos", "Photos");
+
+        Assert.Equal("Photos", name);
+    }
+
+    [Fact]
+    public void An_Ordinary_Window_Is_Still_Named_By_Its_File_Description()
+    {
+        Assert.Equal("Firefox", TaskbarSlot.NameFor(@"C:\Program Files\Mozilla Firefox\firefox.exe", "Firefox", "308046B0AF4A39CB", "Some page — Mozilla Firefox", null));
+        Assert.Equal("tool", TaskbarSlot.NameFor(@"C:\x\tool.exe", null, null, "Title", null));
+    }
+
+    [Fact]
+    public void The_Frame_Host_Is_Never_An_Icon_Source()
+    {
+        // Precondition: the host really is on disk, so the refusal is not just a missing file.
+        Assert.True(System.IO.File.Exists(FrameHost));
+
+        Assert.False(TaskbarSlot.UsableIconSource(FrameHost));
+        Assert.True(TaskbarSlot.UsableIconSource(@"C:\Windows\notepad.exe"));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Windows\System32\ApplicationFrameHost.exe", true)]
+    [InlineData(@"c:\windows\system32\applicationframehost.exe", true)]
+    [InlineData(@"C:\Windows\explorer.exe", false)]
+    [InlineData(SettingsId, false)]
+    [InlineData(null, false)]
+    public void Recognises_The_Frame_Host(string? path, bool expected) =>
+        Assert.Equal(expected, PackagedAppNames.IsFrameHost(path));
+
+    [Fact]
+    public void Names_Resolve_Off_The_Calling_Thread_And_Only_Once()
+    {
+        int calls = 0;
+        int callerThread = Environment.CurrentManagedThreadId;
+        int? resolverThread = null;
+        using ManualResetEventSlim done = new();
+
+        PackagedAppNames names = new(id =>
+        {
+            Interlocked.Increment(ref calls);
+            resolverThread = Environment.CurrentManagedThreadId;
+            return "Settings";
+        });
+
+        Assert.Null(names.Lookup(SettingsId));
+
+        names.Request(SettingsId, done.Set);
+        names.Request(SettingsId, () => { });
+
+        Assert.True(done.Wait(TimeSpan.FromSeconds(5)));
+        Assert.Equal("Settings", names.Lookup(SettingsId));
+        Assert.NotEqual(callerThread, resolverThread);
+
+        names.Request(SettingsId, () => { });
+        Thread.Sleep(50);
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void The_Apps_Folder_Names_Settings()
+    {
+        // The real resolver, against a package every Windows 11 install has.
+        PackagedAppNames names = new();
+        using ManualResetEventSlim done = new();
+
+        names.Request(SettingsId, done.Set);
+
+        Assert.True(done.Wait(TimeSpan.FromSeconds(10)));
+        Assert.Equal("Settings", names.Lookup(SettingsId));
+    }
+}
