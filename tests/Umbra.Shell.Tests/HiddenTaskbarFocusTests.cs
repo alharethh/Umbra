@@ -107,6 +107,102 @@ public class HiddenTaskbarFocusTests
     public void Shell_Panels_And_Cloaked_Windows_Are_Not_Hand_Back_Targets(string cls, bool cloaked, string? process) =>
         Assert.Equal(Kind.Other, HiddenTaskbarFocus.ClassifyBy(cls, true, false, cloaked, process));
 
+    /// <summary>
+    /// Backlog 9b: after a battery right-click and Esc the foreground stays on Explorer's hidden
+    /// <c>SystemTray_Main</c>, and Win+T from there reaches the hidden taskbar. While the power
+    /// menu is open the same window is the foreground, and it must be left alone.
+    /// </summary>
+    [Theory]
+    [InlineData("SystemTray_Main", false, false, (int)Kind.HiddenExplorerTaskbar)]   // after Esc
+    [InlineData("SystemTray_Main", false, true, (int)Kind.Other)]                    // power menu open
+    [InlineData("SystemTray_Main", true, false, (int)Kind.Other)]
+    [InlineData("Shell_TrayWnd", false, true, (int)Kind.Other)]                      // a menu on the hidden taskbar
+    public void Explorers_Hidden_Tray_Host_Is_Handed_Back_Only_With_No_Menu_Open(
+        string cls, bool visible, bool menuOpen, int expected) =>
+        Assert.Equal((Kind)expected, HiddenTaskbarFocus.ClassifyBy(cls, visible, false, menuOpen: menuOpen));
+
+    [Fact]
+    public void The_Power_Menu_Is_Never_Taken_Away_And_Esc_Then_Hands_Back()
+    {
+        var desk = new Desk();
+        var watcher = desk.Watcher();
+        IntPtr trayHost = 0x400;
+
+        watcher.Poll(App);
+        desk.Kinds[trayHost] = HiddenTaskbarFocus.ClassifyBy("SystemTray_Main", false, false, menuOpen: true);
+        for (int i = 0; i < 10; i++) watcher.Poll(trayHost);
+        Assert.Empty(desk.HandedTo);
+
+        desk.Kinds[trayHost] = HiddenTaskbarFocus.ClassifyBy("SystemTray_Main", false, false, menuOpen: false);
+        Assert.Equal(IntPtr.Zero, watcher.Poll(trayHost));
+        Assert.Equal(App, watcher.Poll(trayHost));
+    }
+
+    /// <summary>
+    /// Backlog 9d: Win+X's menu is a XAML popup owned by the hidden <c>Shell_TrayWnd</c>, and the
+    /// thread's menu flags stay at zero while it is up, so a menu-mode check alone handed the
+    /// keyboard back and closed the menu. Real windows on a thread with no menu: an owned, shown
+    /// popup counts as a menu; a hidden one, or a shown window nobody owns, does not.
+    /// </summary>
+    [Fact]
+    public void An_Owned_Popup_On_The_Hidden_Window_Counts_As_An_Open_Menu()
+    {
+        bool withPopup = false, popupHidden = true, unowned = true;
+        Exception? failure = null;
+
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var owner = Window("owner", IntPtr.Zero, visible: false);
+                using var popup = Window("popup", owner.Handle, visible: true);
+                uint tid = GetWindowThreadProcessId(owner.Handle, out _);
+
+                withPopup = HiddenTaskbarFocus.IsMenuOpen(owner.Handle, tid);
+
+                ShowWindow(popup.Handle, 0);
+                popupHidden = HiddenTaskbarFocus.IsMenuOpen(owner.Handle, tid);
+
+                using var stranger = Window("stranger", IntPtr.Zero, visible: true);
+                unowned = HiddenTaskbarFocus.IsMenuOpen(owner.Handle, tid);
+            }
+            catch (Exception e)
+            {
+                failure = e;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(10)));
+
+        Assert.Null(failure);
+        Assert.True(withPopup);
+        Assert.False(popupHidden);
+        Assert.False(unowned);
+    }
+
+    private const int WsPopup = unchecked((int)0x80000000);
+    private const int WsVisible = 0x10000000;
+    private const int WsExToolWindow = 0x80;
+    private const int WsExNoActivate = 0x08000000;
+
+    /// <summary>A tiny top-level window, off screen, that never takes the foreground.</summary>
+    private static System.Windows.Interop.HwndSource Window(string name, IntPtr owner, bool visible) =>
+        new(new System.Windows.Interop.HwndSourceParameters(name, 1, 1)
+        {
+            WindowStyle = WsPopup | (visible ? WsVisible : 0),
+            ExtendedWindowStyle = WsExToolWindow | WsExNoActivate,
+            ParentWindow = owner,
+            PositionX = -32000,
+            PositionY = -32000,
+        });
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr window, int command);
+
     [Fact]
     public void An_Ordinary_CoreWindow_Is_Still_Ordinary() =>
         Assert.Equal(Kind.Ordinary, HiddenTaskbarFocus.ClassifyBy("Windows.UI.Core.CoreWindow", true, false, false, "Calculator"));
