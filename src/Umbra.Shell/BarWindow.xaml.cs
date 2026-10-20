@@ -177,6 +177,15 @@ internal partial class BarWindow : AppBarWindow
             // Which slot owns the foreground window, for the running indicator — and, from the
             // same handle, which input language the next keystroke will be typed in.
             IntPtr foreground = GetForegroundWindow();
+
+            // Win+T, Win+B and Win+D's second press give Explorer's hidden taskbar the keyboard.
+            // Not while Start is up, which reaches the foreground by way of Explorer too.
+            if (!_startMenu.IsOpen)
+            {
+                IntPtr handedTo = _hiddenTaskbar.Poll(foreground);
+                if (handedTo != IntPtr.Zero) foreground = handedTo;
+            }
+
             _tasks.UpdateForeground(foreground);
 
             // Not while Start is up: it is a surface of its own, with a layout of its own, and
@@ -276,6 +285,7 @@ internal partial class BarWindow : AppBarWindow
     private readonly string? _wearPath;
     private readonly DispatcherTimer _clock;
     private readonly StartMenuWatcher _startMenu = new();
+    private readonly HiddenTaskbarFocus _hiddenTaskbar = new();
     private readonly KeyboardLayoutWatcher _language = new();
     private readonly NetworkWatcher _network = new();
     private readonly TaskbarModel _tasks;
