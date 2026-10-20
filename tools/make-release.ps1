@@ -15,12 +15,63 @@
 # single-file download has no files next to it to put them in.
 
 param(
-    [string]$Version = "0.1.0",
+    # The release's own version, MAJOR.MINOR.PATCH, e.g. 0.1.3. Required: it is stamped into the
+    # binaries, and a default would quietly stamp the wrong one into any release that forgot it.
+    [Parameter(Mandatory = $true)]
+    [string]$Version,
     # The checkout this script sits in, so it builds whichever copy it was run from.
-    [string]$Repo = (Split-Path $PSScriptRoot -Parent)
+    [string]$Repo = (Split-Path $PSScriptRoot -Parent),
+    # A scratch folder for the two downloads, to try the script without touching the real
+    # artifacts\release or artifacts\Umbra. It must be missing or empty; a relative path is taken
+    # from PowerShell's current location. Left out, the downloads go to artifacts\release, which
+    # is emptied first, and artifacts\Umbra is refreshed to match.
+    [string]$Out
 )
 
 $ErrorActionPreference = "Stop"
+
+# A scratch -Out is refused unless it is missing or empty, rather than emptied the way
+# artifacts\release is. Emptying is safe there because the script owns that folder; an -Out is
+# whatever path somebody typed, and "-Out ." or "-Out $HOME\Downloads" must not be wiped. Deleting
+# only the files the script makes was the other way, and lost: it would still overwrite a
+# same-named download of the user's, and leaves their own files mixed in with the release's.
+#
+# Resolved once, here, against PowerShell's location. dotnet and the .NET file APIs resolve a
+# relative path against the process directory instead, which PowerShell does not keep in step.
+$scratch = [bool]$Out
+if ($scratch) {
+    $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
+    if ((Test-Path -LiteralPath $Out) -and @(Get-ChildItem -LiteralPath $Out -Force).Count -gt 0) {
+        throw "-Out '$Out' is not empty. Give a missing or empty folder; nothing was deleted."
+    }
+} else {
+    $Out = Join-Path $Repo "artifacts\release"
+}
+
+# The version goes into every publish as -p:Version. Without it the exe said 1.0.0.0 in Explorer's
+# Properties, in crash reports and in Defender submissions, whatever the release, so nobody could
+# tell from the file which build they had.
+#
+# Version rather than FileVersion alone, because MSBuild derives the rest from it: FileVersion and
+# AssemblyVersion become 0.1.3.0 (a Windows file version is always four parts, so the fourth is 0),
+# and InformationalVersion -- the "Product version" line -- becomes 0.1.3 plus the commit it was
+# built from. Setting FileVersion alone would leave the product version reading 1.0.0.
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Version must be MAJOR.MINOR.PATCH, e.g. 0.1.3 (got '$Version')."
+}
+$fileVersion = "$Version.0"
+$versionArg = "-p:Version=$Version"
+
+# Reads the stamped version back off a built file. Checked rather than trusted: a publish that
+# ignored the property would still succeed, and the file would still say 1.0.0.0.
+function Assert-FileVersion([string]$Path) {
+    $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
+    $product = ($info.ProductVersion -split '\+')[0]
+    if ($info.FileVersion -ne $fileVersion -or $product -ne $Version) {
+        throw "$(Split-Path $Path -Leaf) carries file version '$($info.FileVersion)' and product version '$($info.ProductVersion)', expected $fileVersion and $Version."
+    }
+    "{0,-38} {1}" -f "  version", $info.ProductVersion
+}
 
 # Checked before anything is built rather than at the step that needs it. A bar running out of
 # artifacts\Umbra holds Umbra.exe open, and being told that after three minutes of publishing is
@@ -38,13 +89,13 @@ $runnable = Join-Path $Repo "artifacts\Umbra"
 $holding = @(Get-Process -ErrorAction SilentlyContinue |
     Where-Object { Test-RunsFromFolder $_.Path $runnable })
 
-if ($holding.Count -gt 0) {
+if (-not $scratch -and $holding.Count -gt 0) {
     $pid0 = $holding[0].Id
     throw "Umbra is running from artifacts\Umbra (pid $pid0). Exit it - right-click the bar, Exit - then run this again."
 }
 
-$out = Join-Path $Repo "artifacts\release"
-Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
+$out = $Out
+if (-not $scratch) { Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
 $project = Join-Path $Repo "src\Umbra.Shell"
@@ -56,6 +107,7 @@ $standalone = Join-Path $out "standalone"
     -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:EnableCompressionInSingleFile=true `
+    $versionArg `
     -o $standalone --nologo -v q
 if ($LASTEXITCODE -ne 0) { throw "standalone publish failed" }
 
@@ -64,12 +116,17 @@ Move-Item (Join-Path $standalone "Umbra.exe") $exe -Force
 Remove-Item -Recurse -Force $standalone
 
 "{0,-38} {1,7:N1} MB" -f (Split-Path $exe -Leaf), ((Get-Item $exe).Length / 1MB)
+Assert-FileVersion $exe
 
 # --- and the small one for anyone who has the runtime --------------------------------------------
 $folder = Join-Path $out "Umbra-$Version-win-x64"
 
-& dotnet publish $project -c Release -o $folder --nologo -v q
+& dotnet publish $project -c Release $versionArg -o $folder --nologo -v q
 if ($LASTEXITCODE -ne 0) { throw "framework-dependent publish failed" }
+
+# Both files: the exe is only the apphost, which takes its version resource from the dll.
+Assert-FileVersion (Join-Path $folder "Umbra.exe")
+Assert-FileVersion (Join-Path $folder "Umbra.dll")
 
 # Symbols and XML docs are for building against, not for running.
 Remove-Item (Join-Path $folder "*.pdb"), (Join-Path $folder "*.xml") -ErrorAction SilentlyContinue
@@ -92,13 +149,21 @@ Remove-Item -Recurse -Force $folder
 # still starts. That cost a round of "I tried it and it still doesn't work" against a fix that was
 # fine. Same publish the docs describe, so the copy that gets launched is never older than the
 # ones that get uploaded.
+#
+# Not for a scratch -Out: a trial version in artifacts\Umbra would then be what gets launched.
+if ($scratch) {
+    Write-Host "`nBoth downloads built in $out. artifacts\Umbra left alone (scratch run)."
+    return
+}
+
 Remove-Item -Recurse -Force $runnable -ErrorAction SilentlyContinue
 
-& dotnet publish $project -c Release -o $runnable --nologo -v q
+& dotnet publish $project -c Release $versionArg -o $runnable --nologo -v q
 if ($LASTEXITCODE -ne 0) { throw "runnable publish failed" }
+Assert-FileVersion (Join-Path $runnable "Umbra.exe")
 
 $stamp = (Get-Item (Join-Path $runnable "Umbra.exe")).LastWriteTime.ToString("HH:mm:ss")
 "{0,-38} {1,7}" -f "artifacts\Umbra\Umbra.exe", $stamp
 
 Write-Host "`nBoth downloads built, and artifacts\Umbra refreshed to match."
-Write-Host "Attach the two in artifacts\release to the release for the matching tag."
+Write-Host "Attach the two in $out to the release for the matching tag."
