@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Umbra.Shell.Diagnostics;
 
@@ -37,8 +37,20 @@ namespace Umbra.Shell.Shell;
 /// foreground, so its thread's menu mode (<c>GetGUIThreadInfo</c>: <c>GUI_INMENUMODE</c> or
 /// <c>GUI_POPUPMENUMODE</c>) decides. Measured on the 150% laptop, sampling every 2 ms across five
 /// right clicks: the foreground and <c>flags = 0x14</c> arrived in the same sample every time, and
-/// the flags went to 0 with Esc while the foreground stayed. The check is applied to the hidden
-/// taskbar as well, so no menu Explorer opens on either window is ever pulled out from under the user.
+/// the flags went to 0 with Esc while the foreground stayed.
+/// </para>
+/// <para>
+/// <b>Menu mode alone does not see Explorer's XAML menus</b> (backlog 9d). Win+X makes the hidden
+/// <c>Shell_TrayWnd</c> the foreground with <c>flags = 0x0</c>: its menu is a XAML popup, a
+/// <c>Xaml_WindowedPopupClass</c> window that the hidden taskbar owns, not a Win32 menu, and a
+/// check of menu mode alone handed the keyboard back with the menu up for about 175 ms (review of
+/// PR #7). So a visible, uncloaked window <em>owned by</em> the hidden window counts as open too.
+/// Measured on the 150% laptop, sampling every few milliseconds: the Win+X popup is up within
+/// 40 ms of the foreground arriving, while at Win+B's and Win+T's hand-back the thread has nothing
+/// visible but cloaked helpers. Win+T's button tooltip is the same class with the same owner, but
+/// Explorer raises it about 800 ms after the key, well after the two ticks, so it does not hold
+/// the hand-back off. Both checks apply to all three hidden windows. They cover Win32 menus and
+/// owned XAML popups; a menu Explorer drew some third way would still be taken away.
 /// </para>
 /// </remarks>
 internal sealed class HiddenTaskbarFocus
@@ -165,8 +177,9 @@ internal sealed class HiddenTaskbarFocus
         // shared with every CoreWindow on the desktop, so it is looked up for that class alone.
         string? process = cls == "Windows.UI.Core.CoreWindow" ? ProcessName(pid) : null;
 
-        // Menu mode is only asked of the hidden Explorer windows, the one case it decides.
-        bool menuOpen = !visible && IsHiddenExplorerClass(cls) && InMenuMode(thread);
+        // Menu mode and owned popups are only asked of the hidden Explorer windows, the one case
+        // they decide.
+        bool menuOpen = !visible && IsHiddenExplorerClass(cls) && IsMenuOpen(window, thread);
 
         return ClassifyBy(cls, visible, window == NativeMethods.GetShellWindow(), cloaked, process, menuOpen);
     }
@@ -184,6 +197,33 @@ internal sealed class HiddenTaskbarFocus
         if (thread == 0 || !NativeMethods.GetGUIThreadInfo(thread, ref info)) return true;
         return (info.Flags & (GuiInMenuMode | GuiPopupMenuMode)) != 0;
     }
+
+    /// <summary>A Win32 menu or an owned XAML popup is up on the hidden window's thread.</summary>
+    internal static bool IsMenuOpen(IntPtr window, uint thread) => InMenuMode(thread) || HasOwnedPopup(window, thread);
+
+    /// <summary>
+    /// Whether a visible, uncloaked window on the thread is owned by <paramref name="owner"/>: how
+    /// Explorer's XAML menus show, Win+X's among them, which leave the thread's menu flags at zero.
+    /// </summary>
+    private static bool HasOwnedPopup(IntPtr owner, uint thread)
+    {
+        if (thread == 0) return false;
+
+        bool found = false;
+        NativeMethods.EnumThreadWindows(thread, (window, _) =>
+        {
+            found = window != owner && IsOpenPopup(NativeMethods.GetWindow(window, GwOwner) == owner,
+                                                   NativeMethods.IsWindowVisible(window), IsCloaked(window));
+            return !found;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    /// <summary>The owned-popup rule, free of the desktop.</summary>
+    internal static bool IsOpenPopup(bool ownedByForeground, bool visible, bool cloaked) =>
+        ownedByForeground && visible && !cloaked;
+
+    private const uint GwOwner = 4;
 
     private const uint GuiInMenuMode = 0x4;
     private const uint GuiPopupMenuMode = 0x10;
@@ -261,6 +301,15 @@ internal sealed class HiddenTaskbarFocus
 
         [DllImport("user32.dll")]
         internal static extern IntPtr GetShellWindow();
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr GetWindow(IntPtr window, uint command);
+
+        internal delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool EnumThreadWindows(uint thread, EnumWindowsProc callback, IntPtr parameter);
 
         [StructLayout(LayoutKind.Sequential)]
         internal struct GuiThreadInfo
