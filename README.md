@@ -8,12 +8,12 @@
 
 [![Download Umbra 0.2.1 for Windows](https://img.shields.io/badge/Download-Umbra%200.2.1-B0F7FB?style=for-the-badge&logo=windows11&logoColor=B0F7FB&labelColor=0B0B0B)](https://github.com/alharethh/Umbra/releases/download/v0.2.1/Umbra-0.2.1-win-x64.exe)
 
-<sub>Windows 11 · x64 · 73 MB · nothing to install &nbsp;·&nbsp; [smaller build and all releases](https://github.com/alharethh/Umbra/releases/latest)</sub>
+<sub>Windows 11 · x64 · 73 MB · nothing to install &nbsp;·&nbsp; [smaller build and all releases](https://github.com/alharethh/Umbra/releases)</sub>
 
 ![Windows 11](https://img.shields.io/badge/Windows%2011-0078D4?logo=windows11&logoColor=white)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
 ![WPF](https://img.shields.io/badge/WPF-C%23-239120)
-![tests](https://img.shields.io/badge/tests-400%20passing-2ea44f)
+![tests](https://img.shields.io/badge/tests-580%20passing-2ea44f)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![licence](https://img.shields.io/badge/licence-MIT-blue)
 
@@ -157,7 +157,7 @@ And the rest of what a taskbar owes you:
 
 ## Install
 
-**Download the [latest release](https://github.com/alharethh/Umbra/releases/latest)** and run it.
+**Download the [latest release](https://github.com/alharethh/Umbra/releases)** and run it.
 Two downloads, and the difference is only what your machine already has:
 
 | | |

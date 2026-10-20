@@ -39,7 +39,7 @@ namespace Umbra.Shell.Shell;
 /// baseline. So the saved bit is captured too, and put back at <see cref="Restore"/> and in crash
 /// recovery, <b>only when the Explorer running the shell is not the one that was running at
 /// capture</b>. Without that condition a deliberate change the user makes in Windows Settings while
-/// the bar runs would be reverted on exit. Owner's decision, 2026-10-16 (option A).
+/// the bar runs would be reverted on exit. A deliberate choice, 2026-10-16.
 /// </para>
 /// </remarks>
 internal sealed class ExplorerStateGuard : IDisposable
