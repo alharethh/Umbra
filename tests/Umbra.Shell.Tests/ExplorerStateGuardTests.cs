@@ -585,4 +585,76 @@ public class ExplorerStateGuardTests : IDisposable
         guard.Restore();
         Assert.False(taskbar.SavedAutoHide);
     }
+
+    [Fact]
+    public void Each_Restart_Gets_Its_Own_Repair_Allowance()
+    {
+        // Backlog 1i (c): the bound is per watch, not per run. A second restart that used up
+        // nothing must still be put right, or a run with two Explorer crashes keeps the damage.
+        (FakeTaskbar taskbar, ExplorerStateGuard guard) = RunningBarAfterAnExplorerRestart();
+        guard.WatchForLateSave(TimeSpan.FromMinutes(1));
+
+        for (int i = 0; i < ExplorerStateGuard.MaxRepairsPerWatch; i++)
+            taskbar.ExplorerSavesItsSettings(autoHide: true);
+
+        Assert.Equal(ExplorerStateGuard.MaxRepairsPerWatch, taskbar.SavedAutoHideWrites);
+
+        taskbar.ExplorerRestartsUnderTheBar();
+        guard.WatchForLateSave(TimeSpan.FromMinutes(1));
+        taskbar.ExplorerSavesItsSettings(autoHide: true);
+
+        Assert.False(taskbar.SavedAutoHide);
+        Assert.True(taskbar.SavedAutoHideWrites > ExplorerStateGuard.MaxRepairsPerWatch);
+    }
+
+    /// <summary>Timers that fire only when the test says so, including after being disposed.</summary>
+    private sealed class ManualTimers
+    {
+        public List<Action> Callbacks { get; } = [];
+
+        public IDisposable Start(TimeSpan due, Action callback)
+        {
+            Callbacks.Add(callback);
+            return new Nothing();
+        }
+
+        private sealed class Nothing : IDisposable
+        {
+            public void Dispose()
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public void A_Late_Timer_From_An_Earlier_Watch_Does_Not_End_A_Newer_One()
+    {
+        // Backlog 1i (b): disposing a timer does not withdraw a callback already queued, so the
+        // first window can expire just as a second restart replaces its watch. That callback
+        // must not end the second watch, two minutes early.
+        ManualTimers timers = new();
+        FakeTaskbar taskbar = new(NativeMethods.ABState.Default) { SavedAutoHide = false };
+        ExplorerStateGuard guard = new(taskbar, _statePath, timers.Start);
+        guard.Capture();
+        taskbar.SuppressLikeUmbraDoes();
+        taskbar.Shell = "explorer-2";
+
+        guard.WatchForLateSave(TimeSpan.FromMinutes(2));
+        taskbar.ExplorerRestartsUnderTheBar();
+        guard.WatchForLateSave(TimeSpan.FromMinutes(2));
+        Assert.Equal(2, timers.Callbacks.Count);
+
+        timers.Callbacks[0]();
+
+        Assert.True(guard.WatchingForLateSave);
+        Assert.True(taskbar.Watching);
+
+        taskbar.ExplorerSavesItsSettings(autoHide: true);
+        Assert.False(taskbar.SavedAutoHide);
+
+        // Its own timer still ends it.
+        timers.Callbacks[1]();
+        Assert.False(guard.WatchingForLateSave);
+        Assert.False(taskbar.Watching);
+    }
 }

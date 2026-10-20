@@ -46,15 +46,27 @@ internal sealed class ExplorerStateGuard : IDisposable
 {
     private readonly ITaskbarState _taskbar;
     private readonly string _statePath;
+    private readonly Func<TimeSpan, Action, IDisposable> _startTimer;
     private bool _restored;
 
-    public ExplorerStateGuard(ITaskbarState taskbar, string? statePath = null)
+    /// <param name="startTimer">
+    /// Runs a callback once after a delay; disposing it cancels a callback not yet queued. A seam
+    /// for tests, which need to fire a timer late on purpose. Defaults to a thread-pool timer.
+    /// </param>
+    public ExplorerStateGuard(
+        ITaskbarState taskbar,
+        string? statePath = null,
+        Func<TimeSpan, Action, IDisposable>? startTimer = null)
     {
         ArgumentNullException.ThrowIfNull(taskbar);
 
         _taskbar = taskbar;
         _statePath = statePath ?? DefaultStatePath;
+        _startTimer = startTimer ?? StartThreadPoolTimer;
     }
+
+    private static IDisposable StartThreadPoolTimer(TimeSpan due, Action callback) =>
+        new Timer(_ => callback(), null, due, Timeout.InfiniteTimeSpan);
 
     /// <summary>Where the pre-Umbra state is parked while Umbra is running.</summary>
     public static string DefaultStatePath => Path.Combine(
@@ -143,7 +155,7 @@ internal sealed class ExplorerStateGuard : IDisposable
 
     private readonly Lock _gate = new();
     private IDisposable? _lateSaveWatch;
-    private Timer? _lateSaveTimer;
+    private IDisposable? _lateSaveTimer;
     private int _repairsThisWatch;
 
     /// <summary>
@@ -164,6 +176,14 @@ internal sealed class ExplorerStateGuard : IDisposable
     /// wrong, and the 0x03 would have arrived four seconds later. The repair is the same one
     /// <see cref="Restore"/> makes, with the same conditions, so it fires only while the Explorer
     /// running is not the one captured.
+    /// </para>
+    /// <para>
+    /// <b>A change the user makes in Windows Settings inside the window is put back too</b>, up to
+    /// <see cref="MaxRepairsPerWatch"/> times. A notification says only that the key was written,
+    /// not by whom, and the user's toggle and Explorer's startup save are the same write to the
+    /// same byte. The exit repair has always reverted that change under the same condition, so the
+    /// watch moves it earlier rather than making it new; and while the bar runs, Explorer's taskbar
+    /// is suppressed either way, so the setting has nothing to act on until exit. Backlog 1i.
     /// </para>
     /// </remarks>
     public void WatchForLateSave(TimeSpan window)
@@ -191,7 +211,11 @@ internal sealed class ExplorerStateGuard : IDisposable
             if (!_restored && _lateSaveWatch is null)
             {
                 _lateSaveWatch = watch;
-                _lateSaveTimer = new Timer(_ => EndLateSaveWatch(), null, window, Timeout.InfiniteTimeSpan);
+                // The timer is told which watch it ends. Disposing a timer does not withdraw a
+                // callback already queued, so a window that expired just as the next restart
+                // replaced its watch would otherwise end the new one, two minutes early.
+                IDisposable mine = watch;
+                _lateSaveTimer = _startTimer(window, () => EndLateSaveWatch(mine));
                 watch = null;
             }
         }
@@ -218,10 +242,17 @@ internal sealed class ExplorerStateGuard : IDisposable
         }
     }
 
-    private void EndLateSaveWatch()
+    private void EndLateSaveWatch(IDisposable expired)
     {
         IDisposable? watch;
-        lock (_gate) watch = DetachLateSaveWatch();
+
+        lock (_gate)
+        {
+            // A late callback from a watch already replaced or ended: not ours to end.
+            if (!ReferenceEquals(_lateSaveWatch, expired)) return;
+            watch = DetachLateSaveWatch();
+        }
+
         watch?.Dispose();
     }
 
