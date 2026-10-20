@@ -30,7 +30,8 @@ namespace Umbra.Shell.Shell;
 /// <b>The volume icon is not reached by this, and cannot be.</b> It is owned by an ATL window in
 /// Explorer that registered <i>no callback message at all</i> (<c>uCallbackMessage</c> = 0), so
 /// there is nothing to forward a click to — ManagedShell's left-click override opens Quick
-/// Settings for it instead, which is why the left click works.
+/// Settings for it instead, which is why the left click works. Its right click gets a menu of
+/// Umbra's own instead: see <see cref="SpeakerMenu"/>.
 /// </para>
 /// </remarks>
 internal static class TrayRightClick

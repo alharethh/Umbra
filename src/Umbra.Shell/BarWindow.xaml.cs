@@ -3582,6 +3582,18 @@ internal partial class BarWindow : AppBarWindow
 
         if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
 
+        // The speaker icon's owner registered no callback message, so there is nothing to forward
+        // a right click to; the menu is ours. Not forwarded and not watched: the watcher exists to
+        // close another process's menu, and this one is closed by the menu dismisser like the rest.
+        if (e.ChangedButton == MouseButton.Right
+            && sender is FrameworkElement anchor
+            && SpeakerMenu.Replaces(icon.GUID, icon.CallbackMessage))
+        {
+            OpenSpeakerMenu(anchor);
+            e.Handled = true;
+            return;
+        }
+
         AllowIconOwnerForeground(icon);
 
         uint cursor = PackedCursorPosition();
@@ -3606,6 +3618,43 @@ internal partial class BarWindow : AppBarWindow
             barBounds: new System.Windows.Rect(
                 Left * trayDpi, Top * trayDpi, Width * trayDpi, Height * trayDpi));
         e.Handled = true;
+    }
+
+    /// <summary>Opens Umbra's own menu for the speaker icon. See <see cref="SpeakerMenu"/>.</summary>
+    /// <remarks>
+    /// <para>
+    /// Opened by setting <c>IsOpen</c>, so <c>ContextMenuOpeningEvent</c> never fires and the
+    /// window-level handler that clears panels and dismisses Start does not run. Both are done
+    /// here instead — the menu would otherwise be clipped by an open Start menu (Bug 2) or sit
+    /// over a jump list. <b>The flyout is spared</b>, as for any tray right click: the icon may be
+    /// inside it, and the menu would be left floating beside nothing.
+    /// </para>
+    /// <para>
+    /// The <c>Opened</c> class handler still runs, so the dismisser watches this menu and it is
+    /// raised topmost exactly as the bar's other menus are.
+    /// </para>
+    /// </remarks>
+    private void OpenSpeakerMenu(FrameworkElement anchor)
+    {
+        ClearPanelsFor(BarPanel.TrayOverflow);
+        _menuDismisser.Close();
+        DismissWindowsSurfaces();
+
+        ContextMenu menu = new()
+        {
+            Style = MenuStyle("DarkContextMenu"),
+            PlacementTarget = anchor,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint,
+        };
+
+        foreach (SpeakerMenu.Entry entry in SpeakerMenu.Entries)
+        {
+            SpeakerMenu.Entry captured = entry;
+            AddItem(menu, entry.Label, icon: null, (_, _) => SpeakerMenu.Open(captured));
+        }
+
+        menu.IsOpen = true;
+        BringUpLog.Write("tray right click: speaker menu opened");
     }
 
     private void OnTrayIconMouseEnter(object sender, MouseEventArgs e)
