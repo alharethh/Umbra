@@ -667,7 +667,7 @@ judged the taskbar back on visibility plus the bottom pixel, and printed `Explor
 0.6 s` for the kill — the broken case — against 1.43 s for the clean exit that actually worked.
 
 **Not measured:** whether hovering the edge reveals the auto-hidden taskbar (synthetic input cannot
-trigger the reveal — see the trap in the project notes), and whether Explorer writes the runtime
+trigger the reveal), and whether Explorer writes the runtime
 auto-hide into `StuckRects3` on sign-out or an Explorer restart. If it does, the damage outlives the
 session for a user who never runs Umbra again.
 

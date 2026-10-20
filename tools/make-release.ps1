@@ -86,7 +86,7 @@ Remove-Item -Recurse -Force $folder
 
 # --- and the runnable copy, because it is the one anybody actually launches ----------------------
 #
-# artifacts\Umbra is the path the README and the project notes tell you to run, and this script used to
+# artifacts\Umbra is the path the README tells you to run, and this script used to
 # leave it alone. So a release build produced two fresh downloads beside a stale Umbra.exe, and
 # testing "the new build" ran the previous day's -- silently, because the exe is still there and
 # still starts. That cost a round of "I tried it and it still doesn't work" against a fix that was
