@@ -18,9 +18,9 @@ namespace Umbra.Shell.Shell;
 /// <para>
 /// So when the foreground is a hidden Explorer taskbar for two ticks running, the last ordinary
 /// window that had it gets it back. <b>No hook and no new wake-up</b>: the proximity tick already
-/// reads the foreground for the running indicator (Â§6.6). Two ticks rather than one because Start,
+/// reads the foreground for the running indicator (§6.6). Two ticks rather than one because Start,
 /// Quick Settings and Win+D all pass through Explorer, and a hand-back racing one of those could
-/// close the surface the user just asked for. A visible taskbar is never touched â€” that is
+/// close the surface the user just asked for. A visible taskbar is never touched — that is
 /// Explorer's own, given back by a restore, and keyboard focus in it is the user's.
 /// </para>
 /// <para>
@@ -145,12 +145,24 @@ internal sealed class HiddenTaskbarFocus
 
         string cls = ClassOf(window);
         bool visible = NativeMethods.IsWindowVisible(window);
+        bool cloaked = visible && IsCloaked(window);
 
-        return ClassifyBy(cls, visible, window == NativeMethods.GetShellWindow());
+        // The process name is only needed to recognise the notification centre, whose class is
+        // shared with every CoreWindow on the desktop, so it is looked up for that class alone.
+        string? process = cls == "Windows.UI.Core.CoreWindow" ? ProcessName(pid) : null;
+
+        return ClassifyBy(cls, visible, window == NativeMethods.GetShellWindow(), cloaked, process);
     }
 
     /// <summary>The rule, free of the desktop. Our own process is filtered out before this.</summary>
-    internal static Kind ClassifyBy(string windowClass, bool visible, bool isShellWindow)
+    /// <remarks>
+    /// <b>A cloaked window or one of Windows' light-dismiss panels is never a hand-back target.</b>
+    /// Quick Settings and the notification centre stay visible but cloaked once dismissed; the
+    /// first build remembered Quick Settings as the "previous window" and handed Win+T's
+    /// foreground to it (review of PR #6).
+    /// </remarks>
+    internal static Kind ClassifyBy(
+        string windowClass, bool visible, bool isShellWindow, bool cloaked = false, string? processName = null)
     {
         if (windowClass is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd")
             return visible ? Kind.Other : Kind.HiddenExplorerTaskbar;
@@ -159,11 +171,32 @@ internal sealed class HiddenTaskbarFocus
         // second press the windows are back, and the one the user had is the right answer.
         if (isShellWindow || windowClass is "Progman" or "WorkerW") return Kind.Other;
 
+        if (cloaked || ShellSurfaceWatcher.SurfaceFor(windowClass, processName) != ShellSurface.None)
+            return Kind.Other;
+
         return visible ? Kind.Ordinary : Kind.Other;
     }
 
     private static bool StillUsable(IntPtr window) =>
-        NativeMethods.IsWindow(window) && NativeMethods.IsWindowVisible(window) && !NativeMethods.IsIconic(window);
+        NativeMethods.IsWindow(window) && !NativeMethods.IsIconic(window) && Classify(window) == Kind.Ordinary;
+
+    private static bool IsCloaked(IntPtr window) =>
+        NativeMethods.DwmGetWindowAttribute(window, DwmwaCloaked, out int value, sizeof(int)) == 0 && value != 0;
+
+    private const int DwmwaCloaked = 14;
+
+    private static string? ProcessName(uint pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById((int)pid);
+            return process.ProcessName;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 
     private static string ClassOf(IntPtr window)
     {
@@ -193,5 +226,8 @@ internal sealed class HiddenTaskbarFocus
 
         [DllImport("user32.dll")]
         internal static extern IntPtr GetShellWindow();
+
+        [DllImport("dwmapi.dll")]
+        internal static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);
     }
 }

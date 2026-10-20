@@ -93,4 +93,21 @@ public class HiddenTaskbarFocusTests
     [InlineData("Chrome_WidgetWin_1", false, false, (int)Kind.Other)]
     public void Classifies_By_Class_And_Visibility(string cls, bool visible, bool shell, int expected) =>
         Assert.Equal((Kind)expected, HiddenTaskbarFocus.ClassifyBy(cls, visible, shell));
+
+    /// <summary>
+    /// Review of PR #6: with Quick Settings open, Win+T handed the foreground to
+    /// <c>ControlCenterWindow</c>, remembered as the previous window. Cloaked windows and Windows'
+    /// light-dismiss panels are never a target.
+    /// </summary>
+    [Theory]
+    [InlineData("ControlCenterWindow", false, null)]                          // Quick Settings
+    [InlineData("Windows.UI.Core.CoreWindow", false, "ShellExperienceHost")]  // notification centre
+    [InlineData("NotificationCenterWindow", false, null)]
+    [InlineData("Chrome_WidgetWin_1", true, null)]                            // cloaked app window
+    public void Shell_Panels_And_Cloaked_Windows_Are_Not_Hand_Back_Targets(string cls, bool cloaked, string? process) =>
+        Assert.Equal(Kind.Other, HiddenTaskbarFocus.ClassifyBy(cls, true, false, cloaked, process));
+
+    [Fact]
+    public void An_Ordinary_CoreWindow_Is_Still_Ordinary() =>
+        Assert.Equal(Kind.Ordinary, HiddenTaskbarFocus.ClassifyBy("Windows.UI.Core.CoreWindow", true, false, false, "Calculator"));
 }
