@@ -29,6 +29,17 @@ namespace Umbra.Shell.Shell;
 /// window has passed. This does not give Umbra keyboard navigation, which the owner deferred; it
 /// only stops an invisible taskbar from taking keystrokes.
 /// </para>
+/// <para>
+/// <b>Explorer's hidden <c>SystemTray_Main</c> counts too, but never while it has a menu up.</b>
+/// A right click on the battery makes that invisible window the foreground for the power menu,
+/// and after Esc the foreground stays there, so Win+T and Win+D from it reach the hidden taskbar
+/// as before (review of PR #6, backlog 9b). While the menu is open the same window is the
+/// foreground, so its thread's menu mode (<c>GetGUIThreadInfo</c>: <c>GUI_INMENUMODE</c> or
+/// <c>GUI_POPUPMENUMODE</c>) decides. Measured on the 150% laptop, sampling every 2 ms across five
+/// right clicks: the foreground and <c>flags = 0x14</c> arrived in the same sample every time, and
+/// the flags went to 0 with Esc while the foreground stayed. The check is applied to the hidden
+/// taskbar as well, so no menu Explorer opens on either window is ever pulled out from under the user.
+/// </para>
 /// </remarks>
 internal sealed class HiddenTaskbarFocus
 {
@@ -41,7 +52,10 @@ internal sealed class HiddenTaskbarFocus
         /// <summary>An ordinary visible application window the keyboard can go back to.</summary>
         Ordinary,
 
-        /// <summary>Explorer's <c>Shell_TrayWnd</c> or <c>Shell_SecondaryTrayWnd</c>, hidden.</summary>
+        /// <summary>
+        /// Explorer's <c>Shell_TrayWnd</c>, <c>Shell_SecondaryTrayWnd</c> or <c>SystemTray_Main</c>,
+        /// hidden, with no menu open on its thread.
+        /// </summary>
         HiddenExplorerTaskbar,
     }
 
@@ -140,7 +154,7 @@ internal sealed class HiddenTaskbarFocus
     {
         if (window == IntPtr.Zero) return Kind.Other;
 
-        NativeMethods.GetWindowThreadProcessId(window, out uint pid);
+        uint thread = NativeMethods.GetWindowThreadProcessId(window, out uint pid);
         if (pid == 0 || pid == OurProcessId) return Kind.Other;
 
         string cls = ClassOf(window);
@@ -151,8 +165,28 @@ internal sealed class HiddenTaskbarFocus
         // shared with every CoreWindow on the desktop, so it is looked up for that class alone.
         string? process = cls == "Windows.UI.Core.CoreWindow" ? ProcessName(pid) : null;
 
-        return ClassifyBy(cls, visible, window == NativeMethods.GetShellWindow(), cloaked, process);
+        // Menu mode is only asked of the hidden Explorer windows, the one case it decides.
+        bool menuOpen = !visible && IsHiddenExplorerClass(cls) && InMenuMode(thread);
+
+        return ClassifyBy(cls, visible, window == NativeMethods.GetShellWindow(), cloaked, process, menuOpen);
     }
+
+    private static bool IsHiddenExplorerClass(string windowClass) =>
+        windowClass is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or TrayRightClick.ExplorerSystemTrayClass;
+
+    /// <summary>
+    /// Whether the thread has a menu up. A failed read counts as a menu: leaving the foreground
+    /// where it is costs a tooltip, taking it away from an open menu closes what the user asked for.
+    /// </summary>
+    private static bool InMenuMode(uint thread)
+    {
+        var info = new NativeMethods.GuiThreadInfo { Size = Marshal.SizeOf<NativeMethods.GuiThreadInfo>() };
+        if (thread == 0 || !NativeMethods.GetGUIThreadInfo(thread, ref info)) return true;
+        return (info.Flags & (GuiInMenuMode | GuiPopupMenuMode)) != 0;
+    }
+
+    private const uint GuiInMenuMode = 0x4;
+    private const uint GuiPopupMenuMode = 0x10;
 
     /// <summary>The rule, free of the desktop. Our own process is filtered out before this.</summary>
     /// <remarks>
@@ -162,10 +196,11 @@ internal sealed class HiddenTaskbarFocus
     /// foreground to it (review of PR #6).
     /// </remarks>
     internal static Kind ClassifyBy(
-        string windowClass, bool visible, bool isShellWindow, bool cloaked = false, string? processName = null)
+        string windowClass, bool visible, bool isShellWindow, bool cloaked = false, string? processName = null,
+        bool menuOpen = false)
     {
-        if (windowClass is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd")
-            return visible ? Kind.Other : Kind.HiddenExplorerTaskbar;
+        if (IsHiddenExplorerClass(windowClass))
+            return visible || menuOpen ? Kind.Other : Kind.HiddenExplorerTaskbar;
 
         // The desktop is not somewhere to hand the keyboard back to by preference: after Win+D's
         // second press the windows are back, and the one the user had is the right answer.
@@ -226,6 +261,19 @@ internal sealed class HiddenTaskbarFocus
 
         [DllImport("user32.dll")]
         internal static extern IntPtr GetShellWindow();
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct GuiThreadInfo
+        {
+            public int Size;
+            public uint Flags;
+            public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+            public int Left, Top, Right, Bottom;
+        }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
 
         [DllImport("dwmapi.dll")]
         internal static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);

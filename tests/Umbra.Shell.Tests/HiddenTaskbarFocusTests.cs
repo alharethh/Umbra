@@ -107,6 +107,37 @@ public class HiddenTaskbarFocusTests
     public void Shell_Panels_And_Cloaked_Windows_Are_Not_Hand_Back_Targets(string cls, bool cloaked, string? process) =>
         Assert.Equal(Kind.Other, HiddenTaskbarFocus.ClassifyBy(cls, true, false, cloaked, process));
 
+    /// <summary>
+    /// Backlog 9b: after a battery right-click and Esc the foreground stays on Explorer's hidden
+    /// <c>SystemTray_Main</c>, and Win+T from there reaches the hidden taskbar. While the power
+    /// menu is open the same window is the foreground, and it must be left alone.
+    /// </summary>
+    [Theory]
+    [InlineData("SystemTray_Main", false, false, (int)Kind.HiddenExplorerTaskbar)]   // after Esc
+    [InlineData("SystemTray_Main", false, true, (int)Kind.Other)]                    // power menu open
+    [InlineData("SystemTray_Main", true, false, (int)Kind.Other)]
+    [InlineData("Shell_TrayWnd", false, true, (int)Kind.Other)]                      // a menu on the hidden taskbar
+    public void Explorers_Hidden_Tray_Host_Is_Handed_Back_Only_With_No_Menu_Open(
+        string cls, bool visible, bool menuOpen, int expected) =>
+        Assert.Equal((Kind)expected, HiddenTaskbarFocus.ClassifyBy(cls, visible, false, menuOpen: menuOpen));
+
+    [Fact]
+    public void The_Power_Menu_Is_Never_Taken_Away_And_Esc_Then_Hands_Back()
+    {
+        var desk = new Desk();
+        var watcher = desk.Watcher();
+        IntPtr trayHost = 0x400;
+
+        watcher.Poll(App);
+        desk.Kinds[trayHost] = HiddenTaskbarFocus.ClassifyBy("SystemTray_Main", false, false, menuOpen: true);
+        for (int i = 0; i < 10; i++) watcher.Poll(trayHost);
+        Assert.Empty(desk.HandedTo);
+
+        desk.Kinds[trayHost] = HiddenTaskbarFocus.ClassifyBy("SystemTray_Main", false, false, menuOpen: false);
+        Assert.Equal(IntPtr.Zero, watcher.Poll(trayHost));
+        Assert.Equal(App, watcher.Poll(trayHost));
+    }
+
     [Fact]
     public void An_Ordinary_CoreWindow_Is_Still_Ordinary() =>
         Assert.Equal(Kind.Ordinary, HiddenTaskbarFocus.ClassifyBy("Windows.UI.Core.CoreWindow", true, false, false, "Calculator"));
