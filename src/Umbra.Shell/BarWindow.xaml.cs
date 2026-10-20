@@ -848,7 +848,7 @@ internal partial class BarWindow : AppBarWindow
     {
         foreach (string name in (string[])[
             nameof(IsVertical), nameof(ContentBand),
-            nameof(RowOrientation), nameof(RowWidth), nameof(RowHeight),
+            nameof(RowOrientation), nameof(RowRunsFromEnd), nameof(RowWidth), nameof(RowHeight),
             nameof(RowHorizontalAlignment), nameof(RowVerticalAlignment), nameof(RowMargin),
             nameof(SlotWidth), nameof(SlotHeight),
             nameof(StartHorizontalAlignment), nameof(StartVerticalAlignment),
@@ -1683,6 +1683,16 @@ internal partial class BarWindow : AppBarWindow
 
     /// <summary>Icons stack along the bar's long axis.</summary>
     public Orientation RowOrientation => IsVertical ? Orientation.Vertical : Orientation.Horizontal;
+
+    /// <summary>
+    /// Whether the row starts at its far end: bottom-up on a vertical bar, so the first icon sits
+    /// beside Start in the bottom corner and the row grows away from it (§7.3).
+    /// </summary>
+    /// <remarks>
+    /// Both alignments, because Start is in the bottom corner under both. See
+    /// <see cref="SlidingStackPanel.FromEnd"/> for what the top-down stack got wrong.
+    /// </remarks>
+    public bool RowRunsFromEnd => IsVertical;
 
     /// <summary>
     /// The row sits at the aligned end: bottom on a vertical bar (§7.3), left on a horizontal one
@@ -3025,7 +3035,7 @@ internal partial class BarWindow : AppBarWindow
 
         // Which slot position the pointer is over, in the undrifted layout (P5: hit geometry does
         // not move, so this needs no drift correction).
-        int target = Math.Clamp((int)Math.Floor(along / Metrics.Slot.Pitch), 0, Slots.Count - 1);
+        int target = SlidingStackPanel.SlotAt(along, Metrics.Slot.Pitch, Slots.Count, RowRunsFromEnd);
 
         _tasks.Move(_pressedSlot.Key, target, persist: false);
         Carry(along);
@@ -3440,7 +3450,7 @@ internal partial class BarWindow : AppBarWindow
         // the clock, the empty run of bar beside the row — means the end.
         Point at = e.GetPosition(WindowList);
         double along = IsVertical ? at.Y : at.X;
-        int gap = Math.Clamp((int)Math.Round(along / Metrics.Slot.Pitch), 0, Slots.Count);
+        int gap = SlidingStackPanel.GapAt(along, Metrics.Slot.Pitch, Slots.Count, RowRunsFromEnd);
 
         foreach (string executable in executables)
         {

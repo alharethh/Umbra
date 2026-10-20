@@ -514,7 +514,8 @@
             -->
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <render:SlidingStackPanel Orientation="{Binding RowOrientation, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <render:SlidingStackPanel Orientation="{Binding RowOrientation, RelativeSource={RelativeSource AncestorType=Window}}"
+                                              FromEnd="{Binding RowRunsFromEnd, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
 

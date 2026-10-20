@@ -68,7 +68,66 @@ internal sealed class SlidingStackPanel : Panel
         set => SetValue(OrientationProperty, value);
     }
 
+    /// <summary>Whether the first child sits at the far end of the stacking axis.</summary>
+    public static readonly DependencyProperty FromEndProperty = DependencyProperty.Register(
+        nameof(FromEnd), typeof(bool), typeof(SlidingStackPanel),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsArrange));
+
+    /// <summary>
+    /// Stacks the first child at the bottom (or right) and runs the rest back towards the top.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// True on a vertical bar. Start sits in the bottom corner there (§7.3), and the row has to run
+    /// <i>away</i> from it, as it runs away from Start along a bottom bar and as Windows 10's own
+    /// vertical taskbar runs away from its Start at the top. A plain top-down stack reads the other
+    /// way round: the first icon is the one furthest from Start, and a newly opened application
+    /// lands beside Start instead of at the far end of the row.
+    /// </para>
+    /// <para>
+    /// It also broke the rule that an icon holds its place. The row is bottom-aligned, so a top-down
+    /// stack grows at its <i>bottom</i>: every application opening pushed every icon already there
+    /// up by a slot. Run from the end, the row grows at the top and nothing already drawn moves.
+    /// </para>
+    /// <para>
+    /// Positions recorded by <see cref="ArrangedAt"/> stay in the panel's own top-down coordinates
+    /// either way, so holding, carrying and sliding need no case of their own. Only turning a point
+    /// on the row into an index does, which is <see cref="SlotAt"/> and <see cref="GapAt"/>.
+    /// </para>
+    /// </remarks>
+    public bool FromEnd
+    {
+        get => (bool)GetValue(FromEndProperty);
+        set => SetValue(FromEndProperty, value);
+    }
+
     private bool IsVertical => Orientation == Orientation.Vertical;
+
+    /// <summary>
+    /// Which slot a point <paramref name="along"/> the row falls in, clamped to the row.
+    /// </summary>
+    /// <param name="along">DIP from the panel's top (or left) edge, in its undrifted layout.</param>
+    /// <param name="pitch">One slot's length along the row.</param>
+    /// <param name="count">How many slots the row holds.</param>
+    /// <param name="fromEnd">Whether the row runs from the far end, as <see cref="FromEnd"/>.</param>
+    public static int SlotAt(double along, double pitch, int count, bool fromEnd)
+    {
+        if (count <= 0) return 0;
+
+        double fromFirst = fromEnd ? count * pitch - along : along;
+        return Math.Clamp((int)Math.Floor(fromFirst / pitch), 0, count - 1);
+    }
+
+    /// <summary>
+    /// Which gap between slots a point <paramref name="along"/> the row is nearest: 0 before the
+    /// first icon, <paramref name="count"/> after the last.
+    /// </summary>
+    /// <inheritdoc cref="SlotAt"/>
+    public static int GapAt(double along, double pitch, int count, bool fromEnd)
+    {
+        double fromFirst = fromEnd ? count * pitch - along : along;
+        return Math.Clamp((int)Math.Round(fromFirst / pitch), 0, Math.Max(0, count));
+    }
 
     /// <summary>
     /// Takes a child out of the animation so a drag can carry it under the pointer.
@@ -137,19 +196,26 @@ internal sealed class SlidingStackPanel : Panel
 
     protected override Size ArrangeOverride(Size finalSize)
     {
+        double extent = IsVertical ? finalSize.Height : finalSize.Width;
         double along = 0;
 
         foreach (UIElement child in InternalChildren)
         {
             Size desired = child.DesiredSize;
+            double length = IsVertical ? desired.Height : desired.Width;
+
+            // From the end, the first child takes the last stretch of the panel and the rest stack
+            // back towards the start. Measured against the arranged extent rather than the sum of
+            // the children, so a panel given more room than it asked for still starts at the end.
+            double at = FromEnd ? extent - along - length : along;
 
             child.Arrange(IsVertical
-                ? new Rect(0, along, finalSize.Width, desired.Height)
-                : new Rect(along, 0, desired.Width, finalSize.Height));
+                ? new Rect(0, at, finalSize.Width, desired.Height)
+                : new Rect(at, 0, desired.Width, finalSize.Height));
 
-            Reposition(child, along);
+            Reposition(child, at);
 
-            along += IsVertical ? desired.Height : desired.Width;
+            along += length;
         }
 
         return finalSize;
