@@ -127,11 +127,128 @@ internal sealed class ExplorerStateGuard : IDisposable
         Persist();
     }
 
+    /// <summary>How long after an Explorer restart its saved settings are watched.</summary>
+    /// <remarks>
+    /// Explorer's own startup save landed at +6.5 s and +7.6 s in two measured restarts, after the
+    /// bar's reservation had already settled, so the window cannot simply end when that does. A
+    /// notification costs nothing while it waits, so the window is generous; a write after it is
+    /// still put right at exit, as before.
+    /// </remarks>
+    public static readonly TimeSpan LateSaveWindow = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Repairs per watch. Bounds a ping-pong in case Explorer ever answers our write with its own.
+    /// </summary>
+    public const int MaxRepairsPerWatch = 5;
+
+    private readonly Lock _gate = new();
+    private IDisposable? _lateSaveWatch;
+    private Timer? _lateSaveTimer;
+    private int _repairsThisWatch;
+
+    /// <summary>
+    /// Called when Explorer has restarted under the bar. Puts the saved auto-hide bit back now and
+    /// on every write Explorer makes to its saved settings for <paramref name="window"/>, rather
+    /// than only at exit.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// QA 2026-10-18, case 0.6: the restarted Explorer saved the suppression as the user's setting
+    /// 7.6 s after starting and nothing touched it again until the bar exited. Anything that ends
+    /// the session without <see cref="Restore"/> or the next launch's crash recovery — a kill
+    /// followed by never running Umbra again, an uninstall — left the user's taskbar set to hide.
+    /// </para>
+    /// <para>
+    /// Watching rather than checking once, because the save comes when Explorer gets round to it:
+    /// a check at the moment the bar's reservation settled (+3.4 s) would have found nothing
+    /// wrong, and the 0x03 would have arrived four seconds later. The repair is the same one
+    /// <see cref="Restore"/> makes, with the same conditions, so it fires only while the Explorer
+    /// running is not the one captured.
+    /// </para>
+    /// </remarks>
+    public void WatchForLateSave(TimeSpan window)
+    {
+        IDisposable? previous;
+
+        lock (_gate)
+        {
+            if (_restored) return;
+
+            previous = DetachLateSaveWatch();
+            _repairsThisWatch = 0;
+        }
+
+        // Outside the lock: ending a watch waits for its thread, which may be waiting for the lock.
+        previous?.Dispose();
+
+        // The watch calls back once straight away and that call takes the lock, so it is started
+        // outside it too, then kept only if nothing restored or replaced it in the meantime.
+        IDisposable? watch = _taskbar.WatchSavedSettings(OnSavedSettingsChanged);
+        if (watch is null) return;
+
+        lock (_gate)
+        {
+            if (!_restored && _lateSaveWatch is null)
+            {
+                _lateSaveWatch = watch;
+                _lateSaveTimer = new Timer(_ => EndLateSaveWatch(), null, window, Timeout.InfiniteTimeSpan);
+                watch = null;
+            }
+        }
+
+        watch?.Dispose();
+    }
+
+    /// <summary>Whether a late-save watch is running.</summary>
+    public bool WatchingForLateSave
+    {
+        get
+        {
+            lock (_gate) return _lateSaveWatch is not null;
+        }
+    }
+
+    private void OnSavedSettingsChanged()
+    {
+        lock (_gate)
+        {
+            if (_restored || _repairsThisWatch >= MaxRepairsPerWatch) return;
+
+            if (RepairSavedAutoHideIfExplorerRestarted(_shellAtCapture)) _repairsThisWatch++;
+        }
+    }
+
+    private void EndLateSaveWatch()
+    {
+        IDisposable? watch;
+        lock (_gate) watch = DetachLateSaveWatch();
+        watch?.Dispose();
+    }
+
+    /// <summary>Under the lock. The caller disposes what it returns, outside the lock.</summary>
+    private IDisposable? DetachLateSaveWatch()
+    {
+        _lateSaveTimer?.Dispose();
+        _lateSaveTimer = null;
+
+        IDisposable? watch = _lateSaveWatch;
+        _lateSaveWatch = null;
+        return watch;
+    }
+
     /// <summary>Restores Explorer's taskbar and clears the on-disk marker. Safe to call twice.</summary>
     public void Restore()
     {
-        if (_restored) return;
-        _restored = true;
+        IDisposable? watch;
+
+        lock (_gate)
+        {
+            if (_restored) return;
+            _restored = true;
+            watch = DetachLateSaveWatch();
+        }
+
+        watch?.Dispose();
 
         try
         {
@@ -161,15 +278,15 @@ internal sealed class ExplorerStateGuard : IDisposable
     /// This is a backstop for one known failure, and the cost of it misfiring is reverting a choice
     /// the user made, so it fires on evidence rather than on absence of it.
     /// </remarks>
-    private void RepairSavedAutoHideIfExplorerRestarted(string? shellBefore)
+    private bool RepairSavedAutoHideIfExplorerRestarted(string? shellBefore)
     {
-        if (OriginalSavedAutoHide is not bool original || shellBefore is null) return;
+        if (OriginalSavedAutoHide is not bool original || shellBefore is null) return false;
 
         string? shellNow = _taskbar.GetShellIdentity();
-        if (shellNow is null || shellNow == shellBefore) return;
+        if (shellNow is null || shellNow == shellBefore) return false;
 
         bool? saved = _taskbar.GetSavedAutoHide();
-        if (saved is null || saved == original) return;
+        if (saved is null || saved == original) return false;
 
         _taskbar.SetSavedAutoHide(original);
         RepairedSavedAutoHide = true;
@@ -177,6 +294,7 @@ internal sealed class ExplorerStateGuard : IDisposable
         Diagnostics.BringUpLog.Write(
             $"explorer restarted under the bar ({shellBefore} -> {shellNow}) and saved auto-hide " +
             $"{(saved.Value ? "on" : "off")}; put back to {(original ? "on" : "off")}");
+        return true;
     }
 
     /// <summary>What a marker file holds.</summary>
