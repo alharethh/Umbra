@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.28.0.schema.json
+
+PackageIdentifier: alharethh.Umbra
+PackageVersion: 0.2.1
+PackageLocale: en-US
+Publisher: alharethh
+PublisherUrl: https://github.com/alharethh
+PublisherSupportUrl: https://github.com/alharethh/Umbra/issues
+Author: alharethh
+PackageName: Umbra
+PackageUrl: https://github.com/alharethh/Umbra
+License: MIT
+LicenseUrl: https://github.com/alharethh/Umbra/blob/master/LICENSE
+ShortDescription: A Windows 11 taskbar built to minimise OLED burn-in, on any screen edge.
+Description: |-
+  Umbra replaces the Windows 11 taskbar with one designed from the ground up to minimise OLED
+  differential wear. It puts about 260 times less light on the taskbar's pixels than Windows' own,
+  and it can sit on any screen edge. It is otherwise a full replacement: pinned and running
+  applications, window previews, jump lists, a notification area and a clock.
+
+  Umbra hides Windows' taskbar while it runs and gives it back when it exits. To stop using it,
+  right-click the bar and choose Exit Umbra before uninstalling.
+Moniker: umbra
+Tags:
+- oled
+- taskbar
+- burn-in
+- shell
+- windows-11
+ReleaseNotesUrl: https://github.com/alharethh/Umbra/releases/tag/v0.2.1
+ManifestType: defaultLocale
+ManifestVersion: 1.28.0

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.28.0.schema.json
+
+PackageIdentifier: alharethh.Umbra
+PackageVersion: 0.2.1
+MinimumOSVersion: 10.0.22000.0
+InstallerType: portable
+Commands:
+- umbra
+ReleaseDate: 2026-10-20
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/alharethh/Umbra/releases/download/v0.2.1/Umbra-0.2.1-win-x64.exe
+  InstallerSha256: 8A83CDF71DA4BF028F55D170B63A3AABFC1F5F35344D49F08390CE348CAB1DD1
+ManifestType: installer
+ManifestVersion: 1.28.0
