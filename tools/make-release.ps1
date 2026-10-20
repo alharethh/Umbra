@@ -21,12 +21,32 @@ param(
     [string]$Version,
     # The checkout this script sits in, so it builds whichever copy it was run from.
     [string]$Repo = (Split-Path $PSScriptRoot -Parent),
-    # Where the two downloads go. Point it at a scratch folder to try the script without
-    # touching the real artifacts\release.
-    [string]$Out = (Join-Path $Repo "artifacts\release")
+    # A scratch folder for the two downloads, to try the script without touching the real
+    # artifacts\release or artifacts\Umbra. It must be missing or empty; a relative path is taken
+    # from PowerShell's current location. Left out, the downloads go to artifacts\release, which
+    # is emptied first, and artifacts\Umbra is refreshed to match.
+    [string]$Out
 )
 
 $ErrorActionPreference = "Stop"
+
+# A scratch -Out is refused unless it is missing or empty, rather than emptied the way
+# artifacts\release is. Emptying is safe there because the script owns that folder; an -Out is
+# whatever path somebody typed, and "-Out ." or "-Out $HOME\Downloads" must not be wiped. Deleting
+# only the files the script makes was the other way, and lost: it would still overwrite a
+# same-named download of the user's, and leaves their own files mixed in with the release's.
+#
+# Resolved once, here, against PowerShell's location. dotnet and the .NET file APIs resolve a
+# relative path against the process directory instead, which PowerShell does not keep in step.
+$scratch = [bool]$Out
+if ($scratch) {
+    $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
+    if ((Test-Path -LiteralPath $Out) -and @(Get-ChildItem -LiteralPath $Out -Force).Count -gt 0) {
+        throw "-Out '$Out' is not empty. Give a missing or empty folder; nothing was deleted."
+    }
+} else {
+    $Out = Join-Path $Repo "artifacts\release"
+}
 
 # The version goes into every publish as -p:Version. Without it the exe said 1.0.0.0 in Explorer's
 # Properties, in crash reports and in Defender submissions, whatever the release, so nobody could
@@ -69,13 +89,13 @@ $runnable = Join-Path $Repo "artifacts\Umbra"
 $holding = @(Get-Process -ErrorAction SilentlyContinue |
     Where-Object { Test-RunsFromFolder $_.Path $runnable })
 
-if ($holding.Count -gt 0) {
+if (-not $scratch -and $holding.Count -gt 0) {
     $pid0 = $holding[0].Id
     throw "Umbra is running from artifacts\Umbra (pid $pid0). Exit it - right-click the bar, Exit - then run this again."
 }
 
 $out = $Out
-Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
+if (-not $scratch) { Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
 $project = Join-Path $Repo "src\Umbra.Shell"
@@ -129,6 +149,13 @@ Remove-Item -Recurse -Force $folder
 # still starts. That cost a round of "I tried it and it still doesn't work" against a fix that was
 # fine. Same publish the docs describe, so the copy that gets launched is never older than the
 # ones that get uploaded.
+#
+# Not for a scratch -Out: a trial version in artifacts\Umbra would then be what gets launched.
+if ($scratch) {
+    Write-Host "`nBoth downloads built in $out. artifacts\Umbra left alone (scratch run)."
+    return
+}
+
 Remove-Item -Recurse -Force $runnable -ErrorAction SilentlyContinue
 
 & dotnet publish $project -c Release $versionArg -o $runnable --nologo -v q
