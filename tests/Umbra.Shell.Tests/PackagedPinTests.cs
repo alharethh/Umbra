@@ -94,6 +94,38 @@ public sealed class PackagedPinTests : IDisposable
         Assert.Equal(@"shell:AppsFolder\" + SettingsId, pins.Pins[0].Path);
     }
 
+    /// <summary>
+    /// The guard has to be on the pin, not on the path offered. A window keyed by the same app user
+    /// model ID but running from the package's own exe is not the frame host, and healing to it
+    /// turns the pin back into an ordinary path pin that launches a WindowsApps exe directly.
+    /// </summary>
+    [Fact]
+    public void A_Packaged_Pin_Is_Not_Healed_To_Any_Executable()
+    {
+        const string PackageExe =
+            @"C:\Program Files\WindowsApps\windows.immersivecontrolpanel_10.0.2.1000_neutral_neutral_cw5n1h2txyewy\SystemSettings.exe";
+        File.WriteAllLines(_pinFile,
+            ["# Pinned applications, in bar order. key|path|name", $"{SettingsId}|shell:AppsFolder\\{SettingsId}|Settings"]);
+        PinSettings pins = new(_pinFile);
+
+        Assert.False(pins.UpdatePath(SettingsId, PackageExe));
+        Assert.True(pins.Pins[0].IsPackaged);
+        Assert.Equal(@"shell:AppsFolder\" + SettingsId, new PinSettings(_pinFile).Pins[0].Path);
+    }
+
+    /// <summary>
+    /// A pin from before packaged pins existed still records the frame host. It is packaged too, and
+    /// is left for <see cref="PinSettings.UpdatePackaged"/> to repair rather than healed to an exe.
+    /// </summary>
+    [Fact]
+    public void An_Old_Frame_Host_Pin_Is_Not_Healed_To_Any_Executable()
+    {
+        PinSettings pins = SeededWithTheOldRecord();
+
+        Assert.False(pins.UpdatePath(SettingsId, @"C:\Windows\ImmersiveControlPanel\SystemSettings.exe"));
+        Assert.Equal(FrameHost, pins.Pins[0].Path);
+    }
+
     [Fact]
     public void An_Old_Pin_Is_Repaired_On_Disk_Once_And_Only_Once()
     {
