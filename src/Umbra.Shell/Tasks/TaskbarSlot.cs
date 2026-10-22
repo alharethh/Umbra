@@ -20,6 +20,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     private readonly List<ApplicationWindow> _windows = [];
     private readonly ShortcutResolver _shortcuts;
     private readonly AppIconResolver _icons;
+    private readonly PackagedAppNames _packagedNames;
     private readonly Dispatcher _dispatcher;
     private ImageSource? _icon;
     private AppShortcut? _shortcut;
@@ -29,12 +30,14 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         string key,
         PinnedApp? pin,
         ShortcutResolver? shortcuts = null,
-        AppIconResolver? icons = null)
+        AppIconResolver? icons = null,
+        PackagedAppNames? packagedNames = null)
     {
         Key = key;
         Pin = pin;
         _shortcuts = shortcuts ?? new ShortcutResolver();
         _icons = icons ?? new AppIconResolver();
+        _packagedNames = packagedNames ?? PackagedAppNames.Shared;
 
         // Captured here rather than reached for later: the resolver calls back from a worker, and
         // Dispatcher.CurrentDispatcher on that worker would create a second one that nothing pumps.
@@ -96,15 +99,69 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 
             foreach (ApplicationWindow window in _windows)
             {
-                if (!string.IsNullOrWhiteSpace(window.WinFileDescription)) return window.WinFileDescription;
+                string? file = window.WinFileName;
 
-                if (!string.IsNullOrWhiteSpace(window.WinFileName))
-                    return System.IO.Path.GetFileNameWithoutExtension(window.WinFileName);
+                if (PackagedAppNames.IsFrameHost(file))
+                {
+                    string? aumid = window.AppUserModelID;
+                    _packagedNames.Request(aumid, OnPackagedNameResolved);
+
+                    return NameFor(file, null, aumid, window.Title, _packagedNames.Lookup(aumid)) ?? Key;
+                }
+
+                if (NameFor(file, window.WinFileDescription, null, null, null) is { } name) return name;
             }
 
             return Key;
         }
     }
+
+    /// <summary>
+    /// A window's application name, from what is known about it. Pure, so it can be tested
+    /// without a window.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A window in <c>ApplicationFrameHost.exe</c> is never named after it.</b> Every UWP
+    /// application is drawn inside that host, so its file description, "Application Frame Host",
+    /// is the name of the frame and not of Settings or Calculator. The application's own name comes
+    /// from its app user model ID, resolved on a worker by <see cref="PackagedAppNames"/>.
+    /// </para>
+    /// <para>
+    /// Until that answers, the window title stands in. It is the one place this class uses a title
+    /// for a name, and only because both alternatives are worse: the host's name is wrong for
+    /// every packaged application at once, and the bare ID reads as gibberish. It lasts as long as
+    /// the worker takes, and the title of a UWP frame was the application's name in every case
+    /// measured.
+    /// </para>
+    /// </remarks>
+    internal static string? NameFor(string? file, string? description, string? aumid, string? title, string? packagedName)
+    {
+        if (PackagedAppNames.IsFrameHost(file))
+        {
+            if (!string.IsNullOrWhiteSpace(packagedName)) return packagedName;
+            if (!string.IsNullOrWhiteSpace(title)) return title;
+
+            return string.IsNullOrWhiteSpace(aumid) ? null : aumid;
+        }
+
+        if (!string.IsNullOrWhiteSpace(description)) return description;
+        if (!string.IsNullOrWhiteSpace(file)) return System.IO.Path.GetFileNameWithoutExtension(file);
+
+        return null;
+    }
+
+    private void OnPackagedNameResolved()
+    {
+        if (_dispatcher.CheckAccess()) Raise(nameof(DisplayName));
+        else _dispatcher.BeginInvoke(() => Raise(nameof(DisplayName)));
+    }
+
+    /// <summary>
+    /// Whether this slot's windows are drawn inside the UWP frame host, so that its executable
+    /// says nothing about the application.
+    /// </summary>
+    private bool IsFrameHosted => _windows.Any(w => PackagedAppNames.IsFrameHost(w.WinFileName));
 
     /// <summary>
     /// The application's executable, where one is known.
@@ -166,7 +223,10 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 
             ImageSource? live = _windows.Select(w => w.Icon).FirstOrDefault(i => i is not null);
 
-            ImageSource? chosen = _icons.PreferApplicationIcon
+            // A frame-hosted slot's executable is ApplicationFrameHost.exe, whose icon is the same
+            // generic frame for every UWP application. ManagedShell reads those windows' icons out
+            // of the package by app user model ID, so the window icon is the application's, and wins.
+            ImageSource? chosen = _icons.PreferApplicationIcon && !IsFrameHosted
                 ? application ?? live
                 : live ?? application;
 
@@ -202,7 +262,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 
         // The executable a live window is actually running from, first: it beats a shortcut of the
         // same name that happens to point somewhere else.
-        if (PathIsUsable(executable)) candidates.Add(new IconCandidate(executable!));
+        if (UsableIconSource(executable)) candidates.Add(new IconCandidate(executable!));
 
         // Then the Start Menu, which is what survives an application updating into a new versioned
         // directory — the Discord case ShortcutResolver exists for. Its declared icon location
@@ -256,6 +316,13 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 
         return _shortcut;
     }
+
+    /// <summary>
+    /// Whether an executable's own icon can stand for the application: it exists, and it is not
+    /// the UWP frame host, whose icon is the same generic frame for every packaged application.
+    /// </summary>
+    internal static bool UsableIconSource(string? executable) =>
+        PathIsUsable(executable) && !PackagedAppNames.IsFrameHost(executable);
 
     private static bool PathIsUsable(string? path)
     {
@@ -334,6 +401,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         Raise(nameof(IsRunning));
         Raise(nameof(IsActive));
         Raise(nameof(Title));
+        Raise(nameof(DisplayName));
         Raise(nameof(Icon));
     }
 
