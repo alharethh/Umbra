@@ -175,20 +175,39 @@ public class AppIconResolverTests
         Assert.True(Eventually(() => resolver.Lookup("app") is not null));
     }
 
-    /// <summary>But not forever, or every window that opens anywhere costs a round of shell calls.</summary>
+    /// <summary>
+    /// But not forever, or every window that opens anywhere costs a round of shell calls.
+    /// It keeps asking until the resolver gives up, against a deadline rather than a fixed count.
+    /// <see cref="AppIconResolver.Request"/> refuses while an attempt is in flight, so the old six
+    /// requests 20 ms apart stopped asking after ~120 ms; a thread pool slow enough to leave the
+    /// attempts unfinished by then left nobody to start the second one, and the test waited 5 s
+    /// for a result that could no longer come.
+    /// </summary>
     [Fact]
-    public void AfterEnoughFailuresItGivesUp()
+    public void AfterEnoughFailuresItGivesUp() => GivesUpAfterEnoughFailures(TimeSpan.Zero);
+
+    /// <summary>The same with every attempt outlasting the old fixed loop, which is what load did to it.</summary>
+    [Fact]
+    public void AfterEnoughFailuresItGivesUpEvenWhenEachAttemptIsSlow() =>
+        GivesUpAfterEnoughFailures(TimeSpan.FromMilliseconds(150));
+
+    private static void GivesUpAfterEnoughFailures(TimeSpan perAttempt)
     {
-        FakeSource source = new() { Behaviour = _ => null };
+        FakeSource source = new()
+        {
+            Behaviour = _ =>
+            {
+                Thread.Sleep(perAttempt);
+                return null;
+            },
+        };
         AppIconResolver resolver = new(source, maxAttempts: 2);
 
-        for (int i = 0; i < 6 && !resolver.Exhausted("app"); i++)
+        Assert.True(Eventually(() =>
         {
             resolver.Request("app", Candidates(Good), () => { });
-            Thread.Sleep(20);
-        }
-
-        Assert.True(Eventually(() => resolver.Exhausted("app")));
+            return resolver.Exhausted("app");
+        }));
         Assert.False(resolver.Request("app", Candidates(Good), () => { }));
         Assert.True(source.Asked.Count <= 2, $"asked {source.Asked.Count} times against a limit of 2");
     }
