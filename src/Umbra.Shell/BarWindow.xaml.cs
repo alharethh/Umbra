@@ -496,8 +496,9 @@ internal partial class BarWindow : AppBarWindow
 
             _motion.ClockOffsetChanged += (dx, dy) =>
             {
-                ClockOffset.X = dx;
-                ClockOffset.Y = dy;
+                _clockDriftX = dx;
+                _clockDriftY = dy;
+                ApplyClockOffset();
 
                 // The same numbers into a second transform, because the language indicator is text
                 // beside the clock and wants the clock's treatment — but never the clock's
@@ -1144,6 +1145,78 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     public TranslateTransform ClockOffset { get; } = new();
 
+    // The clock's drift as the motion driver last published it, before any clamp. Kept so the
+    // clamp can be re-applied when the text changes width between motion ticks.
+    private double _clockDriftX;
+    private double _clockDriftY;
+
+    /// <summary>
+    /// Holds the clock's drift across a vertical bar inside the bar's thickness.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// On a horizontal bar the clock is short and the bar is long, so it has room on every side.
+    /// On a vertical bar the short axis runs across the clock's text, and the bar is 56 DIP thick.
+    /// From Tier 1 the clock shows <c>HH:mm:ss</c> and a numeric date, measured at 51.4 and
+    /// 50.9 DIP in Segoe UI, which leaves about 2.3 DIP either side, while the clock's short-axis
+    /// excursion reaches several DIP. At a drift extreme the last digits were drawn past the
+    /// bar's edge and clipped: by the screen edge on the right, by the bar's inner edge on the
+    /// left. Constant for minutes at a time, because the drift period is minutes long.
+    /// </para>
+    /// <para>
+    /// Clamped to the clearance the text actually leaves, as <see cref="ClampPillOffset"/> does
+    /// for the pill: P5 per element. The dormant clock, <c>HH:mm</c> alone at 33 DIP, has more
+    /// clearance than its drift ever uses, so the clamp bites only from Tier 1, which is the
+    /// small share of the day the pointer is on the bar. The long axis is never touched.
+    /// </para>
+    /// <para>
+    /// A clock wider than the bar has no clearance at all and is held centred. It is still
+    /// clipped then; nothing here shrinks it.
+    /// </para>
+    /// </remarks>
+    public static double ClampClockAcross(double offset, double barThickness, double clockWidth)
+    {
+        double clearance = Math.Max(0.0, (barThickness - clockWidth) / 2.0);
+        return Math.Clamp(offset, -clearance, clearance);
+    }
+
+    private void ApplyClockOffset()
+    {
+        ClockOffset.X = IsVertical && ActualWidth > 0
+            ? ClampClockAcross(_clockDriftX, ActualWidth, ClockTextWidth())
+            : _clockDriftX;
+        ClockOffset.Y = _clockDriftY;
+    }
+
+    /// <summary>
+    /// How wide the clock's text is drawn right now: the wider of its two lines.
+    /// </summary>
+    /// <remarks>
+    /// Measured from the strings rather than read off the layout, because a centred element wider
+    /// than its parent is measured at the parent's width, which would report clearance that is not
+    /// there. One physical pixel is added for the antialiased edge.
+    /// </remarks>
+    private double ClockTextWidth()
+    {
+        if (ClockTimeText is null) return 0.0;
+
+        double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        double width = ClockTextWidth(ClockTime, ClockTimeText.FontSize, pixelsPerDip);
+        if (ShowsDate) width = Math.Max(width, ClockTextWidth(ClockDate, ClockDateText.FontSize, pixelsPerDip));
+        return width + 1.0 / pixelsPerDip;
+    }
+
+    private double ClockTextWidth(string text, double size, double pixelsPerDip) =>
+        string.IsNullOrEmpty(text) ? 0.0 : new FormattedText(
+            text,
+            CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            new Typeface(ClockTimeText.FontFamily, ClockTimeText.FontStyle,
+                         ClockTimeText.FontWeight, ClockTimeText.FontStretch),
+            size,
+            Brushes.White,
+            pixelsPerDip).WidthIncludingTrailingWhitespace;
+
     /// <summary>
     /// Width held for the clock whatever it is currently showing.
     /// </summary>
@@ -1786,6 +1859,7 @@ internal partial class BarWindow : AppBarWindow
 
         bar.OnPropertyChanged(nameof(ShowsDate));
         bar.OnPropertyChanged(nameof(ClockTimeMargin));
+        bar.ApplyClockOffset();
         bar.OnPropertyChanged(nameof(ShowsSeconds));
         bar.OnPropertyChanged(nameof(ShowsShowDesktopLine));
 
@@ -2209,6 +2283,9 @@ internal partial class BarWindow : AppBarWindow
         OnPropertyChanged(nameof(ClockTime));
         OnPropertyChanged(nameof(ClockDate));
         OnPropertyChanged(nameof(ClockAutomationName));
+
+        // Seconds arriving or leaving changes the clock's width, and so its clearance.
+        ApplyClockOffset();
     }
 
     private int _loggedTrayChanges;
