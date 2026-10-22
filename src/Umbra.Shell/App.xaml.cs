@@ -23,6 +23,9 @@ public partial class App : Application
 
     /// <summary>Waits for a display change to settle before judging it. See OnDisplaySettingsChanged.</summary>
     private DispatcherTimer? _topologySettle;
+
+    /// <summary>When the last display change arrived, on <see cref="Environment.TickCount64"/>.</summary>
+    private long _lastDisplayChange;
 #if DEBUG
     private DevControl? _devControl;
     private DevFaults? _devFaults;
@@ -177,6 +180,12 @@ public partial class App : Application
             _builtFor = [.. screens.OfType<AppBarScreen>().Select(s => new Display(s.DeviceName, IsPrimary(s)))];
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
             BringUpLog.Write($"bar set built for {MonitorTopology.Describe(_builtFor)}");
+
+            // The screens were enumerated before the bars were built and shown, and a monitor that
+            // arrived in between raised no event this process heard. That is exactly where a
+            // restart during a flapping monitor lands, so judge once as though a change had come
+            // in at launch.
+            NoteDisplayChange();
         }
     }
 
@@ -189,18 +198,28 @@ public partial class App : Application
     /// Marshalled: <c>SystemEvents</c> may raise this on its own thread.
     /// </remarks>
     private void OnDisplaySettingsChanged(object? sender, EventArgs e) =>
-        Dispatcher.BeginInvoke(() =>
-        {
-            _topologySettle ??= new DispatcherTimer(
-                TopologySettleDelay, DispatcherPriority.Normal, (_, _) => OnTopologySettled(), Dispatcher);
+        Dispatcher.BeginInvoke(NoteDisplayChange);
 
-            // Restarted on every change, so the judgement comes after the last one.
-            _topologySettle.Stop();
-            _topologySettle.Start();
-        });
+    /// <summary>
+    /// Records a display change and judges it once the displays have been quiet for
+    /// <see cref="MonitorTopology.SettleDelay"/>. Restarted on every change, so the judgement comes
+    /// after the last one.
+    /// </summary>
+    private void NoteDisplayChange()
+    {
+        _lastDisplayChange = Environment.TickCount64;
+        JudgeTopologyIn(MonitorTopology.SettleDelay);
+    }
 
-    /// <summary>How long the displays must be quiet before the set is judged.</summary>
-    private static readonly TimeSpan TopologySettleDelay = TimeSpan.FromSeconds(3);
+    private void JudgeTopologyIn(TimeSpan delay)
+    {
+        _topologySettle ??= new DispatcherTimer(
+            delay, DispatcherPriority.Normal, (_, _) => OnTopologySettled(), Dispatcher);
+
+        _topologySettle.Stop();
+        _topologySettle.Interval = delay;
+        _topologySettle.Start();
+    }
 
     /// <summary>
     /// Rebuilds the bar set by restarting, if the monitors it was built for are not the ones
@@ -228,18 +247,48 @@ public partial class App : Application
             return;
         }
 
-        if (!MonitorTopology.NeedsRebuild(perMonitorSet: true, _builtFor, attached))
+        TopologyChange change = MonitorTopology.Classify(perMonitorSet: true, _builtFor, attached);
+        if (change == TopologyChange.None)
         {
             BringUpLog.Write($"display change: still {MonitorTopology.Describe(attached)}; bars left in place");
             return;
         }
 
-        BringUpLog.Write(
-            $"display change: built for {MonitorTopology.Describe(_builtFor)}, now " +
-            $"{MonitorTopology.Describe(attached)}; restarting to rebuild the bar set");
+        string what = $"built for {MonitorTopology.Describe(_builtFor)}, now {MonitorTopology.Describe(attached)}";
 
-        Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
-        Restart();
+        TimeSpan quietFor = TimeSpan.FromMilliseconds(Environment.TickCount64 - _lastDisplayChange);
+        TimeSpan settle = MonitorTopology.StillToSettle(change, quietFor);
+        if (settle > TimeSpan.Zero)
+        {
+            BringUpLog.Write($"display change: {what}; only removed, judged again in {settle.TotalSeconds:0}s");
+            JudgeTopologyIn(settle);
+            return;
+        }
+
+        string stampPath = MonitorTopology.DefaultRebuildStampPath;
+        DateTime now = DateTime.UtcNow;
+        IReadOnlyList<DateTime> recent = MonitorTopology.ReadRebuilds(stampPath);
+        TimeSpan wait = MonitorTopology.RebuildWait(recent, now);
+        if (wait > TimeSpan.Zero)
+        {
+            // Judged again when the limit allows, so a real change that lands at the end of a
+            // burst is still followed, once, rather than waiting for the next display change.
+            BringUpLog.Write($"display change: {what}; rebuild deferred (rate limit), judged again in {wait.TotalSeconds:0}s");
+            JudgeTopologyIn(wait);
+            return;
+        }
+
+        BringUpLog.Write($"display change: {what}; restarting to rebuild the bar set");
+
+        // Recorded before the attempt, so a restart that fails counts too and cannot be retried
+        // on every display change either.
+        if (!MonitorTopology.WriteRebuilds(stampPath, MonitorTopology.WithRebuild(recent, now)))
+            BringUpLog.Write("display change: could not record the rebuild; the limit will not see it");
+
+        // Only once the replacement has started: a restart that failed leaves this bar running,
+        // and its set still has to follow the next change.
+        if (TryRestart())
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -307,13 +356,16 @@ public partial class App : Application
     /// taskbar state, because both instances briefly existing is exactly the race that leaves the
     /// user's taskbar hidden — see <c>ExplorerStateGuard</c>.
     /// </remarks>
-    public void Restart()
+    public void Restart() => TryRestart();
+
+    /// <summary>Starts a replacement and shuts this bar down. False if the replacement could not be started.</summary>
+    private bool TryRestart()
     {
         string? exe = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exe))
         {
             BringUpLog.Write("restart requested but the process path is unknown");
-            return;
+            return false;
         }
 
         // Carry the original flags through, minus any previous wait token.
@@ -338,10 +390,12 @@ public partial class App : Application
             ExitIntent.Declare("restart");
             BringUpLog.Write("restarting");
             Shutdown();
+            return true;
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             BringUpLog.Write(ex, "restart failed");
+            return false;
         }
     }
 
