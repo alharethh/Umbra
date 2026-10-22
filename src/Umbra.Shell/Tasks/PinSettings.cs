@@ -198,6 +198,14 @@ internal sealed class PinSettings
         int index = _pins.FindIndex(p => AppIdentity.Same(p.Key, key));
         if (index < 0) return false;
 
+        // The guard above checks what the window ran from; this one checks what the pin is. A
+        // packaged pin launches by its id and has no executable to go stale, so every path a window
+        // offers it is wrong: a frame-hosted app's CoreWindow surfacing top-level, or a packaged
+        // game drawn outside the frame host, reports the exe inside the package under the same id.
+        // Taking that would quietly stop the pin being packaged, and UpdatePackaged would never
+        // look at it again.
+        if (_pins[index].IsPackaged) return false;
+
         if (string.Equals(_pins[index].Path, path, StringComparison.OrdinalIgnoreCase)) return false;
 
         _pins[index] = _pins[index] with { Path = path };
