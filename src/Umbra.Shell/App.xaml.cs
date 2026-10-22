@@ -17,6 +17,12 @@ public partial class App : Application
     /// <summary>Every bar, primary first. One entry unless BarOnEveryMonitor is on.</summary>
     private readonly List<BarWindow> _bars = [];
     private SingleInstance? _instance;
+
+    /// <summary>The screens a bar-per-monitor set was built for. Empty for a lone bar.</summary>
+    private IReadOnlyList<Display> _builtFor = [];
+
+    /// <summary>Waits for a display change to settle before judging it. See OnDisplaySettingsChanged.</summary>
+    private DispatcherTimer? _topologySettle;
 #if DEBUG
     private DevControl? _devControl;
     private DevFaults? _devFaults;
@@ -112,7 +118,9 @@ public partial class App : Application
         BarMetrics metrics = new(Settings.Edge, Settings.Alignment, scale: 1.0,
                                  baseIconExtent: Settings.DormantIconSize);
 
-        foreach (AppBarScreen? screen in ScreensToOccupy(Settings))
+        IReadOnlyList<AppBarScreen?> screens = ScreensToOccupy(Settings);
+
+        foreach (AppBarScreen? screen in screens)
         {
             bool primary = IsPrimary(screen);
 
@@ -161,6 +169,77 @@ public partial class App : Application
 
         if (_bars.Count > 1)
             BringUpLog.Write($"bars on {_bars.Count} monitors; the tray is on the primary only");
+
+        // Recorded here, not read back off the bars later: ManagedShell rewrites the old primary
+        // bar's screen during the very display change that has to be judged. See MonitorTopology.
+        if (Settings.BarOnEveryMonitor)
+        {
+            _builtFor = [.. screens.OfType<AppBarScreen>().Select(s => new Display(s.DeviceName, IsPrimary(s)))];
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+            BringUpLog.Write($"bar set built for {MonitorTopology.Describe(_builtFor)}");
+        }
+    }
+
+    /// <summary>
+    /// A monitor was added or removed, the primary changed, or a mode changed. Judged once the
+    /// change has settled, because plugging a monitor in raises a burst of these and an
+    /// enumeration in the middle of one can see half a desktop.
+    /// </summary>
+    /// <remarks>
+    /// Marshalled: <c>SystemEvents</c> may raise this on its own thread.
+    /// </remarks>
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e) =>
+        Dispatcher.BeginInvoke(() =>
+        {
+            _topologySettle ??= new DispatcherTimer(
+                TopologySettleDelay, DispatcherPriority.Normal, (_, _) => OnTopologySettled(), Dispatcher);
+
+            // Restarted on every change, so the judgement comes after the last one.
+            _topologySettle.Stop();
+            _topologySettle.Start();
+        });
+
+    /// <summary>How long the displays must be quiet before the set is judged.</summary>
+    private static readonly TimeSpan TopologySettleDelay = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Rebuilds the bar set by restarting, if the monitors it was built for are not the ones
+    /// attached any more.
+    /// </summary>
+    /// <remarks>
+    /// <b>A restart rather than an in-place rebuild</b>, because what a rebuild has to change is
+    /// fixed at construction: which bar hosts the tray (one collection, one bar, on the primary),
+    /// which wear dataset each bar keeps, and the rule that any bar closing ends the session. A
+    /// restart builds the set exactly as launch does, through the path that already guards
+    /// Explorer's taskbar state across the handover.
+    /// </remarks>
+    private void OnTopologySettled()
+    {
+        _topologySettle?.Stop();
+
+        IReadOnlyList<Display> attached;
+        try
+        {
+            attached = [.. AppBarScreen.FromAllScreens().Select(s => new Display(s.DeviceName, IsPrimary(s)))];
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException)
+        {
+            BringUpLog.Write(ex, "display change: could not enumerate screens; bars left in place");
+            return;
+        }
+
+        if (!MonitorTopology.NeedsRebuild(perMonitorSet: true, _builtFor, attached))
+        {
+            BringUpLog.Write($"display change: still {MonitorTopology.Describe(attached)}; bars left in place");
+            return;
+        }
+
+        BringUpLog.Write(
+            $"display change: built for {MonitorTopology.Describe(_builtFor)}, now " +
+            $"{MonitorTopology.Describe(attached)}; restarting to rebuild the bar set");
+
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        Restart();
     }
 
     protected override void OnExit(ExitEventArgs e)
