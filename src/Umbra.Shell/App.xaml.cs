@@ -132,6 +132,10 @@ public partial class App : Application
                 wearPath: Wear.WearSampler.PathForScreen(screen?.DeviceName, primary))
             {
                 MotionEnabled = Settings.Motion,
+
+                // Each bar of a per-monitor set keeps its own screen through a live settings
+                // change; the monitor setting applies only to a lone bar. See PlacementScreen.
+                OwnsItsScreen = Settings.BarOnEveryMonitor,
             };
 
             // The hover colours, the row's hover treatment and where icons come from, before the

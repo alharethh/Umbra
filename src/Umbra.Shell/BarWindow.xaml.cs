@@ -56,6 +56,33 @@ internal partial class BarWindow : AppBarWindow
     /// </summary>
     public bool MotionEnabled { get; init; } = true;
 
+    /// <summary>
+    /// Whether this bar is one of a bar-per-monitor set, and so belongs to the screen it was built
+    /// on whatever the <c>monitor</c> setting says.
+    /// </summary>
+    /// <remarks>
+    /// Fixed at launch, like the set itself: turning <c>barOnEveryMonitor</c> on or off needs a
+    /// restart (<see cref="Settings.UmbraSettings.NeedsRestartToReach"/>), so the setting being
+    /// edited is not the one the running bars were built from.
+    /// </remarks>
+    public bool OwnsItsScreen { get; init; }
+
+    /// <summary>
+    /// Which screen a bar should occupy after a live settings change.
+    /// </summary>
+    /// <remarks>
+    /// <b>A bar of a bar-per-monitor set stays where it is.</b> The <c>monitor</c> setting names
+    /// one screen, empty meaning the primary, and every bar used to be moved to it. With a bar on
+    /// each monitor that put them all on the same screen, each registering its own AppBar there:
+    /// two bars stacked one over the other, and the other monitor left with none. Any setting
+    /// change did it, since every one goes through the live path; the edge was simply the one
+    /// changed. The configured monitor is looked up only when it is wanted, because that lookup
+    /// enumerates the monitors.
+    /// </remarks>
+    internal static T? PlacementScreen<T>(bool ownsItsScreen, T current, Func<T?> configured)
+        where T : class =>
+        ownsItsScreen ? current : configured();
+
     /// <param name="screen">
     /// Which monitor to occupy. Fixed for the window's lifetime: it is part of the space-reserving
     /// AppBar registration, and §6.3 forbids re-registering that in steady state.
@@ -615,9 +642,9 @@ internal partial class BarWindow : AppBarWindow
     /// <remarks>
     /// <para>
     /// The resting icon size, the motion layer and the row alignment are all properties of what is
-    /// drawn, so they take effect immediately. The edge and the monitor are not here: they are
-    /// baked into the AppBar registration and still need a restart, which
-    /// <see cref="Settings.SettingsWindow"/> says plainly rather than appearing to apply them.
+    /// drawn, so they take effect immediately. The edge and the monitor go through
+    /// <see cref="ApplyPlacement"/>, which re-registers the AppBar; a bar of a bar-per-monitor set
+    /// keeps its own screen (<see cref="PlacementScreen"/>).
     /// </para>
     /// <para>
     /// <b>Alignment is live because it does not move the reserved rectangle.</b> Both alignments
@@ -638,7 +665,8 @@ internal partial class BarWindow : AppBarWindow
         ApplyHoverSettings(settings);
         ApplyIconSourceSetting(settings);
 
-        ApplyPlacement(settings.Edge, settings.Alignment, ResolveScreen(settings.Monitor));
+        ApplyPlacement(settings.Edge, settings.Alignment,
+                       PlacementScreen(OwnsItsScreen, Screen, () => ResolveScreen(settings.Monitor)));
 
         _motion?.SetEnabled(settings.Motion);
         _motion?.Reemit();
