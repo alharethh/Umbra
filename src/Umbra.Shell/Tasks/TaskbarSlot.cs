@@ -300,6 +300,11 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     {
         get
         {
+            // A packaged application is started by its app user model ID, which is this slot's key,
+            // and the caller falls through to exactly that on null. Not even the Start Menu is
+            // asked: a shortcut found by the name "Settings" could be anybody's.
+            if (Pin is { IsPackaged: true }) return null;
+
             if (PathIsUsable(Pin?.Path)) return (Pin!.Path, string.Empty);
 
             return Shortcut() is { } shortcut ? (shortcut.Target, shortcut.Arguments) : null;

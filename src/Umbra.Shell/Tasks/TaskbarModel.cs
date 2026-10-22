@@ -29,11 +29,15 @@ internal sealed class TaskbarModel : IDisposable
     private readonly BarOrder _order = new();
     private readonly ShortcutResolver _shortcuts = new();
     private readonly AppIconResolver _icons = new();
+    private readonly PackagedAppNames _packagedNames;
+    private readonly System.Windows.Threading.Dispatcher _dispatcher;
 
-    public TaskbarModel(ICollectionView windows, PinSettings pins)
+    public TaskbarModel(ICollectionView windows, PinSettings pins, PackagedAppNames? packagedNames = null)
     {
         _windows = windows;
         _pins = pins;
+        _packagedNames = packagedNames ?? PackagedAppNames.Shared;
+        _dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
 
         if (_windows is INotifyCollectionChanged observable)
             observable.CollectionChanged += OnWindowsChanged;
@@ -118,6 +122,7 @@ internal sealed class TaskbarModel : IDisposable
 
         AdoptMovedApplications(running.Keys);
         AdoptRunningIdentities(running);
+        NamePackagedPins();
 
         _order.Reconcile([.. _pins.Pins.Select(p => p.Key)], running.Keys);
 
@@ -188,7 +193,9 @@ internal sealed class TaskbarModel : IDisposable
 
         foreach (PinnedApp pin in _pins.Pins.ToList())
         {
-            if (PathStillExists(pin.Path)) continue;
+            // An Apps-folder path is never a file, and its application never moves: it is keyed by
+            // an app user model ID, which carries no version directory.
+            if (pin.IsPackaged || PathStillExists(pin.Path)) continue;
 
             foreach (string key in live)
             {
@@ -222,6 +229,26 @@ internal sealed class TaskbarModel : IDisposable
             if (key is null) continue;
 
             if (_pins.Rekey(pin.Key, key, pin.Path)) _order.Rename(pin.Key, key);
+        }
+    }
+
+    /// <summary>
+    /// Gives packaged applications' pins their own name and Apps-folder path, once the shell has
+    /// named them.
+    /// </summary>
+    /// <remarks>
+    /// The pin's key is the app user model ID, so this works for a pin with no window open — the
+    /// case that matters, since a closed pin has nothing else to be named from. The name arrives on
+    /// a worker; the rebuild it asks for comes back here and finds it.
+    /// </remarks>
+    private void NamePackagedPins()
+    {
+        foreach (PinnedApp pin in _pins.Pins.ToList())
+        {
+            if (!pin.IsPackaged) continue;
+
+            if (_packagedNames.Lookup(pin.Key) is { } name) _pins.UpdatePackaged(pin.Key, name);
+            else _packagedNames.Request(pin.Key, () => _dispatcher.BeginInvoke(new Action(Rebuild)));
         }
     }
 

@@ -8,7 +8,22 @@ namespace Umbra.Shell.Tasks;
 /// <param name="Key">Its <see cref="AppIdentity"/>.</param>
 /// <param name="Path">Executable path, used to launch it and to read its icon when nothing is running.</param>
 /// <param name="Name">Display name, for the tooltip.</param>
-internal sealed record PinnedApp(string Key, string Path, string Name);
+internal sealed record PinnedApp(string Key, string Path, string Name)
+{
+    /// <summary>
+    /// What a packaged application's pin records as its path: the shell's own name for it, which is
+    /// also what Explorer's Run box and <c>explorer.exe</c> accept.
+    /// </summary>
+    public const string AppsFolderPrefix = @"shell:AppsFolder\";
+
+    /// <summary>
+    /// Whether this pin is a packaged application, started by its app user model ID rather than
+    /// from a file. Also true of a pin made before that was understood, which recorded the UWP
+    /// frame host as its executable.
+    /// </summary>
+    public bool IsPackaged =>
+        Path.StartsWith(AppsFolderPrefix, StringComparison.OrdinalIgnoreCase) || PackagedAppNames.IsFrameHost(Path);
+}
 
 /// <summary>
 /// The pinned applications, in bar order.
@@ -62,13 +77,63 @@ internal sealed class PinSettings
     /// the row shows them. Pinning an icon used to teleport it to the far left for precisely the
     /// reason this paragraph exists to deny.
     /// </remarks>
-    public void Pin(ApplicationWindow window)
+    public void Pin(ApplicationWindow window, PackagedAppNames? packagedNames = null)
     {
         string? key = AppIdentity.For(window);
         if (key is null || IsPinned(key)) return;
 
-        _pins.Add(new PinnedApp(key, window.WinFileName ?? string.Empty, DisplayNameFor(window)));
+        string? packagedName = (packagedNames ?? PackagedAppNames.Shared).Lookup(window.AppUserModelID);
+
+        _pins.Add(RecordFor(key, window.WinFileName, window.WinFileDescription, window.Title, packagedName));
         Save();
+    }
+
+    /// <summary>
+    /// The pin a window makes, from what is known about it. Pure, so it can be tested without a
+    /// window.
+    /// </summary>
+    /// <remarks>
+    /// <b>A UWP application's window says nothing about the application.</b> Its executable is
+    /// <c>ApplicationFrameHost.exe</c> and its description "Application Frame Host", for Settings,
+    /// Calculator and every other one alike. Recording those gave a closed pin that was named after
+    /// the frame and, clicked, started the frame host and nothing else. Such a pin records the
+    /// Apps-folder path of its key instead, which is never a file, so the launch falls through to
+    /// <c>ActivateApplication</c> by app user model ID — which is how Windows starts it.
+    /// </remarks>
+    internal static PinnedApp RecordFor(string key, string? file, string? description, string? title, string? packagedName)
+    {
+        if (PackagedAppNames.IsFrameHost(file))
+            return new PinnedApp(key, PinnedApp.AppsFolderPrefix + key, TaskbarSlot.NameFor(file, description, key, title, packagedName) ?? key);
+
+        return new PinnedApp(key, file ?? string.Empty, DisplayNameFor(file, description, title));
+    }
+
+    /// <summary>
+    /// Brings a packaged application's pin into line once its name is known: the Apps-folder path
+    /// and the application's own name.
+    /// </summary>
+    /// <returns>True when something changed and the file was rewritten.</returns>
+    /// <remarks>
+    /// Repairs pins made before packaged applications were understood, which recorded the frame
+    /// host and "Application Frame Host", and a new pin whose name was still the window title
+    /// because the shell had not answered yet. Runs inside the model's rebuild, so it writes only
+    /// on a change.
+    /// </remarks>
+    public bool UpdatePackaged(string? key, string? name)
+    {
+        if (key is null || string.IsNullOrWhiteSpace(name)) return false;
+
+        int index = _pins.FindIndex(p => AppIdentity.Same(p.Key, key));
+        if (index < 0 || !_pins[index].IsPackaged) return false;
+
+        PinnedApp healed = _pins[index] with { Path = PinnedApp.AppsFolderPrefix + _pins[index].Key, Name = name.Trim() };
+        if (healed == _pins[index]) return false;
+
+        _pins[index] = healed;
+        Write();
+
+        BringUpLog.Write($"packaged pin healed: {healed.Key} -> {healed.Name}");
+        return true;
     }
 
     /// <summary>
@@ -125,6 +190,10 @@ internal sealed class PinSettings
     public bool UpdatePath(string? key, string? path)
     {
         if (key is null || string.IsNullOrWhiteSpace(path)) return false;
+
+        // A UWP application's window runs from the frame host, which is where it is drawn and not
+        // where it lives. "Healing" its pin to that would undo exactly what RecordFor avoids.
+        if (PackagedAppNames.IsFrameHost(path)) return false;
 
         int index = _pins.FindIndex(p => AppIdentity.Same(p.Key, key));
         if (index < 0) return false;
@@ -236,14 +305,14 @@ internal sealed class PinSettings
     /// </remarks>
     public void Persist() => Write();
 
-    private static string DisplayNameFor(ApplicationWindow window)
+    private static string DisplayNameFor(string? file, string? description, string? title)
     {
         // The window title is what the user sees, but it is per-document; the file description is
         // the application's own name and is what belongs on a pin that outlives every window.
-        if (!string.IsNullOrWhiteSpace(window.WinFileDescription)) return window.WinFileDescription;
-        if (!string.IsNullOrWhiteSpace(window.WinFileName)) return Path.GetFileNameWithoutExtension(window.WinFileName);
+        if (!string.IsNullOrWhiteSpace(description)) return description;
+        if (!string.IsNullOrWhiteSpace(file)) return Path.GetFileNameWithoutExtension(file);
 
-        return window.Title ?? "Application";
+        return title ?? "Application";
     }
 
     private void Load()
