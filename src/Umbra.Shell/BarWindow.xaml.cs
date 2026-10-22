@@ -2819,6 +2819,7 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     private void SetTrayOverflowOpen(bool open)
     {
+        _trayOverflowCloseTimer?.Stop();
         TrayOverflowPopup.IsOpen = open;
 
         if (!open)
@@ -2981,6 +2982,46 @@ internal partial class BarWindow : AppBarWindow
     }
 
     private DispatcherTimer? _trayOverflowWatch;
+
+    /// <summary>
+    /// Closes the flyout after a click on an icon inside it, once the double-click time has passed.
+    /// </summary>
+    /// <remarks>
+    /// One-shot, and stopped by the next press on any tray icon and by the flyout opening or
+    /// closing any other way, so a close pending from an earlier click can never take down a
+    /// flyout opened since.
+    /// </remarks>
+    private void CloseTrayOverflowAfter(TimeSpan delay)
+    {
+        if (delay <= TimeSpan.Zero)
+        {
+            SetTrayOverflowOpen(false);
+            return;
+        }
+
+        if (_trayOverflowCloseTimer is null)
+        {
+            _trayOverflowCloseTimer = new DispatcherTimer(DispatcherPriority.Normal);
+            _trayOverflowCloseTimer.Tick += (_, _) =>
+            {
+                _trayOverflowCloseTimer.Stop();
+                if (TrayOverflowPopup.IsOpen) SetTrayOverflowOpen(false);
+            };
+        }
+
+        _trayOverflowCloseTimer.Stop();
+        _trayOverflowCloseTimer.Interval = delay;
+        _trayOverflowCloseTimer.Start();
+    }
+
+    private DispatcherTimer? _trayOverflowCloseTimer;
+
+    /// <summary>The icon of the last left button-up, and when, for spotting a double-click.</summary>
+    private NotifyIcon? _trayLastLeftUpIcon;
+    private long _trayLastLeftUpMs;
+
+    /// <summary>Whether the left press now down is the second half of a double-click.</summary>
+    private bool _trayPressCompletesDoubleClick;
 
     /// <summary>Whether a mouse button was already down on the previous overflow-watch tick.</summary>
     private bool _trayOverflowPressWasDown;
@@ -3667,6 +3708,16 @@ internal partial class BarWindow : AppBarWindow
         // when the user had just asked for it to go away.
         ClearPanelsFor(BarPanel.TrayOverflow);
 
+        // A press on an icon withdraws a close the previous click left pending, so the flyout is
+        // still there for this click's button-up — the second half of a double-click above all.
+        _trayOverflowCloseTimer?.Stop();
+
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            _trayPressCompletesDoubleClick = TrayOverflowClickClose.CompletesDoubleClick(
+                _trayLastLeftUpIcon, _trayLastLeftUpMs, icon, Environment.TickCount64, DoubleClickTime);
+        }
+
         UpdateTrayHostSize();
         icon.IconMouseDown(e.ChangedButton, PackedCursorPosition(), DoubleClickTime);
         e.Handled = true;
@@ -3677,15 +3728,37 @@ internal partial class BarWindow : AppBarWindow
         // A left click on an icon dismisses the panel it was in, or the flyout sits over whatever
         // window the click just raised.
         //
-        // <b>A right click does not.</b> It opens the application's own menu beside the icon, and
-        // taking the flyout away underneath it leaves that menu floating next to nothing —
-        // reported against Steam. Windows' own overflow behaves the same way: the menu appears
-        // and the panel stays. The flyout then closes on the next press outside it, which is the
-        // press that dismisses the application's menu too.
-        if (e.ChangedButton == MouseButton.Left && TrayOverflowPopup.IsOpen)
-            SetTrayOverflowOpen(false);
+        // <b>Not at once when the icon is inside it</b>: the close waits out the double-click
+        // time, or a double-click never reaches the application — the second press would land on
+        // whatever was under the vanished panel. See TrayOverflowClickClose.
+        //
+        // <b>A right click does not close it at all.</b> It opens the application's own menu
+        // beside the icon, and taking the flyout away underneath it leaves that menu floating
+        // next to nothing — reported against Steam. Windows' own overflow behaves the same way:
+        // the menu appears and the panel stays. The flyout then closes on the next press outside
+        // it, which is the press that dismisses the application's menu too.
+        bool inFlyout = TrayOverflowPopup.IsOpen
+            && TrayOverflowPopup.Child is Visual flyout
+            && sender is DependencyObject clicked
+            && flyout.IsAncestorOf(clicked);
+
+        if (TrayOverflowPopup.IsOpen
+            && TrayOverflowClickClose.After(
+                e.ChangedButton, inFlyout, _trayPressCompletesDoubleClick, DoubleClickTime) is { } delay)
+        {
+            CloseTrayOverflowAfter(delay);
+        }
 
         if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
+
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            // Measured from here because ManagedShell measures from here: its clock for
+            // WM_LBUTTONDBLCLK restarts at every left button-up.
+            _trayLastLeftUpIcon = icon;
+            _trayLastLeftUpMs = Environment.TickCount64;
+            _trayPressCompletesDoubleClick = false;
+        }
 
         // The speaker icon's owner registered no callback message, so there is nothing to forward
         // a right click to; the menu is ours. Not forwarded and not watched: the watcher exists to
