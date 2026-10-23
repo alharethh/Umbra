@@ -265,25 +265,26 @@ public partial class App : Application
             return;
         }
 
-        string stampPath = MonitorTopology.DefaultRebuildStampPath;
-        DateTime now = DateTime.UtcNow;
-        IReadOnlyList<DateTime> recent = MonitorTopology.ReadRebuilds(stampPath);
-        TimeSpan wait = MonitorTopology.RebuildWait(recent, now);
-        if (wait > TimeSpan.Zero)
+        // Recorded before the attempt, so a restart that fails counts too and cannot be retried on
+        // every display change either. A record that cannot be read or written refuses the
+        // rebuild: the next process would not see it, and the limit is all that stops a flap.
+        RebuildClaim claim = MonitorTopology.ClaimRebuild(MonitorTopology.DefaultRebuildStampPath, DateTime.UtcNow, out TimeSpan wait);
+        if (claim != RebuildClaim.Granted)
         {
             // Judged again when the limit allows, so a real change that lands at the end of a
             // burst is still followed, once, rather than waiting for the next display change.
-            BringUpLog.Write($"display change: {what}; rebuild deferred (rate limit), judged again in {wait.TotalSeconds:0}s");
+            string why = claim switch
+            {
+                RebuildClaim.Limited => "rate limit",
+                RebuildClaim.Unreadable => "the rebuild record cannot be read",
+                _ => "the rebuild record cannot be written",
+            };
+            BringUpLog.Write($"display change: {what}; rebuild deferred ({why}), judged again in {wait.TotalSeconds:0}s");
             JudgeTopologyIn(wait);
             return;
         }
 
         BringUpLog.Write($"display change: {what}; restarting to rebuild the bar set");
-
-        // Recorded before the attempt, so a restart that fails counts too and cannot be retried
-        // on every display change either.
-        if (!MonitorTopology.WriteRebuilds(stampPath, MonitorTopology.WithRebuild(recent, now)))
-            BringUpLog.Write("display change: could not record the rebuild; the limit will not see it");
 
         // Only once the replacement has started: a restart that failed leaves this bar running,
         // and its set still has to follow the next change.

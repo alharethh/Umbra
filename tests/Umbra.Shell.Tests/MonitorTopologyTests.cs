@@ -224,12 +224,12 @@ public class MonitorTopologyTests
             DateTime t = Now;
             for (int restart = 0; restart < 2; restart++, t = t.AddSeconds(22))
             {
-                IReadOnlyList<DateTime> read = MonitorTopology.ReadRebuilds(path);
-                Assert.Equal(TimeSpan.Zero, MonitorTopology.RebuildWait(read, t));
-                Assert.True(MonitorTopology.WriteRebuilds(path, MonitorTopology.WithRebuild(read, t)));
+                Assert.Equal(RebuildClaim.Granted, MonitorTopology.ClaimRebuild(path, t, out TimeSpan granted));
+                Assert.Equal(TimeSpan.Zero, granted);
             }
 
-            Assert.True(MonitorTopology.RebuildWait(MonitorTopology.ReadRebuilds(path), t) > TimeSpan.Zero);
+            Assert.Equal(RebuildClaim.Limited, MonitorTopology.ClaimRebuild(path, t, out TimeSpan wait));
+            Assert.True(wait > TimeSpan.Zero);
         }
         finally
         {
@@ -241,12 +241,66 @@ public class MonitorTopologyTests
     public void A_Missing_Or_Garbled_Record_Allows_A_Rebuild()
     {
         string path = Path.Combine(Path.GetTempPath(), $"umbra-topology-{Guid.NewGuid():N}");
-        Assert.Empty(MonitorTopology.ReadRebuilds(path));
+        Assert.Empty(MonitorTopology.ReadRebuilds(path)!);
 
         try
         {
             File.WriteAllText(path, "not a time\n-5\n");
-            Assert.Equal(TimeSpan.Zero, MonitorTopology.RebuildWait(MonitorTopology.ReadRebuilds(path), Now));
+            Assert.Equal(TimeSpan.Zero, MonitorTopology.RebuildWait(MonitorTopology.ReadRebuilds(path)!, Now));
+            Assert.Equal(RebuildClaim.Granted, MonitorTopology.ClaimRebuild(path, Now, out _));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// A record that cannot be written is one the next process will not see, so letting the
+    /// restart through would let every restart through: the unbounded flap the limit exists for.
+    /// A directory where the file should be is a write that fails every time, for good.
+    /// </summary>
+    [Fact]
+    public void A_Rebuild_That_Cannot_Be_Recorded_Does_Not_Happen()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"umbra-topology-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        try
+        {
+            // Every judgement of a flap, not just the first: none of them may restart.
+            for (int judgement = 0; judgement < 4; judgement++)
+            {
+                RebuildClaim claim = MonitorTopology.ClaimRebuild(path, Now.AddSeconds(4 * judgement), out TimeSpan wait);
+                Assert.Equal(RebuildClaim.Unwritable, claim);
+                Assert.Equal(MonitorTopology.RebuildWindow, wait);
+            }
+        }
+        finally
+        {
+            Directory.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// A file that exists and cannot be read, locked by a scanner or a backup tool, could hold any
+    /// number of rebuilds. Read as none, it would lift the limit for as long as it stays locked.
+    /// </summary>
+    [Fact]
+    public void An_Unreadable_Record_Counts_As_The_Limit_Reached()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"umbra-topology-{Guid.NewGuid():N}");
+        File.WriteAllText(path, "");
+        try
+        {
+            using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                Assert.Null(MonitorTopology.ReadRebuilds(path));
+                Assert.Equal(RebuildClaim.Unreadable, MonitorTopology.ClaimRebuild(path, Now, out TimeSpan wait));
+                Assert.Equal(MonitorTopology.RebuildWindow, wait);
+            }
+
+            // Once it can be read again, an empty record allows the rebuild as before.
+            Assert.Equal(RebuildClaim.Granted, MonitorTopology.ClaimRebuild(path, Now, out _));
         }
         finally
         {

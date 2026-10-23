@@ -19,6 +19,22 @@ internal enum TopologyChange
     Changed,
 }
 
+/// <summary>What <see cref="MonitorTopology.ClaimRebuild"/> decided. Only <see cref="Granted"/> restarts.</summary>
+internal enum RebuildClaim
+{
+    /// <summary>Allowed, and recorded before the caller acts on it.</summary>
+    Granted,
+
+    /// <summary>The limit is reached.</summary>
+    Limited,
+
+    /// <summary>The record exists and cannot be read, so it counts as the limit reached.</summary>
+    Unreadable,
+
+    /// <summary>Allowed, but the record could not be written, so the next process would not see it.</summary>
+    Unwritable,
+}
+
 /// <summary>One attached monitor, as far as the bar set cares: which it is, and whether it is primary.</summary>
 internal readonly record struct Display(string DeviceName, bool Primary);
 
@@ -56,7 +72,7 @@ internal static class MonitorTopology
     /// <param name="builtFor">The screens the set was built for, at launch.</param>
     /// <param name="attached">The screens attached now.</param>
     /// <remarks>
-    /// Rebuilding re-registers every AppBar and reflows every maximised window, which §6.3 allows
+    /// Rebuilding re-registers every AppBar and reflows every maximised window, which Â§6.3 allows
     /// only when something actually moved. So an empty or unreadable list, which is what an
     /// enumeration in the middle of a change can return, is never a reason to rebuild.
     /// </remarks>
@@ -148,8 +164,17 @@ internal static class MonitorTopology
         "Umbra",
         "topology-rebuilds");
 
-    /// <summary>Reads the recorded rebuilds. Anything unreadable is no record, which allows a rebuild.</summary>
-    public static IReadOnlyList<DateTime> ReadRebuilds(string path)
+    /// <summary>
+    /// Reads the recorded rebuilds: none if there is no file, and null if there is one that cannot
+    /// be read. Lines that do not parse are skipped.
+    /// </summary>
+    /// <remarks>
+    /// <b>Null is not the same as empty.</b> A file locked by a scanner or a backup tool, or one
+    /// with a broken ACL, says nothing about how many rebuilds there were, and reading it as none
+    /// would lift the limit for as long as the file stays that way. <see cref="ClaimRebuild"/>
+    /// treats it as the limit reached.
+    /// </remarks>
+    public static IReadOnlyList<DateTime>? ReadRebuilds(string path)
     {
         try
         {
@@ -167,11 +192,51 @@ internal static class MonitorTopology
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return [];
+            return null;
         }
     }
 
-    /// <summary>Writes the record. A failure is reported, not thrown: it costs the limit, not the bar.</summary>
+    /// <summary>
+    /// Decides whether a rebuild may happen at <paramref name="nowUtc"/> and, if it may, records it
+    /// first. The caller restarts only on <see cref="RebuildClaim.Granted"/>; otherwise
+    /// <paramref name="wait"/> is how long until it judges again.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every failure of the record fails toward not restarting.</b> The limit is the only thing
+    /// between a flapping monitor and a restart every few seconds, and each restart reads the
+    /// record afresh; a record that cannot be written is one the next process will not see, and a
+    /// record that cannot be read could hold anything. So an unreadable record counts as the limit
+    /// reached for one <see cref="RebuildWindow"/>, and a rebuild that cannot be recorded does not
+    /// happen, and is judged again a window later. The bars stay as they are, which on a stacked
+    /// set is wrong but still a working taskbar.
+    /// </para>
+    /// <para>
+    /// A missing file is no record, not an unreadable one, and allows the rebuild.
+    /// </para>
+    /// </remarks>
+    public static RebuildClaim ClaimRebuild(string path, DateTime nowUtc, out TimeSpan wait)
+    {
+        IReadOnlyList<DateTime>? recent = ReadRebuilds(path);
+        if (recent is null)
+        {
+            wait = RebuildWindow;
+            return RebuildClaim.Unreadable;
+        }
+
+        wait = RebuildWait(recent, nowUtc);
+        if (wait > TimeSpan.Zero) return RebuildClaim.Limited;
+
+        if (!WriteRebuilds(path, WithRebuild(recent, nowUtc)))
+        {
+            wait = RebuildWindow;
+            return RebuildClaim.Unwritable;
+        }
+
+        return RebuildClaim.Granted;
+    }
+
+    /// <summary>Writes the record. A failure is reported, not thrown; <see cref="ClaimRebuild"/> then refuses the rebuild.</summary>
     public static bool WriteRebuilds(string path, IReadOnlyList<DateTime> timesUtc)
     {
         try
