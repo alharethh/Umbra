@@ -33,12 +33,26 @@
                    RenderOptions.BitmapScalingMode="NearestNeighbor" />
         </Border>
 
-        <TextBlock Grid.Row="2"
-                   x:Name="Summary"
-                   FontFamily="Consolas"
-                   FontSize="12"
-                   Margin="0,12,0,0"
-                   Opacity="0.85" />
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       x:Name="Summary"
+                       FontFamily="Consolas"
+                       FontSize="12"
+                       Opacity="0.85" />
+
+            <!-- Stock buttons, as in the settings window. The picture is rendered from the data,
+                 not captured from this window; see HeatmapPicture. -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                <TextBlock x:Name="Status" VerticalAlignment="Center" Margin="0,0,12,0" Opacity="0.75" />
+                <Button Content="Copy" x:Name="CopyButton" Padding="16,5" Margin="0,0,8,0" Click="OnCopyClick" />
+                <Button Content="Save picture…" x:Name="SaveButton" Padding="12,5" Click="OnSaveClick" />
+            </StackPanel>
+        </Grid>
     </Grid>
 
 </Window>
