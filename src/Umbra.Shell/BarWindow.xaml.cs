@@ -1459,6 +1459,111 @@ internal partial class BarWindow : AppBarWindow
         ManagedShell.Common.Helpers.ShellHelper.ShowActionCenter();
     }
 
+    private readonly WheelVolume _wheelVolume = new(new DefaultEndpointVolume());
+
+    private ToolTip? _volumeTip;
+
+    private DispatcherTimer? _volumeTipTimer;
+
+    /// <summary>
+    /// The wheel over the system cluster turns the volume, as it does over Windows 11's speaker.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The whole cluster, network glyph included, because it is one button here as it is on
+    /// Windows 11 (see <see cref="OnSystemClusterClick"/>). Nothing else on the bar handles the
+    /// wheel, and the event is marked handled so nothing above the cluster ever does.
+    /// </para>
+    /// <para>
+    /// <b>The bar never takes focus, and the wheel still arrives</b>: Windows sends
+    /// <c>WM_MOUSEWHEEL</c> to the window under the pointer ("Scroll inactive windows when I hover
+    /// over them", on by default). With that setting off it goes to the focused window instead and
+    /// this never runs, which is that setting doing what the user asked.
+    /// </para>
+    /// <para>
+    /// <b>The level is shown in a tooltip of our own, opened at once</b>, and the stock tooltip
+    /// under the pointer is closed so the two are never on screen together. No new lit element:
+    /// the pointer is on the bar, so it is already at Tier 2, and a tooltip is a surface the bar
+    /// already raises on hover.
+    /// </para>
+    /// </remarks>
+    private void OnSystemClusterWheel(object sender, MouseWheelEventArgs e)
+    {
+        e.Handled = true;
+
+        var result = _wheelVolume.Apply(e.Delta);
+        if (result is not { } level) return;
+
+        BringUpLog.Write($"wheel volume: delta {e.Delta} -> {level.Percent}%{(level.Muted ? " muted" : "")}");
+        ShowVolumeTip(WheelVolume.Describe(level.Percent, level.Muted));
+    }
+
+    /// <summary>
+    /// Holds back the stock tooltips inside the cluster while the level is showing. The bar's
+    /// tooltips wait 2.4 s, so one hover that began before the first notch would otherwise open
+    /// "Speakers: 26%" or "Connected" over the level a moment after it appeared.
+    /// </summary>
+    private void OnSystemClusterToolTipOpening(object sender, ToolTipEventArgs e)
+    {
+        if (_volumeTip?.IsOpen == true) e.Handled = true;
+    }
+
+    private void OnSystemClusterLeave(object sender, MouseEventArgs e)
+    {
+        _wheelVolume.Reset();
+        CloseVolumeTip();
+    }
+
+    private void ShowVolumeTip(string text)
+    {
+        CloseServiceToolTips();
+
+        _volumeTip ??= new ToolTip { PlacementTarget = SystemCluster };
+        _volumeTip.Placement = TooltipPlacement;
+        _volumeTip.Content = text;
+        _volumeTip.IsOpen = true;
+
+        // Closed a while after the last notch even if the pointer stays, as a stock tooltip would be.
+        _volumeTipTimer ??= new DispatcherTimer(TimeSpan.FromSeconds(3), DispatcherPriority.Normal,
+            (_, _) => CloseVolumeTip(), Dispatcher);
+        _volumeTipTimer.Stop();
+        _volumeTipTimer.Start();
+    }
+
+    private void CloseVolumeTip()
+    {
+        _volumeTipTimer?.Stop();
+        if (_volumeTip is not null) _volumeTip.IsOpen = false;
+    }
+
+    /// <summary>
+    /// Closes whichever stock tooltip is up — the speaker's own "Speakers: 26%" or the network
+    /// description — so it does not sit beside the level the wheel just set.
+    /// </summary>
+    /// <remarks>
+    /// <c>ToolTipService</c> has no public way to close the tooltip it opened, but the tooltip
+    /// itself is an ordinary <see cref="ToolTip"/> at the root of its own popup, and closing it
+    /// there is honoured: the service does not reopen it until the pointer enters something new.
+    /// </remarks>
+    private void CloseServiceToolTips()
+    {
+        foreach (PresentationSource source in PresentationSource.CurrentSources)
+        {
+            if (source.RootVisual is not Visual root) continue;
+            var tip = FindToolTip(root, 4);
+            if (tip is not null && !ReferenceEquals(tip, _volumeTip) && tip.IsOpen) tip.IsOpen = false;
+        }
+
+        static ToolTip? FindToolTip(DependencyObject node, int depth)
+        {
+            if (node is ToolTip t) return t;
+            if (depth == 0) return null;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++)
+                if (FindToolTip(VisualTreeHelper.GetChild(node, i), depth - 1) is { } found) return found;
+            return null;
+        }
+    }
+
     /// <summary>
     /// Opens the notification centre, as clicking the Windows clock does.
     /// </summary>
