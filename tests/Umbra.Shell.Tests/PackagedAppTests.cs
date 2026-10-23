@@ -37,6 +37,56 @@ public sealed class PackagedAppTests
         Assert.Equal("tool", TaskbarSlot.NameFor(@"C:\x\tool.exe", null, null, "Title", null));
     }
 
+    // Windows Terminal on the laptop, 2026-10-23: no ID on its window, so the slot is keyed by the
+    // path; the process answers GetApplicationUserModelId with the package's ID.
+    private const string TerminalExe = @"C:\Program Files\WindowsApps\Microsoft.WindowsTerminal_1.24.12741.0_x64__8wekyb3d8bbwe\WindowsTerminal.exe";
+    private const string TerminalId = "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App";
+
+    [Fact]
+    public void A_Packaged_Desktop_Application_Is_Named_As_Start_Names_It()
+    {
+        // Its file description is the host process's, not the application's.
+        Assert.Equal("Terminal", TaskbarSlot.NameFor(TerminalExe, "Windows Terminal Host", null, null, "Terminal"));
+
+        // Until the Apps folder answers, the description stands in rather than the bare path.
+        Assert.Equal("Windows Terminal Host", TaskbarSlot.NameFor(TerminalExe, "Windows Terminal Host", null, null, null));
+    }
+
+    [Fact]
+    public void A_Path_Keyed_Packaged_Application_Is_Activated_By_Its_Process_Id()
+    {
+        // The path is what the bar used to hand ActivateApplication, and nothing started.
+        Assert.Equal(TerminalId, TaskbarSlot.ActivationIdFor(TerminalExe, TerminalId));
+
+        // Everything else keeps its key: a UWP frame's or an AUMID-keyed window's is already its ID.
+        Assert.Equal(SettingsId, TaskbarSlot.ActivationIdFor(SettingsId, null));
+        Assert.Equal(@"C:\x\tool.exe", TaskbarSlot.ActivationIdFor(@"C:\x\tool.exe", null));
+    }
+
+    [Fact]
+    public void An_Unpackaged_Process_Has_No_Process_Id()
+    {
+        // The test host is an ordinary process, so this is the answer every unpackaged
+        // application gets: null, and its key is left alone.
+        Assert.Null(ProcessAppId.ForProcess((uint)Environment.ProcessId));
+        Assert.Null(ProcessAppId.For(IntPtr.Zero));
+    }
+
+    [Fact]
+    public void A_Packaged_Process_Answers_With_Its_Id()
+    {
+        // The real call, against whichever packaged process is running. Skipped in effect when
+        // none is, which a CI machine may be; the laptop always has one (Start's own host).
+        foreach (System.Diagnostics.Process process in System.Diagnostics.Process.GetProcessesByName("StartMenuExperienceHost"))
+        {
+            string? id = ProcessAppId.ForProcess((uint)process.Id);
+
+            Assert.NotNull(id);
+            Assert.Contains('!', id);
+            return;
+        }
+    }
+
     [Fact]
     public void The_Frame_Host_Is_Never_An_Icon_Source()
     {

@@ -25,6 +25,8 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     private ImageSource? _icon;
     private AppShortcut? _shortcut;
     private bool _shortcutChecked;
+    private string? _processId;
+    private bool _processIdChecked;
 
     public TaskbarSlot(
         string key,
@@ -109,12 +111,58 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
                     return NameFor(file, null, aumid, window.Title, _packagedNames.Lookup(aumid)) ?? Key;
                 }
 
-                if (NameFor(file, window.WinFileDescription, null, null, null) is { } name) return name;
+                // A packaged desktop application is named as the Apps folder names it, like a
+                // frame-hosted one: Windows Terminal's file description is "Windows Terminal Host".
+                string? packaged = null;
+                if (PackagedProcessId is { } id)
+                {
+                    _packagedNames.Request(id, OnPackagedNameResolved);
+                    packaged = _packagedNames.Lookup(id);
+                }
+
+                if (NameFor(file, window.WinFileDescription, null, null, packaged) is { } name) return name;
             }
 
             return Key;
         }
     }
+
+    /// <summary>
+    /// The app user model ID this slot's application runs under when its windows do not say, read
+    /// from the owning process; null for an unpackaged application. See <see cref="ProcessAppId"/>.
+    /// </summary>
+    /// <remarks>
+    /// Only asked when the window carries no ID of its own — then the key is already that ID — and
+    /// never of the UWP frame host, which is not packaged. Read once per set of windows.
+    /// </remarks>
+    private string? PackagedProcessId
+    {
+        get
+        {
+            if (_processIdChecked) return _processId;
+            _processIdChecked = true;
+
+            foreach (ApplicationWindow window in _windows)
+            {
+                if (!string.IsNullOrWhiteSpace(window.AppUserModelID)) continue;
+                if (PackagedAppNames.IsFrameHost(window.WinFileName)) continue;
+
+                if (ProcessAppId.For(window.Handle) is { } id) return _processId = id;
+            }
+
+            return _processId = null;
+        }
+    }
+
+    /// <summary>
+    /// What to hand <c>ActivateApplication</c> when there is no file to run: the slot's key, unless
+    /// that is the executable path of a packaged process, which cannot be activated.
+    /// </summary>
+    public string ActivationId => ActivationIdFor(Key, PackagedProcessId);
+
+    /// <summary>Pure, so it can be tested without a process. See <see cref="ActivationId"/>.</summary>
+    internal static string ActivationIdFor(string key, string? processAppId) =>
+        string.IsNullOrWhiteSpace(processAppId) ? key : processAppId;
 
     /// <summary>
     /// A window's application name, from what is known about it. Pure, so it can be tested
@@ -137,9 +185,11 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     /// </remarks>
     internal static string? NameFor(string? file, string? description, string? aumid, string? title, string? packagedName)
     {
+        // Resolved from an app user model ID, the frame's or the process's: what Start calls it.
+        if (!string.IsNullOrWhiteSpace(packagedName)) return packagedName;
+
         if (PackagedAppNames.IsFrameHost(file))
         {
-            if (!string.IsNullOrWhiteSpace(packagedName)) return packagedName;
             if (!string.IsNullOrWhiteSpace(title)) return title;
 
             return string.IsNullOrWhiteSpace(aumid) ? null : aumid;
@@ -305,6 +355,10 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
             // asked: a shortcut found by the name "Settings" could be anybody's.
             if (Pin is { IsPackaged: true }) return null;
 
+            // Likewise an unpinned packaged desktop application keyed by its path (Windows
+            // Terminal): it has no shortcut of its own, and the caller activates its process's ID.
+            if (Pin is null && PackagedProcessId is not null) return null;
+
             if (PathIsUsable(Pin?.Path)) return (Pin!.Path, string.Empty);
 
             return Shortcut() is { } shortcut ? (shortcut.Target, shortcut.Arguments) : null;
@@ -354,6 +408,8 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 
         _windows.Clear();
         _windows.AddRange(windows);
+        _processIdChecked = false;
+        _processId = null;
 
         foreach (ApplicationWindow window in _windows) window.PropertyChanged += OnWindowChanged;
 
