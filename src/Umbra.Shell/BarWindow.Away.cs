@@ -52,6 +52,8 @@ internal partial class BarWindow
         BringUpLog.Write(string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"away: fading to black after {_away.DelaySeconds:F0} s without input"));
 
+        CloseEverythingLit();
+
         DoubleAnimation fade = new(0.0, AwayFade) { EasingFunction = new LinearLightFade() };
         fade.Completed += (_, _) =>
         {
@@ -62,6 +64,36 @@ internal partial class BarWindow
         };
 
         ContentRoot.BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>
+    /// Closes every surface the bar has open beyond its own content: the panels, the volume level
+    /// and any stock tooltip.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each of these is a window of its own, so fading <c>ContentRoot</c> does not reach them, and
+    /// measured on master the "Show desktop" tooltip (peak 247/255), the overflow flyout and the
+    /// context menu all stayed lit over the black strip for as long as nobody came back. A pointer
+    /// left resting on the bar is the ordinary way to walk away, so a tooltip is the common case.
+    /// </para>
+    /// <para>
+    /// <b>Closed rather than kept lit, and closed rather than holding the blackout off.</b> Holding
+    /// it off while a panel is open would leave a menu, the flyout and the bar under it at full
+    /// tier for as long as the user is gone, which is the case the feature exists for. Nothing is
+    /// lost by closing: a panel left untouched for the whole away delay is not in use, and none of
+    /// these holds anything the user typed. Closed at the start of the fade, not its end, so they
+    /// are not drawn at full brightness over a darkening bar for a second and a half. Windows' own
+    /// surfaces (Start, Quick Settings) are not ours and are left alone, as in
+    /// <see cref="ClearPanelsFor"/>.
+    /// </para>
+    /// </remarks>
+    private void CloseEverythingLit()
+    {
+        ClearPanelsFor(BarPanel.None);
+        CloseVolumeTip();
+        int tips = OpenToolTips.CloseAll();
+        if (tips > 0) BringUpLog.Write($"away: closed {tips} tooltip(s)");
     }
 
     private void ComeBack()

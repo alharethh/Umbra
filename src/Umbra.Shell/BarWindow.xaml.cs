@@ -1548,29 +1548,7 @@ internal partial class BarWindow : AppBarWindow
     /// Closes whichever stock tooltip is up — the speaker's own "Speakers: 26%" or the network
     /// description — so it does not sit beside the level the wheel just set.
     /// </summary>
-    /// <remarks>
-    /// <c>ToolTipService</c> has no public way to close the tooltip it opened, but the tooltip
-    /// itself is an ordinary <see cref="ToolTip"/> at the root of its own popup, and closing it
-    /// there is honoured: the service does not reopen it until the pointer enters something new.
-    /// </remarks>
-    private void CloseServiceToolTips()
-    {
-        foreach (PresentationSource source in PresentationSource.CurrentSources)
-        {
-            if (source.RootVisual is not Visual root) continue;
-            var tip = FindToolTip(root, 4);
-            if (tip is not null && !ReferenceEquals(tip, _volumeTip) && tip.IsOpen) tip.IsOpen = false;
-        }
-
-        static ToolTip? FindToolTip(DependencyObject node, int depth)
-        {
-            if (node is ToolTip t) return t;
-            if (depth == 0) return null;
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++)
-                if (FindToolTip(VisualTreeHelper.GetChild(node, i), depth - 1) is { } found) return found;
-            return null;
-        }
-    }
+    private void CloseServiceToolTips() => OpenToolTips.CloseAll(except: _volumeTip);
 
     /// <summary>
     /// Opens the notification centre, as clicking the Windows clock does.
