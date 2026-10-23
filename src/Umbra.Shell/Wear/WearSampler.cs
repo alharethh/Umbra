@@ -149,6 +149,100 @@ internal sealed class WearSampler : IDisposable
     }
 
     /// <summary>
+    /// The file that says this data folder has had its pre-placement records attributed.
+    /// </summary>
+    public static string LegacyMarkerPath => Path.Combine(
+        Path.GetDirectoryName(DefaultPath)!,
+        "wear-per-placement");
+
+    /// <summary>
+    /// Once per data folder, gives each screen's pre-placement record to the placement it was
+    /// recorded at. Returns one line per thing it did, for the log.
+    /// </summary>
+    /// <param name="records">
+    /// For each screen the bar is starting on: its old single file (<see cref="PathForScreen"/>)
+    /// and the file of the placement it is starting at (<see cref="PathFor"/>).
+    /// </param>
+    /// <param name="markerPath">Written whatever the outcome; while it exists nothing is done.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Before per-placement files, the screen's file held whichever placement ran last</b>,
+    /// because every move overwrote it, and the first launch after an upgrade reads the same
+    /// edge from <c>settings.txt</c> as the old build last ran at. So at that launch the old file
+    /// belongs to the placement starting now. Left alone, a left or right user's heatmap would
+    /// start over on upgrade, and a top user's record, being the same size as a bottom grid,
+    /// would later be taken in as the bottom strip's history the day they moved to the bottom.
+    /// </para>
+    /// <para>
+    /// <b>The marker is what makes it once.</b> After the first launch the screen's file is the
+    /// bottom record, and a later bottom-to-top move must not carry it off. It is written even
+    /// when nothing was moved, and only after every screen of the set has been handled, which is
+    /// why this runs in <c>App</c> before any bar is built rather than in a bar.
+    /// </para>
+    /// <para>
+    /// A placement that already has a file (only a development build could leave one without
+    /// the marker) keeps it, and the old record is set aside as <c>-unplaced</c> rather than left
+    /// where the bottom bar would load it. Size is not checked: top and bottom are the same size
+    /// anyway, and a record that no longer fits is refused by <c>WearStore.LoadCompatible</c> at
+    /// its new name exactly as it would have been at its old one.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<string> AdoptLegacyRecords(
+        IEnumerable<(string Legacy, string Placement)> records,
+        string markerPath)
+    {
+        if (File.Exists(markerPath)) return [];
+
+        List<string> done = [];
+
+        foreach ((string legacy, string placement) in records)
+        {
+            if (string.Equals(legacy, placement, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!File.Exists(legacy)) continue;
+
+            try
+            {
+                if (File.Exists(placement))
+                {
+                    string aside = Path.Combine(
+                        Path.GetDirectoryName(legacy)!,
+                        $"{Path.GetFileNameWithoutExtension(legacy)}-unplaced.dat");
+
+                    if (File.Exists(aside))
+                    {
+                        done.Add($"wear: left {Path.GetFileName(legacy)} in place, {Path.GetFileName(placement)} and {Path.GetFileName(aside)} both exist");
+                        continue;
+                    }
+
+                    File.Move(legacy, aside);
+                    done.Add($"wear: set {Path.GetFileName(legacy)} aside as {Path.GetFileName(aside)}, {Path.GetFileName(placement)} already exists");
+                }
+                else
+                {
+                    File.Move(legacy, placement);
+                    done.Add($"wear: adopted {Path.GetFileName(legacy)} as {Path.GetFileName(placement)}, the placement it was recorded at");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                done.Add($"wear: could not move {Path.GetFileName(legacy)}: {ex.Message}");
+            }
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(markerPath)!);
+            File.WriteAllText(markerPath, "Wear records are kept per placement (screen and edge).\r\n");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            done.Add($"wear: could not write {Path.GetFileName(markerPath)}: {ex.Message}");
+        }
+
+        return done;
+    }
+
+    /// <summary>
     /// Whether the bar needs a new sampler: its placement's file or its grid changed.
     /// </summary>
     /// <remarks>

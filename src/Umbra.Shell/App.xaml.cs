@@ -123,6 +123,16 @@ public partial class App : Application
 
         IReadOnlyList<AppBarScreen?> screens = ScreensToOccupy(Settings);
 
+        // Before any bar opens its wear file: the first launch after per-placement files gives
+        // each screen's old single record to the edge it was recorded at, once, for the whole set.
+        // See WearSampler.AdoptLegacyRecords.
+        foreach (string line in Wear.WearSampler.AdoptLegacyRecords(
+                     screens.Select(s => (
+                         Wear.WearSampler.PathForScreen(s?.DeviceName, IsPrimary(s)),
+                         Wear.WearSampler.PathFor(s?.DeviceName, IsPrimary(s), Settings.Edge))),
+                     Wear.WearSampler.LegacyMarkerPath))
+            BringUpLog.Write(line);
+
         foreach (AppBarScreen? screen in screens)
         {
             bool primary = IsPrimary(screen);
