@@ -250,6 +250,28 @@ internal partial class BarWindow : AppBarWindow
             new MouseButtonEventHandler(OnBarPressed),
             handledEventsToo: true);
 
+        // Every middle press and release on the bar, icon or not, reaches the tracker with no
+        // target; the icon's own handlers then report it again with the icon. A press here runs
+        // before the icon's (tunnelling), a release after it (handledEventsToo), and leaving the
+        // bar ends the press, since its release will then go elsewhere. Without these a press
+        // cancelled by sliding off an icon stayed recorded, and a later press on empty bar
+        // released over that icon launched it.
+        AddHandler(
+            PreviewMouseDownEvent,
+            new MouseButtonEventHandler((_, e) =>
+            {
+                if (e.ChangedButton == MouseButton.Middle) _middleClick.Press(null);
+            }),
+            handledEventsToo: true);
+        AddHandler(
+            MouseUpEvent,
+            new MouseButtonEventHandler((_, e) =>
+            {
+                if (e.ChangedButton == MouseButton.Middle) _middleClick.Release(null);
+            }),
+            handledEventsToo: true);
+        MouseLeave += (_, _) => _middleClick.Cancel();
+
         // A class handler rather than per-menu wiring: the slot menus are created by a
         // DataTemplate, so there is no single place to attach to, and a menu added later would
         // silently miss out.
@@ -3526,8 +3548,11 @@ internal partial class BarWindow : AppBarWindow
         return null;
     }
 
-    /// <summary>The slot a middle button went down on, so its button-up can tell it is the same one.</summary>
-    private TaskbarSlot? _middlePressedSlot;
+    /// <summary>
+    /// Pairs a middle button-up with the press that began it. Fed every middle press and release on
+    /// the bar, on an icon or not, so a press that was cancelled cannot be matched later.
+    /// </summary>
+    private readonly MiddleClickTracker<TaskbarSlot> _middleClick = new();
 
     /// <summary>Records a middle press, so the release over the same icon starts a new instance.</summary>
     /// <remarks>
@@ -3540,7 +3565,7 @@ internal partial class BarWindow : AppBarWindow
         if (e.ChangedButton != MouseButton.Middle) return;
         if (sender is not FrameworkElement { DataContext: TaskbarSlot slot }) return;
 
-        _middlePressedSlot = slot;
+        _middleClick.Press(slot);
         e.Handled = true;
     }
 
@@ -3557,11 +3582,10 @@ internal partial class BarWindow : AppBarWindow
         if (e.ChangedButton != MouseButton.Middle) return;
         if (sender is not FrameworkElement { DataContext: TaskbarSlot slot } element) return;
 
-        TaskbarSlot? pressed = _middlePressedSlot;
-        _middlePressedSlot = null;
+        bool sameSlot = _middleClick.Release(slot);
         e.Handled = true;
 
-        if (!ReferenceEquals(pressed, slot) || _dragging) return;
+        if (!sameSlot || _dragging) return;
         if (!SlotGesture.StartsNewInstance(MouseButton.Middle, ModifiersNow())) return;
 
         StartNewInstance(slot, element, "middle-click");
