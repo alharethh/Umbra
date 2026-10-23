@@ -250,6 +250,28 @@ internal partial class BarWindow : AppBarWindow
             new MouseButtonEventHandler(OnBarPressed),
             handledEventsToo: true);
 
+        // Every middle press and release on the bar, icon or not, reaches the tracker with no
+        // target; the icon's own handlers then report it again with the icon. A press here runs
+        // before the icon's (tunnelling), a release after it (handledEventsToo), and leaving the
+        // bar ends the press, since its release will then go elsewhere. Without these a press
+        // cancelled by sliding off an icon stayed recorded, and a later press on empty bar
+        // released over that icon launched it.
+        AddHandler(
+            PreviewMouseDownEvent,
+            new MouseButtonEventHandler((_, e) =>
+            {
+                if (e.ChangedButton == MouseButton.Middle) _middleClick.Press(null);
+            }),
+            handledEventsToo: true);
+        AddHandler(
+            MouseUpEvent,
+            new MouseButtonEventHandler((_, e) =>
+            {
+                if (e.ChangedButton == MouseButton.Middle) _middleClick.Release(null);
+            }),
+            handledEventsToo: true);
+        MouseLeave += (_, _) => _middleClick.Cancel();
+
         // A class handler rather than per-menu wiring: the slot menus are created by a
         // DataTemplate, so there is no single place to attach to, and a menu added later would
         // silently miss out.
@@ -3315,6 +3337,12 @@ internal partial class BarWindow : AppBarWindow
         EndDrag();
         if (wasDragging) return;
 
+        if (SlotGesture.StartsNewInstance(MouseButton.Left, ModifiersNow()))
+        {
+            StartNewInstance(slot, element, "shift-click");
+            return;
+        }
+
         BringUpLog.Write($"slot click: index {_tasks.Slots.IndexOf(slot)} | {slot.Key} | " +
                          $"{slot.Windows.Count} windows | running={slot.IsRunning}");
         PlayIconPress(element);
@@ -3519,6 +3547,95 @@ internal partial class BarWindow : AppBarWindow
 
         return null;
     }
+
+    /// <summary>
+    /// Pairs a middle button-up with the press that began it. Fed every middle press and release on
+    /// the bar, on an icon or not, so a press that was cancelled cannot be matched later.
+    /// </summary>
+    private readonly MiddleClickTracker<TaskbarSlot> _middleClick = new();
+
+    /// <summary>Records a middle press, so the release over the same icon starts a new instance.</summary>
+    /// <remarks>
+    /// The left button has its own handlers, which own the drag. A middle press never starts a
+    /// drag (<see cref="OnSlotMouseMove"/> follows the left button only), so nothing here has to
+    /// tell a drag from a click.
+    /// </remarks>
+    private void OnSlotMouseButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle) return;
+        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot }) return;
+
+        _middleClick.Press(slot);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// A middle click on an icon starts another copy of the application, as on the Windows taskbar.
+    /// </summary>
+    /// <remarks>
+    /// On the release rather than the press, and only over the icon that was pressed: that is how
+    /// every other click on the bar behaves, and it lets a user who pressed the wrong icon slide
+    /// off it to cancel.
+    /// </remarks>
+    private void OnSlotMouseButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle) return;
+        if (sender is not FrameworkElement { DataContext: TaskbarSlot slot } element) return;
+
+        bool sameSlot = _middleClick.Release(slot);
+        e.Handled = true;
+
+        if (!sameSlot || _dragging) return;
+        if (!SlotGesture.StartsNewInstance(MouseButton.Middle, ModifiersNow())) return;
+
+        StartNewInstance(slot, element, "middle-click");
+    }
+
+    /// <summary>
+    /// Starts another copy of the slot's application: exactly what the jump list's entry for the
+    /// application itself does, whether or not it is already running.
+    /// </summary>
+    private void StartNewInstance(TaskbarSlot slot, FrameworkElement element, string gesture)
+    {
+        BringUpLog.Write($"slot {gesture}: new instance | index {_tasks.Slots.IndexOf(slot)} | " +
+                         $"{slot.Key} | running={slot.IsRunning}");
+        PlayIconPress(element);
+
+        // Same reasoning as an ordinary click: a panel of Windows' own holding the foreground
+        // would otherwise refuse the new window the foreground.
+        DismissWindowsSurfaces();
+
+        // A preview of the windows already open says nothing about the one being started.
+        _hoverTimer?.Stop();
+        _picker?.Dismiss();
+        _picker = null;
+
+        Launch(slot);
+    }
+
+    /// <summary>The modifier keys held right now, read from the keyboard rather than from WPF.</summary>
+    /// <remarks>
+    /// The bar never takes focus (<c>WS_EX_NOACTIVATE</c>), so keystrokes go to another thread,
+    /// and WPF's <see cref="Keyboard.Modifiers"/> reads this thread's key state, which need not
+    /// have seen Shift go down. The asynchronous state is the physical keyboard's.
+    /// </remarks>
+    private static ModifierKeys ModifiersNow()
+    {
+        static bool Down(int key) => (GetAsyncKeyState(key) & 0x8000) != 0;
+
+        ModifierKeys held = ModifierKeys.None;
+        if (Down(VkShift)) held |= ModifierKeys.Shift;
+        if (Down(VkControl)) held |= ModifierKeys.Control;
+        if (Down(VkMenu)) held |= ModifierKeys.Alt;
+        if (Down(VkLeftWindows) || Down(VkRightWindows)) held |= ModifierKeys.Windows;
+        return held;
+    }
+
+    private const int VkShift = 0x10;
+    private const int VkControl = 0x11;
+    private const int VkMenu = 0x12;
+    private const int VkLeftWindows = 0x5B;
+    private const int VkRightWindows = 0x5C;
 
     private void Launch(TaskbarSlot slot)
     {

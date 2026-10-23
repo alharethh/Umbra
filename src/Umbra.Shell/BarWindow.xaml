@@ -540,6 +540,8 @@
                           MouseLeftButtonDown="OnSlotMouseDown"
                           MouseMove="OnSlotMouseMove"
                           MouseLeftButtonUp="OnSlotClick"
+                          MouseDown="OnSlotMouseButtonDown"
+                          MouseUp="OnSlotMouseButtonUp"
                           LostMouseCapture="OnSlotLostCapture"
                           ContextMenuOpening="OnSlotContextMenuOpening"
                           Width="{Binding SlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
