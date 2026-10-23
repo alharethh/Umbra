@@ -958,7 +958,8 @@
                            TextAlignment="Center"
                            Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}" />
 
-                <TextBlock Text="{Binding ClockDate}"
+                <TextBlock x:Name="ClockDateText"
+                           Text="{Binding ClockDate}"
                            FontSize="10"
                            TextAlignment="Center"
                            Opacity="0.75"
