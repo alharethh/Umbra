@@ -13,7 +13,7 @@
 ![Windows 11](https://img.shields.io/badge/Windows%2011-0078D4?logo=windows11&logoColor=white)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
 ![WPF](https://img.shields.io/badge/WPF-C%23-239120)
-![tests](https://img.shields.io/badge/tests-750%20passing-2ea44f)
+![tests](https://img.shields.io/badge/tests-757%20passing-2ea44f)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![licence](https://img.shields.io/badge/licence-MIT-blue)
 
@@ -265,7 +265,7 @@ provides tray hosting, the tasks service and AppBar registration; everything abo
 original.
 
 The wear model, colour handling, layout geometry, motion and tier systems live in `Umbra.Core`,
-which has no WPF dependency. **750 tests**, and the suite is written to fail on the silent traps
+which has no WPF dependency. **757 tests**, and the suite is written to fail on the silent traps
 specifically — accumulating light linearly instead of by the burn-in exponent, easing a drift
 turnaround, interpolating a tier ramp in the wrong colour space. Every published figure is asserted
 as a regression baseline.
