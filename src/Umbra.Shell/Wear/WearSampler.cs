@@ -257,7 +257,9 @@ internal sealed class WearSampler : IDisposable
 /// <summary>Reads the drawn scene out of a visual tree.</summary>
 internal static class SceneReader
 {
-    private static readonly Dictionary<ImageSource, LuminanceField> IconFields = [];
+    // Weak, for the reason IconPipeline's cache is: every tray icon update draws a new bitmap, and
+    // a dictionary held each one it sampled, with its field, for the life of the bar.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ImageSource, LuminanceField> IconFields = [];
     private static readonly Dictionary<System.Windows.Media.Color, LuminanceField> SolidFields = [];
 
     /// <summary>
@@ -314,13 +316,9 @@ internal static class SceneReader
         }
     }
 
-    private static LuminanceField IconField(BitmapSource bitmap)
+    internal static LuminanceField IconField(BitmapSource bitmap)
     {
-        if (IconFields.TryGetValue(bitmap, out LuminanceField? cached)) return cached;
-
-        LuminanceField field = LuminanceField.FromBitmap(bitmap);
-        IconFields[bitmap] = field;
-        return field;
+        return IconFields.GetValue(bitmap, static source => LuminanceField.FromBitmap((BitmapSource)source));
     }
 
     private static LuminanceField SolidField(System.Windows.Media.Color colour)
