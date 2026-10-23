@@ -129,72 +129,8 @@ BitmapSource Composite(BitmapSource strip)
     return rendered;
 }
 
-// A copy of Shell's HeatmapRenderer rather than a reference to it: that lives in the WPF
-// application and pulling the whole shell in to colour some pixels would make this tool depend on
-// ManagedShell. The ramp and the six-decade floor are the parts that must not drift, so they are
-// stated here in the same terms.
-BitmapSource Render(WearAccumulator wear)
-{
-    int width = wear.Width, height = wear.Height;
-    double peak = wear.Peak;
-
-    int stride = width * 4;
-    byte[] pixels = new byte[stride * height];
-
-    if (peak > 0.0)
-    {
-        ReadOnlySpan<double> cells = wear.Cells;
-
-        for (int i = 0; i < cells.Length; i++)
-        {
-            double fraction = cells[i] / peak;
-
-            if (fraction > 0.0)
-            {
-                const double floor = 1e-6;
-                fraction = fraction < floor ? 0.0 : 1.0 - Math.Log10(fraction) / Math.Log10(floor);
-            }
-
-            (byte r, byte g, byte b) = Ramp(Math.Clamp(fraction, 0.0, 1.0));
-
-            int p = i * 4;
-            pixels[p + 0] = b;
-            pixels[p + 1] = g;
-            pixels[p + 2] = r;
-            pixels[p + 3] = 255;
-        }
-    }
-
-    return BitmapSource.Create(width, height, 96, 96,
-        System.Windows.Media.PixelFormats.Bgra32, null, pixels, stride);
-}
-
-static (byte, byte, byte) Ramp(double t)
-{
-    // Black, deep blue, magenta, orange, white — dark where nothing happened, so the image reads
-    // as the bar does.
-    (double At, byte R, byte G, byte B)[] stops =
-    [
-        (0.00, 0, 0, 0),
-        (0.25, 20, 24, 90),
-        (0.50, 150, 30, 120),
-        (0.75, 240, 120, 40),
-        (1.00, 255, 255, 235),
-    ];
-
-    for (int i = 1; i < stops.Length; i++)
-    {
-        if (t > stops[i].At && i < stops.Length - 1) continue;
-
-        var a = stops[i - 1];
-        var b = stops[i];
-        double span = b.At - a.At;
-        double k = span <= 0 ? 0 : Math.Clamp((t - a.At) / span, 0, 1);
-
-        return ((byte)(a.R + (b.R - a.R) * k),
-                (byte)(a.G + (b.G - a.G) * k),
-                (byte)(a.B + (b.B - a.B) * k));
-    }
-
-    return (0, 0, 0);
-}
+// The colouring is Umbra.Core's HeatmapPixels, the same one the heatmap window and its saved
+// picture use, so the README image and a user's own cannot drift apart.
+BitmapSource Render(WearAccumulator wear) =>
+    BitmapSource.Create(wear.Width, wear.Height, 96, 96,
+        System.Windows.Media.PixelFormats.Bgra32, null, HeatmapPixels.Bgra(wear), wear.Width * 4);

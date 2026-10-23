@@ -22,72 +22,12 @@ internal static class HeatmapRenderer
         ArgumentNullException.ThrowIfNull(accumulator);
 
         int width = accumulator.Width;
-        int height = accumulator.Height;
-        double peak = accumulator.Peak;
-
-        int stride = width * 4;
-        byte[] pixels = new byte[stride * height];
-
-        if (peak > 0.0)
-        {
-            ReadOnlySpan<double> cells = accumulator.Cells;
-
-            for (int i = 0; i < cells.Length; i++)
-            {
-                double fraction = cells[i] / peak;
-
-                if (logarithmic && fraction > 0.0)
-                {
-                    // Six decades below the peak, mapped onto 0..1.
-                    const double floor = 1e-6;
-                    fraction = fraction < floor
-                        ? 0.0
-                        : 1.0 - Math.Log10(fraction) / Math.Log10(floor);
-                }
-
-                (byte r, byte g, byte b) = Ramp(Math.Clamp(fraction, 0.0, 1.0));
-
-                int p = i * 4;
-                pixels[p + 0] = b;
-                pixels[p + 1] = g;
-                pixels[p + 2] = r;
-                pixels[p + 3] = 255;
-            }
-        }
+        byte[] pixels = HeatmapPixels.Bgra(accumulator, logarithmic);
 
         BitmapSource bitmap = BitmapSource.Create(
-            width, height, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
+            width, accumulator.Height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
         bitmap.Freeze();
         return bitmap;
-    }
-
-    /// <summary>A dark-to-hot ramp: unlit stays black so the reserved rectangle reads as empty.</summary>
-    private static (byte R, byte G, byte B) Ramp(double t)
-    {
-        (double At, double R, double G, double B)[] stops =
-        [
-            (0.00, 0, 0, 0),
-            (0.25, 30, 40, 120),
-            (0.50, 150, 40, 110),
-            (0.75, 240, 110, 40),
-            (1.00, 255, 245, 200),
-        ];
-
-        for (int i = 1; i < stops.Length; i++)
-        {
-            if (t > stops[i].At && i != stops.Length - 1) continue;
-
-            var (a0, r0, g0, b0) = stops[i - 1];
-            var (a1, r1, g1, b1) = stops[i];
-            double f = a1 > a0 ? (t - a0) / (a1 - a0) : 0.0;
-            f = Math.Clamp(f, 0.0, 1.0);
-
-            return ((byte)(r0 + (r1 - r0) * f),
-                    (byte)(g0 + (g1 - g0) * f),
-                    (byte)(b0 + (b1 - b0) * f));
-        }
-
-        return (0, 0, 0);
     }
 
     /// <summary>
