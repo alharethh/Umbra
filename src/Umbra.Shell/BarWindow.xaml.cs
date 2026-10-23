@@ -3900,7 +3900,11 @@ internal partial class BarWindow : AppBarWindow
     {
         if (sender is not FrameworkElement { DataContext: NotifyIcon icon }) return;
 
-        AllowIconOwnerForeground(icon);
+        // Not for a press that opens our own speaker menu: there is no owner to hand anything to,
+        // and the borrow itself left the bar as the foreground window. See SpeakerMenu.
+        if (SpeakerMenu.GrantsOwnerForeground(
+                e.ChangedButton == MouseButton.Right, icon.GUID, icon.CallbackMessage))
+            AllowIconOwnerForeground(icon);
 
         // Ours go now, before the owner is told: whatever it raises belongs in front of them, and
         // a jump list left open would be over the top of it.
