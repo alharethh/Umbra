@@ -72,7 +72,7 @@ internal static class MonitorTopology
     /// <param name="builtFor">The screens the set was built for, at launch.</param>
     /// <param name="attached">The screens attached now.</param>
     /// <remarks>
-    /// Rebuilding re-registers every AppBar and reflows every maximised window, which Â§6.3 allows
+    /// Rebuilding re-registers every AppBar and reflows every maximised window, which §6.3 allows
     /// only when something actually moved. So an empty or unreadable list, which is what an
     /// enumeration in the middle of a change can return, is never a reason to rebuild.
     /// </remarks>
