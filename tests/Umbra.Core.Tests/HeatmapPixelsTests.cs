@@ -36,6 +36,28 @@ public class HeatmapPixelsTests
     }
 
     [Fact]
+    public void The_Scale_Is_Logarithmic_Over_Six_Decades()
+    {
+        // A cell at L = 0.1 against a peak at L = 1 holds 0.1^1.7 of the peak's wear, 1.7 decades
+        // down, so six decades onto 0..1 puts it at 1 - 1.7/6 = 0.7167: between magenta and
+        // orange. A linear scale puts the same cell at 0.02, a step off black, which the non-zero
+        // check above cannot tell from this.
+        WearAccumulator wear = new(3, 1);
+        wear.Add(0, 0, 1.0, 10);
+        wear.Add(1, 0, 0.1, 10);
+        wear.Add(2, 0, Math.Pow(1e-3, 1.0 / 1.7), 10);   // exactly three decades down: mid-ramp
+
+        byte[] px = HeatmapPixels.Bgra(wear);
+
+        Assert.Equal(new byte[] { 50, 108, 228, 255 }, px[4..8]);
+        Assert.Equal(new byte[] { 120, 30, 150, 255 }, px[8..12]);
+
+        // The switch the parameter documents does reach the linear ramp.
+        byte[] linear = HeatmapPixels.Bgra(wear, logarithmic: false);
+        Assert.True(linear[4] + linear[5] + linear[6] < 20);
+    }
+
+    [Fact]
     public void An_Empty_Dataset_Is_Black_And_Opaque()
     {
         byte[] px = HeatmapPixels.Bgra(new WearAccumulator(3, 2));
