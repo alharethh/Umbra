@@ -171,4 +171,28 @@ public class AwayBlackoutTests
         }
         finally { File.Delete(path); }
     }
+
+    [Fact]
+    public void A_Delay_Longer_Than_A_Day_Is_Refused()
+    {
+        // The limit is a refusal, not a clamp: a value past it is unusable and the default stands.
+        // "Infinity" is the case that matters most, because double.TryParse accepts it and
+        // nothing after the parse would notice an endless delay.
+        string path = Path.Combine(Path.GetTempPath(), $"umbra-away-{Guid.NewGuid():N}.txt");
+        try
+        {
+            File.WriteAllLines(path, ["awayAfterMinutes = 1440"]);
+            Assert.Equal(UmbraSettings.MaxAwayAfterMinutes, UmbraSettings.Load(path).AwayAfterMinutes);
+
+            File.WriteAllLines(path, ["awayAfterMinutes = 1441"]);
+            Assert.Equal(10.0, UmbraSettings.Load(path).AwayAfterMinutes);
+
+            File.WriteAllLines(path, ["awayAfterMinutes = 1e308"]);
+            Assert.Equal(10.0, UmbraSettings.Load(path).AwayAfterMinutes);
+
+            File.WriteAllLines(path, ["awayAfterMinutes = Infinity"]);
+            Assert.Equal(10.0, UmbraSettings.Load(path).AwayAfterMinutes);
+        }
+        finally { File.Delete(path); }
+    }
 }
