@@ -218,6 +218,9 @@ internal partial class BarWindow : AppBarWindow
             // wandered off the bar. Otherwise the tick drops to 100 ms and the colour outlives the
             // menu by up to a tenth of a second, which is long enough to look like lag.
             _proximity.KeepFast = StartActive;
+
+            // The bar going black while nobody is there, and back on the first input.
+            PollAway();
         };
 
         OnClockTick(null, EventArgs.Empty);
@@ -692,6 +695,7 @@ internal partial class BarWindow : AppBarWindow
                        PlacementScreen(OwnsItsScreen, Screen, () => ResolveScreen(settings.Monitor)));
 
         _motion?.SetEnabled(settings.Motion);
+        ApplyAwaySetting(settings);
         _motion?.Reemit();
 
         BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
@@ -951,7 +955,11 @@ internal partial class BarWindow : AppBarWindow
             height,
             () => SceneReader.Read(ContentRoot, this),
             () => DpiScale <= 0 ? 1.0 : DpiScale,
-            _wearPath);
+            _wearPath)
+        {
+            // A blacked-out strip emits nothing, so the heatmap must not record it as lit.
+            Dark = () => _blackedOut,
+        };
 
         _wear.Start();
 
