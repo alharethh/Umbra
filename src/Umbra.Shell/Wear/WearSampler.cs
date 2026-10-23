@@ -8,6 +8,7 @@ using System.Windows.Threading;
 using Shape = System.Windows.Shapes.Shape;
 using Microsoft.Win32;
 using Umbra.Core.Color;
+using BarEdge = Umbra.Core.Layout.BarEdge;
 using Umbra.Core.Wear;
 using Umbra.Shell.Diagnostics;
 
@@ -114,6 +115,55 @@ internal sealed class WearSampler : IDisposable
             Path.GetDirectoryName(DefaultPath)!,
             $"wear-{safe}.dat");
     }
+
+    /// <summary>
+    /// Where the dataset for one placement of the bar lives: a screen and an edge.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>One file per placement, or moving the bar loses its history.</b> The accumulator is
+    /// sized to the reserved rectangle in physical pixels, so a bar moved to another edge or
+    /// screen is a different grid. With one file, the new grid's sampler loaded it, rightly
+    /// refused it, and saved over it, so moving back started from nothing.
+    /// </para>
+    /// <para>
+    /// <b>The edge is in the key even where the size is the same.</b> A bottom bar and a top bar
+    /// on one screen are the same size and different pixels; keyed by size, the top bar's wear
+    /// would land in the bottom bar's record as though they were the same strip of the panel.
+    /// </para>
+    /// <para>
+    /// The bottom edge keeps the screen's plain name (<see cref="PathForScreen"/>), so existing
+    /// history at the default placement carries on in the file it is already in. A change of
+    /// size at the same placement (resolution, scale) still starts that placement afresh, as
+    /// before: <c>WearStore.LoadCompatible</c> refuses it, correctly.
+    /// </para>
+    /// </remarks>
+    public static string PathFor(string? deviceName, bool primary, BarEdge edge)
+    {
+        string screen = PathForScreen(deviceName, primary);
+        if (edge == BarEdge.Bottom) return screen;
+
+        return Path.Combine(
+            Path.GetDirectoryName(screen)!,
+            $"{Path.GetFileNameWithoutExtension(screen)}-{edge.ToString().ToLowerInvariant()}.dat");
+    }
+
+    /// <summary>
+    /// Whether the bar needs a new sampler: its placement's file or its grid changed.
+    /// </summary>
+    /// <remarks>
+    /// Comparing the size alone kept one sampler across bottom to top on one screen, which went on
+    /// recording the top bar's wear into the bottom bar's grid and file.
+    /// </remarks>
+    public static bool NeedsNewSampler(string? currentPath, int currentWidth, int currentHeight,
+                                       string path, int width, int height) =>
+        currentPath is null
+        || !string.Equals(currentPath, path, StringComparison.OrdinalIgnoreCase)
+        || currentWidth != width
+        || currentHeight != height;
+
+    /// <summary>The file this sampler loads from and saves to.</summary>
+    public string FilePath => _path;
 
     /// <summary>The accumulated data, for the heatmap view.</summary>
     public WearAccumulator Accumulator => _accumulator;

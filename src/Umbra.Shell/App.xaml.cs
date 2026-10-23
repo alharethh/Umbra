@@ -135,12 +135,9 @@ public partial class App : Application
                 // Exactly one bar may host it. See BarWindow's constructor: ManagedShell's tray is
                 // one collection fed by one hidden window, so a second row bound to it draws every
                 // icon twice and forwards every click twice.
-                hostsTray: primary,
-
-                // One dataset per screen. The accumulator is sized to the reserved rectangle in
-                // physical pixels, so two screens are two incompatible grids; sharing a file has
-                // each bar refuse the other's data and then save over it.
-                wearPath: Wear.WearSampler.PathForScreen(screen?.DeviceName, primary))
+                // Its wear dataset is not passed in: the bar picks it from its screen and edge
+                // (WearSampler.PathFor), so the choice follows a live move.
+                hostsTray: primary)
             {
                 MotionEnabled = Settings.Motion,
 
@@ -461,7 +458,7 @@ public partial class App : Application
     }
 
     /// <summary>Whether a screen is the primary one. A null screen means the primary.</summary>
-    private static bool IsPrimary(AppBarScreen? screen)
+    internal static bool IsPrimary(AppBarScreen? screen)
     {
         if (screen is null) return true;
 

@@ -31,7 +31,7 @@ public class HeatmapPictureTests
         Assert.False(HeatmapPicture.IsSuperseded(opened, opened));
         Assert.True(HeatmapPicture.IsSuperseded(opened, afterMove));
 
-        // Same size is still a different dataset: a move to another monitor of the same width.
+        // Same size is still a different dataset: bottom to top on one screen.
         Assert.True(HeatmapPicture.IsSuperseded(opened, new WearAccumulator(2560, 60)));
 
         // No sampler (the bar is closing) is nothing to compare against, not a move.
