@@ -96,18 +96,11 @@ internal partial class BarWindow : AppBarWindow
     /// would draw every icon twice and forward each click twice. Windows puts the tray on the
     /// primary screen only, and so does this.
     /// </param>
-    /// <param name="wearPath">
-    /// Where this bar's wear dataset lives. <b>Per screen, and it has to be.</b> The accumulator
-    /// is sized to the reserved rectangle in physical pixels, so two screens are two different
-    /// grids; sharing one file would have each bar refuse the other's data on load and then
-    /// overwrite it on save, losing both.
-    /// </param>
     public BarWindow(
         ShellHost host,
         BarMetrics metrics,
         AppBarScreen? screen = null,
-        bool hostsTray = true,
-        string? wearPath = null)
+        bool hostsTray = true)
         : base(
             host.ShellManager.AppBarManager,
             host.ShellManager.ExplorerHelper,
@@ -137,7 +130,6 @@ internal partial class BarWindow : AppBarWindow
         // the bar, everything else lives behind the chevron. ManagedShell maintains both views off
         // the pinned-GUID list ShellHost supplies, so nothing here has to filter.
         _notificationArea = hostsTray ? host.ShellManager.NotificationArea : null;
-        _wearPath = wearPath;
         IsPrimaryBar = hostsTray;
         TrayIcons = _notificationArea?.PinnedIcons;
         OverflowTrayIcons = _notificationArea?.UnpinnedIcons;
@@ -324,8 +316,6 @@ internal partial class BarWindow : AppBarWindow
     private readonly ProximityDriver _proximity;
     private readonly NotificationArea? _notificationArea;
 
-    /// <summary>This bar's own wear dataset. Null means the shared default.</summary>
-    private readonly string? _wearPath;
     private readonly DispatcherTimer _clock;
     private readonly StartMenuWatcher _startMenu = new();
     private readonly KeyboardLayoutWatcher _language = new();
@@ -927,25 +917,31 @@ internal partial class BarWindow : AppBarWindow
     }
 
     /// <summary>
-    /// Starts wear sampling at the bar's current physical size, replacing any previous sampler.
+    /// Starts wear sampling at the bar's current placement and physical size, replacing any
+    /// previous sampler.
     /// </summary>
     /// <remarks>
-    /// The outgoing dataset is flushed before it is dropped. It will not be loaded back if the
-    /// geometry changed — <c>WearStore.LoadCompatible</c> refuses a grid of a different shape, which
-    /// is correct, since per-pixel wear from a horizontal bar means nothing on a vertical one — but
-    /// persisting first means the record on disk is whole up to the moment the user moved the bar,
-    /// rather than missing its last five minutes.
+    /// Each placement, a screen and an edge, has its own dataset (<see cref="WearSampler.PathFor"/>).
+    /// A move flushes the outgoing record into its own file and picks up the destination's, so
+    /// moving back resumes where the earlier record stopped; flushing first keeps that record whole
+    /// up to the moment of the move rather than missing its last five minutes. Per-pixel wear from
+    /// one placement means nothing at another, which is why the records are never merged.
+    /// A same-size move (bottom to top) is still a move: the check is on the file as well.
     /// </remarks>
     private void StartWear()
     {
         double scale = DpiScale <= 0 ? 1.0 : DpiScale;
         int width = Math.Max(1, (int)Math.Round(ActualWidth * scale));
         int height = Math.Max(1, (int)Math.Round(ActualHeight * scale));
+        string path = WearSampler.PathFor(Screen?.DeviceName, App.IsPrimary(Screen), Metrics.Edge);
+
+        if (!WearSampler.NeedsNewSampler(
+                _wear?.FilePath, _wear?.Accumulator.Width ?? 0, _wear?.Accumulator.Height ?? 0,
+                path, width, height))
+            return;
 
         if (_wear is not null)
         {
-            if (_wear.Accumulator.Width == width && _wear.Accumulator.Height == height) return;
-
             _wear.Persist();
             _wear.Dispose();
         }
@@ -955,7 +951,7 @@ internal partial class BarWindow : AppBarWindow
             height,
             () => SceneReader.Read(ContentRoot, this),
             () => DpiScale <= 0 ? 1.0 : DpiScale,
-            _wearPath)
+            path)
         {
             // A blacked-out strip emits nothing, so the heatmap must not record it as lit.
             Dark = () => _blackedOut,
@@ -963,7 +959,7 @@ internal partial class BarWindow : AppBarWindow
 
         _wear.Start();
 
-        BringUpLog.Write($"wear accumulator: {width}x{height} physical px ({_wear.Accumulator.SizeInBytes / 1024} KB)");
+        BringUpLog.Write($"wear accumulator: {width}x{height} physical px ({_wear.Accumulator.SizeInBytes / 1024} KB) in {System.IO.Path.GetFileName(path)}");
     }
 
     /// <summary>
