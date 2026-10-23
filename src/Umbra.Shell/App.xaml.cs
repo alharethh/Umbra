@@ -17,6 +17,15 @@ public partial class App : Application
     /// <summary>Every bar, primary first. One entry unless BarOnEveryMonitor is on.</summary>
     private readonly List<BarWindow> _bars = [];
     private SingleInstance? _instance;
+
+    /// <summary>The screens a bar-per-monitor set was built for. Empty for a lone bar.</summary>
+    private IReadOnlyList<Display> _builtFor = [];
+
+    /// <summary>Waits for a display change to settle before judging it. See OnDisplaySettingsChanged.</summary>
+    private DispatcherTimer? _topologySettle;
+
+    /// <summary>When the last display change arrived, on <see cref="Environment.TickCount64"/>.</summary>
+    private long _lastDisplayChange;
 #if DEBUG
     private DevControl? _devControl;
     private DevFaults? _devFaults;
@@ -112,7 +121,9 @@ public partial class App : Application
         BarMetrics metrics = new(Settings.Edge, Settings.Alignment, scale: 1.0,
                                  baseIconExtent: Settings.DormantIconSize);
 
-        foreach (AppBarScreen? screen in ScreensToOccupy(Settings))
+        IReadOnlyList<AppBarScreen?> screens = ScreensToOccupy(Settings);
+
+        foreach (AppBarScreen? screen in screens)
         {
             bool primary = IsPrimary(screen);
 
@@ -161,6 +172,124 @@ public partial class App : Application
 
         if (_bars.Count > 1)
             BringUpLog.Write($"bars on {_bars.Count} monitors; the tray is on the primary only");
+
+        // Recorded here, not read back off the bars later: ManagedShell rewrites the old primary
+        // bar's screen during the very display change that has to be judged. See MonitorTopology.
+        if (Settings.BarOnEveryMonitor)
+        {
+            _builtFor = [.. screens.OfType<AppBarScreen>().Select(s => new Display(s.DeviceName, IsPrimary(s)))];
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+            BringUpLog.Write($"bar set built for {MonitorTopology.Describe(_builtFor)}");
+
+            // The screens were enumerated before the bars were built and shown, and a monitor that
+            // arrived in between raised no event this process heard. That is exactly where a
+            // restart during a flapping monitor lands, so judge once as though a change had come
+            // in at launch.
+            NoteDisplayChange();
+        }
+    }
+
+    /// <summary>
+    /// A monitor was added or removed, the primary changed, or a mode changed. Judged once the
+    /// change has settled, because plugging a monitor in raises a burst of these and an
+    /// enumeration in the middle of one can see half a desktop.
+    /// </summary>
+    /// <remarks>
+    /// Marshalled: <c>SystemEvents</c> may raise this on its own thread.
+    /// </remarks>
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e) =>
+        Dispatcher.BeginInvoke(NoteDisplayChange);
+
+    /// <summary>
+    /// Records a display change and judges it once the displays have been quiet for
+    /// <see cref="MonitorTopology.SettleDelay"/>. Restarted on every change, so the judgement comes
+    /// after the last one.
+    /// </summary>
+    private void NoteDisplayChange()
+    {
+        _lastDisplayChange = Environment.TickCount64;
+        JudgeTopologyIn(MonitorTopology.SettleDelay);
+    }
+
+    private void JudgeTopologyIn(TimeSpan delay)
+    {
+        _topologySettle ??= new DispatcherTimer(
+            delay, DispatcherPriority.Normal, (_, _) => OnTopologySettled(), Dispatcher);
+
+        _topologySettle.Stop();
+        _topologySettle.Interval = delay;
+        _topologySettle.Start();
+    }
+
+    /// <summary>
+    /// Rebuilds the bar set by restarting, if the monitors it was built for are not the ones
+    /// attached any more.
+    /// </summary>
+    /// <remarks>
+    /// <b>A restart rather than an in-place rebuild</b>, because what a rebuild has to change is
+    /// fixed at construction: which bar hosts the tray (one collection, one bar, on the primary),
+    /// which wear dataset each bar keeps, and the rule that any bar closing ends the session. A
+    /// restart builds the set exactly as launch does, through the path that already guards
+    /// Explorer's taskbar state across the handover.
+    /// </remarks>
+    private void OnTopologySettled()
+    {
+        _topologySettle?.Stop();
+
+        IReadOnlyList<Display> attached;
+        try
+        {
+            attached = [.. AppBarScreen.FromAllScreens().Select(s => new Display(s.DeviceName, IsPrimary(s)))];
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException)
+        {
+            BringUpLog.Write(ex, "display change: could not enumerate screens; bars left in place");
+            return;
+        }
+
+        TopologyChange change = MonitorTopology.Classify(perMonitorSet: true, _builtFor, attached);
+        if (change == TopologyChange.None)
+        {
+            BringUpLog.Write($"display change: still {MonitorTopology.Describe(attached)}; bars left in place");
+            return;
+        }
+
+        string what = $"built for {MonitorTopology.Describe(_builtFor)}, now {MonitorTopology.Describe(attached)}";
+
+        TimeSpan quietFor = TimeSpan.FromMilliseconds(Environment.TickCount64 - _lastDisplayChange);
+        TimeSpan settle = MonitorTopology.StillToSettle(change, quietFor);
+        if (settle > TimeSpan.Zero)
+        {
+            BringUpLog.Write($"display change: {what}; only removed, judged again in {settle.TotalSeconds:0}s");
+            JudgeTopologyIn(settle);
+            return;
+        }
+
+        // Recorded before the attempt, so a restart that fails counts too and cannot be retried on
+        // every display change either. A record that cannot be read or written refuses the
+        // rebuild: the next process would not see it, and the limit is all that stops a flap.
+        RebuildClaim claim = MonitorTopology.ClaimRebuild(MonitorTopology.DefaultRebuildStampPath, DateTime.UtcNow, out TimeSpan wait);
+        if (claim != RebuildClaim.Granted)
+        {
+            // Judged again when the limit allows, so a real change that lands at the end of a
+            // burst is still followed, once, rather than waiting for the next display change.
+            string why = claim switch
+            {
+                RebuildClaim.Limited => "rate limit",
+                RebuildClaim.Unreadable => "the rebuild record cannot be read",
+                _ => "the rebuild record cannot be written",
+            };
+            BringUpLog.Write($"display change: {what}; rebuild deferred ({why}), judged again in {wait.TotalSeconds:0}s");
+            JudgeTopologyIn(wait);
+            return;
+        }
+
+        BringUpLog.Write($"display change: {what}; restarting to rebuild the bar set");
+
+        // Only once the replacement has started: a restart that failed leaves this bar running,
+        // and its set still has to follow the next change.
+        if (TryRestart())
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -228,13 +357,16 @@ public partial class App : Application
     /// taskbar state, because both instances briefly existing is exactly the race that leaves the
     /// user's taskbar hidden — see <c>ExplorerStateGuard</c>.
     /// </remarks>
-    public void Restart()
+    public void Restart() => TryRestart();
+
+    /// <summary>Starts a replacement and shuts this bar down. False if the replacement could not be started.</summary>
+    private bool TryRestart()
     {
         string? exe = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exe))
         {
             BringUpLog.Write("restart requested but the process path is unknown");
-            return;
+            return false;
         }
 
         // Carry the original flags through, minus any previous wait token.
@@ -259,10 +391,12 @@ public partial class App : Application
             ExitIntent.Declare("restart");
             BringUpLog.Write("restarting");
             Shutdown();
+            return true;
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             BringUpLog.Write(ex, "restart failed");
+            return false;
         }
     }
 
