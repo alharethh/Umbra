@@ -659,7 +659,7 @@ internal partial class BarWindow : AppBarWindow
 
         // Flush first, so what the window shows is what is on disk.
         _wear.Persist();
-        new HeatmapWindow(_wear.Accumulator) { Owner = null }.ShowInFront();
+        new HeatmapWindow(_wear.Accumulator, () => _wear?.Accumulator) { Owner = null }.ShowInFront();
     }
 
     /// <summary>
