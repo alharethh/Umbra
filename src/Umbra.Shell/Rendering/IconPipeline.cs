@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Umbra.Core.Color;
@@ -31,7 +32,15 @@ internal sealed class IconPipeline
     /// </summary>
     private const int LevelSteps = 64;
 
-    private readonly Dictionary<(ImageSource Source, int Level), BitmapSource> _cache = [];
+    /// <summary>
+    /// Renders per source, keyed weakly on the source. A tray icon's source is a new bitmap every
+    /// time its owner sends <c>NIF_ICON</c> — ManagedShell builds one per message — and Explorer
+    /// re-sends the speaker icon on every volume change. A dictionary keyed on the source held
+    /// every superseded one alive, with its renders, for the life of the bar: about 70 KB of WIC
+    /// memory per change, which is native, so the managed heap stayed small while the process
+    /// grew. An entry here goes when nothing draws its source any more.
+    /// </summary>
+    private readonly ConditionalWeakTable<ImageSource, Dictionary<int, BitmapSource>> _cache = [];
 
     /// <summary>Renders <paramref name="source"/> as it should appear at a continuous tier level.</summary>
     public BitmapSource? Render(ImageSource? source, BarElement element, double level)
@@ -39,10 +48,11 @@ internal sealed class IconPipeline
         if (source is not BitmapSource bitmap) return null;
 
         int quantised = (int)Math.Round(Math.Clamp(level, 0.0, 2.0) / 2.0 * LevelSteps);
-        if (_cache.TryGetValue((source, quantised), out BitmapSource? cached)) return cached;
+        Dictionary<int, BitmapSource> levels = _cache.GetOrCreateValue(source);
+        if (levels.TryGetValue(quantised, out BitmapSource? cached)) return cached;
 
         BitmapSource rendered = Build(bitmap, element, quantised / (double)LevelSteps * 2.0);
-        _cache[(source, quantised)] = rendered;
+        levels[quantised] = rendered;
         return rendered;
     }
 
