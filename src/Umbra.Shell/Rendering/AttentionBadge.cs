@@ -21,8 +21,15 @@ namespace Umbra.Shell.Rendering;
 /// removes it, so a bar with nothing asking renders nothing for it.
 /// </para>
 /// <para>
-/// The key frames come from <see cref="NotificationBadge.OpacityAt"/>'s own breakpoints, so the
-/// lit duty the animation draws is the one the Core tests integrate: 0.25, and 1/7 once decayed.
+/// The key frame <i>values</i> come from <see cref="NotificationBadge.OpacityAt"/>; their times are
+/// written out from the same constants, and a test integrates what WPF will play: 0.25 lit duty,
+/// and 1/7 once decayed.
+/// </para>
+/// <para>
+/// <b>At <see cref="FramesPerSecond"/>, not WPF's 60.</b> A forever animation keeps the compositor
+/// rendering for as long as it runs, dark part included, which for an ignored application is all
+/// night. 20 fps steps each 200 ms fade in four 50 ms steps, which a 7 px dot does not show as
+/// stepping; 10 fps would leave two, visibly a jump. It costs a third of the frames.
 /// </para>
 /// </remarks>
 internal static class AttentionBadge
@@ -34,6 +41,9 @@ internal static class AttentionBadge
     public static AttentionState GetState(DependencyObject element) => (AttentionState)element.GetValue(StateProperty);
 
     public static void SetState(DependencyObject element, AttentionState value) => element.SetValue(StateProperty, value);
+
+    /// <summary>The pulse's frame rate. See the remarks.</summary>
+    internal const int FramesPerSecond = 20;
 
     private static readonly DoubleAnimationUsingKeyFrames Fresh = Build(decayed: false);
     private static readonly DoubleAnimationUsingKeyFrames Decayed = Build(decayed: true);
@@ -72,6 +82,7 @@ internal static class AttentionBadge
             Duration = TimeSpan.FromSeconds(cycle),
             RepeatBehavior = RepeatBehavior.Forever,
         };
+        Timeline.SetDesiredFrameRate(animation, FramesPerSecond);
 
         foreach (double t in new[] { 0.0, fade, on, on + fade, cycle })
             animation.KeyFrames.Add(new LinearDoubleKeyFrame(

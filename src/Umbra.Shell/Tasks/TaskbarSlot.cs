@@ -28,6 +28,12 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     private readonly AttentionLatch _attention = new();
     private DispatcherTimer? _decayTimer;
 
+    /// <summary>The attention latch's clock, in seconds. Replaceable so a test can step it.</summary>
+    internal Func<double> Clock { get; set; } = () => Environment.TickCount64 / 1000.0;
+
+    /// <summary>Windows' "Show flashing on taskbar apps". Replaceable so a test need not read HKCU.</summary>
+    internal Func<bool> FlashingEnabled { get; set; } = Umbra.Shell.Shell.TaskbarFlashingSetting.Enabled;
+
     public TaskbarSlot(
         string key,
         PinnedApp? pin,
@@ -95,13 +101,16 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     /// <summary>Re-reads <see cref="Attention"/> from the windows' state.</summary>
     public void UpdateAttention()
     {
-        bool flashing = _windows.Any(w => w.State == ApplicationWindow.WindowState.Flashing);
+        IntPtr[] open = _windows.Select(w => w.Handle).ToArray();
+        IntPtr[] flashing = _windows
+            .Where(w => w.State == ApplicationWindow.WindowState.Flashing)
+            .Select(w => w.Handle)
+            .ToArray();
+        double now = Clock();
 
         // The setting is read only while something is asking, so a quiet bar never touches it.
-        bool enabled = !flashing || Umbra.Shell.Shell.TaskbarFlashingSetting.Enabled();
-        double now = Environment.TickCount64 / 1000.0;
-
-        AttentionState state = _attention.Update(flashing, IsActive, enabled, now);
+        AttentionState state = _attention.Update(open, flashing, IsActive, enabled: true, now);
+        if (state != AttentionState.None && !FlashingEnabled()) state = AttentionState.None;
         ScheduleDecay(state == AttentionState.Pulsing && _attention.DecaysAt is { } at ? at - now : null);
 
         if (state == Attention) return;

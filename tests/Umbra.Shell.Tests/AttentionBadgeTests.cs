@@ -13,42 +13,88 @@ namespace Umbra.Shell.Tests;
 /// </summary>
 public class AttentionBadgeTests
 {
+    private static readonly IntPtr A = 0x10, B = 0x20;
+    private static readonly IntPtr[] None = [], OnlyA = [A], Both = [A, B];
+
+    private static AttentionState Step(AttentionLatch latch, IntPtr[] flashing, bool active, double now,
+        IntPtr[]? open = null, bool enabled = true) =>
+        latch.Update(open ?? Both, flashing, active, enabled, now);
+
     [Fact]
     public void A_Flash_Raises_The_Badge_And_Switching_To_It_Clears_It()
     {
         AttentionLatch latch = new();
 
-        Assert.Equal(AttentionState.None, latch.Update(flashing: false, active: false, enabled: true, now: 0));
-        Assert.Equal(AttentionState.Pulsing, latch.Update(flashing: true, active: false, enabled: true, now: 1));
-        Assert.Equal(AttentionState.None, latch.Update(flashing: true, active: true, enabled: true, now: 2));
+        Assert.Equal(AttentionState.None, Step(latch, None, false, 0));
+        Assert.Equal(AttentionState.Pulsing, Step(latch, OnlyA, false, 1));
+        Assert.Equal(AttentionState.None, Step(latch, OnlyA, true, 2));
     }
 
     [Fact]
-    public void A_State_That_Lingers_After_Being_Seen_Does_Not_Bring_It_Back()
+    public void A_Window_That_Flashes_Forever_Holds_One_Request_Through_The_Gaps()
     {
-        // ManagedShell's window state can go stale. Once the window has been in front, the request
-        // has been seen, and leaving it again must not raise the badge a second time.
+        // FlashWindowEx toggles at the caret-blink rate and ManagedShell follows every toggle:
+        // HSHELL_FLASH sets Flashing, the HSHELL_REDRAW that turns it off sets Inactive. Fed that,
+        // the badge must stay up, never restart, and decay on schedule.
         AttentionLatch latch = new();
+        const double half = 0.53;
 
-        latch.Update(true, false, true, 0);
-        latch.Update(true, true, true, 1);
+        double t = 100;
+        for (int i = 0; t < 100 + NotificationBadge.DecayAfterSeconds - 1; i++, t = 100 + i * half)
+            Assert.Equal(AttentionState.Pulsing, Step(latch, i % 2 == 0 ? OnlyA : None, false, t));
 
-        Assert.Equal(AttentionState.None, latch.Update(flashing: true, active: false, enabled: true, now: 2));
-
-        // A new request after it stopped asking is a new badge.
-        latch.Update(false, false, true, 3);
-        Assert.Equal(AttentionState.Pulsing, latch.Update(true, false, true, 4));
+        Assert.Equal(100 + NotificationBadge.DecayAfterSeconds, latch.DecaysAt);
+        Assert.Equal(AttentionState.Decayed, Step(latch, None, false, 100 + NotificationBadge.DecayAfterSeconds));
+        Assert.Equal(AttentionState.Decayed, Step(latch, OnlyA, false, 100 + NotificationBadge.DecayAfterSeconds + half));
     }
 
     [Fact]
-    public void The_Badge_Stays_Up_For_As_Long_As_The_Request_Does()
+    public void Being_Switched_To_Holds_While_The_Same_Request_Keeps_Blinking()
     {
-        // FLASHW_TIMERNOFG flashes forever; Windows keeps the button lit after its seven flashes.
-        // Either way the badge follows the request, not each flash.
+        // FLASHW_TIMER does not stop on activation, and another window of the application may still
+        // be asking. Neither is a new request: acknowledged is acknowledged through the gaps.
         AttentionLatch latch = new();
 
-        latch.Update(true, false, true, 0);
-        Assert.Equal(AttentionState.Pulsing, latch.Update(true, false, true, 600));
+        Step(latch, Both, false, 0);
+        Assert.Equal(AttentionState.None, Step(latch, None, true, 0.5));
+
+        for (double t = 1; t < 60; t += 0.53)
+            Assert.Equal(AttentionState.None, Step(latch, (int)(t / 0.53) % 2 == 0 ? OnlyA : None, false, t));
+    }
+
+    [Fact]
+    public void A_Flash_After_A_Quiet_Spell_Is_A_New_Request()
+    {
+        AttentionLatch latch = new();
+
+        Step(latch, OnlyA, false, 0);
+        Step(latch, OnlyA, true, 1);
+        Step(latch, None, false, 2);
+
+        Assert.Equal(AttentionState.None, Step(latch, OnlyA, false, 1 + AttentionLatch.QuietSeconds - 0.1));
+        Assert.Equal(AttentionState.Pulsing, Step(latch, OnlyA, false, 1 + 2 * AttentionLatch.QuietSeconds + 0.5));
+    }
+
+    [Fact]
+    public void Closing_Every_Window_That_Asked_Ends_The_Request()
+    {
+        AttentionLatch latch = new();
+
+        Step(latch, OnlyA, false, 0);
+        Assert.Equal(AttentionState.Pulsing, Step(latch, None, false, 1));
+
+        // B never asked; A closing leaves nothing asking.
+        Assert.Equal(AttentionState.None, Step(latch, None, false, 2, open: [B]));
+        Assert.Null(latch.DecaysAt);
+    }
+
+    [Fact]
+    public void Closing_One_Asking_Window_Keeps_The_Other()
+    {
+        AttentionLatch latch = new();
+
+        Step(latch, Both, false, 0);
+        Assert.Equal(AttentionState.Pulsing, Step(latch, None, false, 1, open: [B]));
     }
 
     [Fact]
@@ -56,18 +102,26 @@ public class AttentionBadgeTests
     {
         AttentionLatch latch = new();
 
-        latch.Update(true, false, true, 100);
+        Step(latch, OnlyA, false, 100);
         Assert.Equal(100 + NotificationBadge.DecayAfterSeconds, latch.DecaysAt);
-        Assert.Equal(AttentionState.Pulsing, latch.Update(true, false, true, 100 + 899));
-        Assert.Equal(AttentionState.Decayed, latch.Update(true, false, true, 100 + 900));
+        Assert.Equal(AttentionState.Pulsing, Step(latch, None, false, 100 + 899));
+        Assert.Equal(AttentionState.Decayed, Step(latch, None, false, 100 + 900));
     }
 
     [Fact]
     public void Windows_Setting_Off_Hides_It()
     {
         AttentionLatch latch = new();
-        Assert.Equal(AttentionState.None, latch.Update(flashing: true, active: false, enabled: false, now: 0));
-        Assert.Equal(AttentionState.Pulsing, latch.Update(flashing: true, active: false, enabled: true, now: 1));
+        Assert.Equal(AttentionState.None, Step(latch, OnlyA, false, 0, enabled: false));
+        Assert.Equal(AttentionState.Pulsing, Step(latch, OnlyA, false, 1));
+    }
+
+    [Fact]
+    public void The_Pulse_Is_Not_Drawn_At_Sixty_Frames_A_Second()
+    {
+        Assert.Equal(AttentionBadge.FramesPerSecond, Timeline.GetDesiredFrameRate(AttentionBadge.Build(false)));
+        Assert.Equal(AttentionBadge.FramesPerSecond, Timeline.GetDesiredFrameRate(AttentionBadge.Build(true)));
+        Assert.InRange(AttentionBadge.FramesPerSecond, 1, 30);
     }
 
     [Fact]
