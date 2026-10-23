@@ -55,6 +55,34 @@ public static class NotificationBadge
     public static double DutyAt(double unacknowledgedSeconds) =>
         HasDecayed(unacknowledgedSeconds) ? DecayedPulseDuty : PulseDuty;
 
+    /// <summary>Length of one pulse cycle, before or after decay.</summary>
+    public static double CycleSeconds(bool decayed) =>
+        PulseOnSeconds + (decayed ? DecayedPulseOffSeconds : PulseOffSeconds);
+
+    /// <summary>
+    /// The badge's opacity <paramref name="seconds"/> into its pulse, 0..1.
+    /// </summary>
+    /// <remarks>
+    /// The second is measured between the fades' half-opacity points: 200 ms up, 800 ms held,
+    /// 200 ms down, then dark. Integrated over a cycle that is exactly one second of full
+    /// opacity, so the opacity-weighted duty is <see cref="PulseDuty"/> (or
+    /// <see cref="DecayedPulseDuty"/>) and not a fraction more. Wear goes as <c>L^n</c> with
+    /// n &gt; 1, so a half-lit fade frame wears less than half a lit one; duty is therefore an
+    /// upper bound on the badge's share of <see cref="WearRate"/>, never an underestimate.
+    /// </remarks>
+    public static double OpacityAt(double seconds, bool decayed)
+    {
+        double cycle = CycleSeconds(decayed);
+        double t = seconds % cycle;
+        if (t < 0) t += cycle;
+
+        if (t < FadeSeconds) return t / FadeSeconds;
+        if (t < PulseOnSeconds) return 1.0;
+        if (t < PulseOnSeconds + FadeSeconds) return (PulseOnSeconds + FadeSeconds - t) / FadeSeconds;
+
+        return 0.0;
+    }
+
     /// <summary>
     /// Duty-weighted wear per second of the badge, ignoring the 200 ms fades.
     /// </summary>

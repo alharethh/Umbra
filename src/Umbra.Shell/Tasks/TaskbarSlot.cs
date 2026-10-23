@@ -25,6 +25,8 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     private ImageSource? _icon;
     private AppShortcut? _shortcut;
     private bool _shortcutChecked;
+    private readonly AttentionLatch _attention = new();
+    private DispatcherTimer? _decayTimer;
 
     public TaskbarSlot(
         string key,
@@ -80,7 +82,57 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 
         IsActive = active;
         Raise(nameof(IsActive));
+        UpdateAttention();
         return true;
+    }
+
+    /// <summary>
+    /// Whether this application is asking for attention, and how loudly (§3.3). See
+    /// <see cref="AttentionLatch"/> for the rule.
+    /// </summary>
+    public AttentionState Attention { get; private set; }
+
+    /// <summary>Re-reads <see cref="Attention"/> from the windows' state.</summary>
+    public void UpdateAttention()
+    {
+        bool flashing = _windows.Any(w => w.State == ApplicationWindow.WindowState.Flashing);
+
+        // The setting is read only while something is asking, so a quiet bar never touches it.
+        bool enabled = !flashing || Umbra.Shell.Shell.TaskbarFlashingSetting.Enabled();
+        double now = Environment.TickCount64 / 1000.0;
+
+        AttentionState state = _attention.Update(flashing, IsActive, enabled, now);
+        ScheduleDecay(state == AttentionState.Pulsing && _attention.DecaysAt is { } at ? at - now : null);
+
+        if (state == Attention) return;
+
+        Attention = state;
+        Raise(nameof(Attention));
+    }
+
+    /// <summary>
+    /// One wake-up, at the moment the badge steps down, and only while one is up. There is no
+    /// standing timer for this (§6.6): a bar with nothing asking holds none.
+    /// </summary>
+    private void ScheduleDecay(double? seconds)
+    {
+        _decayTimer?.Stop();
+        if (seconds is not { } s) return;
+
+        if (_decayTimer is null)
+        {
+            _decayTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher);
+            _decayTimer.Tick += OnDecayDue;
+        }
+
+        _decayTimer.Interval = TimeSpan.FromSeconds(Math.Max(0.05, s + 0.05));
+        _decayTimer.Start();
+    }
+
+    private void OnDecayDue(object? sender, EventArgs e)
+    {
+        _decayTimer?.Stop();
+        UpdateAttention();
     }
 
     /// <summary>
@@ -358,6 +410,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         foreach (ApplicationWindow window in _windows) window.PropertyChanged += OnWindowChanged;
 
         RaiseAll();
+        UpdateAttention();
         return true;
     }
 
@@ -366,6 +419,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     {
         foreach (ApplicationWindow window in _windows) window.PropertyChanged -= OnWindowChanged;
         _windows.Clear();
+        _decayTimer?.Stop();
     }
 
     /// <summary>Tells the view the pin state changed.</summary>
@@ -396,6 +450,9 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
                 break;
             case nameof(ApplicationWindow.Icon):
                 Raise(nameof(Icon));
+                break;
+            case nameof(ApplicationWindow.State):
+                UpdateAttention();
                 break;
         }
     }
