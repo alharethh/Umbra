@@ -796,6 +796,9 @@
               ToolTip="{Binding NetworkDescription}"
               ToolTipService.Placement="{Binding TooltipPlacement}"
               MouseLeftButtonUp="OnSystemClusterClick"
+              MouseWheel="OnSystemClusterWheel"
+              MouseLeave="OnSystemClusterLeave"
+              ToolTipOpening="OnSystemClusterToolTipOpening"
               VerticalAlignment="Center">
 
             <Control Style="{StaticResource HolographicChip}" Margin="1,6">
