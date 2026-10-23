@@ -3748,8 +3748,9 @@ internal partial class BarWindow : AppBarWindow
                 if (started) return;
             }
 
-            ManagedShell.Common.Helpers.ShellHelper.ActivateApplication(slot.Key, string.Empty);
-            BringUpLog.Write("launch: went via ActivateApplication");
+            string id = slot.ActivationId;
+            ManagedShell.Common.Helpers.ShellHelper.ActivateApplication(id, string.Empty);
+            BringUpLog.Write($"launch: went via ActivateApplication id='{id}'");
         }
         catch (Exception ex)
         {
