@@ -144,6 +144,12 @@ internal sealed class WearSampler : IDisposable
     }
 #endif
 
+    /// <summary>
+    /// Whether the bar is drawing nothing at all right now (blacked out while the user is away).
+    /// Time passes and no wear is credited, as for a session lock.
+    /// </summary>
+    public Func<bool>? Dark { get; init; }
+
     public void Start()
     {
         _lastSample = DateTime.UtcNow;
@@ -198,7 +204,7 @@ internal sealed class WearSampler : IDisposable
         // crediting all of it as lit time would overstate the wear substantially.
         elapsed = Math.Clamp(elapsed, 0.0, SampleInterval.TotalSeconds * 4);
 
-        if (_suspended)
+        if (_suspended || Dark?.Invoke() == true)
         {
             _accumulator.Idle(elapsed);
         }

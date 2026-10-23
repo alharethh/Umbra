@@ -47,6 +47,7 @@ internal partial class SettingsWindow : Window
 
         PopulateEdges();
         PopulateAlignments();
+        PopulateAway();
         PopulateMonitors();
         PopulateHover();
 
@@ -71,6 +72,7 @@ internal partial class SettingsWindow : Window
         // as the user changing anything.
         EdgeBox.SelectionChanged += (_, _) => Commit();
         AlignmentBox.SelectionChanged += (_, _) => Commit();
+        AwayBox.SelectionChanged += (_, _) => Commit();
         MonitorBox.SelectionChanged += (_, _) => Commit();
         StartupBox.Checked += (_, _) => Commit();
         StartupBox.Unchecked += (_, _) => Commit();
@@ -187,6 +189,25 @@ internal partial class SettingsWindow : Window
         EdgeBox.SelectedIndex = Math.Max(0, IndexOf(EdgeBox, _working.Edge));
     }
 
+    /// <summary>
+    /// Off, 5, 10 and 30 minutes, plus whatever the file holds if it is none of those, so a
+    /// hand-edited delay is shown as it is rather than overwritten by the first change made here.
+    /// </summary>
+    private void PopulateAway()
+    {
+        AwayBox.Items.Add(new Choice("Off", 0.0));
+        AwayBox.Items.Add(new Choice("After 5 minutes", 5.0));
+        AwayBox.Items.Add(new Choice("After 10 minutes", 10.0));
+        AwayBox.Items.Add(new Choice("After 30 minutes", 30.0));
+
+        if (IndexOf(AwayBox, _working.AwayAfterMinutes) < 0)
+            AwayBox.Items.Add(new Choice(
+                string.Create(CultureInfo.InvariantCulture, $"After {_working.AwayAfterMinutes:0.##} minutes"),
+                _working.AwayAfterMinutes));
+
+        AwayBox.SelectedIndex = Math.Max(0, IndexOf(AwayBox, _working.AwayAfterMinutes));
+    }
+
     private void PopulateAlignments()
     {
         AlignmentBox.Items.Add(new Choice("Left / bottom of the bar", Alignment.Start));
@@ -282,6 +303,7 @@ internal partial class SettingsWindow : Window
 
         _working.DormantIconSize = Math.Round(IconSize.Value);
         _working.Motion = MotionBox.IsChecked == true;
+        if (AwayBox.SelectedItem is Choice { Value: double away }) _working.AwayAfterMinutes = away;
         _working.Tray = TrayBox.IsChecked == true;
         _working.BarOnEveryMonitor = EveryMonitorBox.IsChecked == true;
         _working.StartWithWindows = StartupBox.IsChecked == true;

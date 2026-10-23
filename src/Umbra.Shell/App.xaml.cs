@@ -155,6 +155,7 @@ public partial class App : Application
             // startup.
             bar.ApplyHoverSettings(Settings);
             bar.ApplyIconSourceSetting(Settings);
+            bar.ApplyAwaySetting(Settings);
 
             // Any bar closing ends the session. There is no way to close one from the UI, so this
             // only fires on shutdown — and a surviving bar with the others gone would be a worse
