@@ -135,6 +135,84 @@ public sealed class PackagedAppTests
         Assert.Equal(1, calls);
     }
 
+    /// <summary>
+    /// With a bar on every monitor the shared instance is asked for the same ID by one slot per
+    /// bar. Only the first caller used to be told, so the second bar's Settings stayed named after
+    /// its window title, or the frame host, until something else raised its name.
+    /// </summary>
+    [Fact]
+    public void Every_Caller_Waiting_On_A_Name_Is_Told_When_It_Arrives()
+    {
+        using ManualResetEventSlim release = new();
+        int calls = 0;
+
+        PackagedAppNames names = new(id =>
+        {
+            Interlocked.Increment(ref calls);
+            release.Wait(TimeSpan.FromSeconds(5));
+            return "Settings";
+        });
+
+        using ManualResetEventSlim firstBar = new();
+        using ManualResetEventSlim secondBar = new();
+        using ManualResetEventSlim secondModel = new();
+
+        // All three ask before the worker answers, as the bars' first layout passes do.
+        names.Request(SettingsId, firstBar.Set);
+        names.Request(SettingsId, secondBar.Set);
+        names.Request(SettingsId.ToUpperInvariant(), secondModel.Set);
+
+        release.Set();
+
+        Assert.True(firstBar.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(secondBar.Wait(TimeSpan.FromSeconds(5)), "the second caller was never told the name arrived");
+        Assert.True(secondModel.Wait(TimeSpan.FromSeconds(5)), "a caller spelling the ID in another case was never told");
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void A_Caller_After_The_Name_Arrived_Reads_It_Instead_Of_Being_Called()
+    {
+        PackagedAppNames names = new(_ => "Settings");
+        using ManualResetEventSlim done = new();
+
+        names.Request(SettingsId, done.Set);
+        Assert.True(done.Wait(TimeSpan.FromSeconds(5)));
+
+        bool late = false;
+        names.Request(SettingsId, () => late = true);
+        Thread.Sleep(50);
+
+        Assert.False(late);
+        Assert.Equal("Settings", names.Lookup(SettingsId));
+    }
+
+    [Fact]
+    public void A_Name_That_Was_Not_Found_Is_Not_Asked_For_Again_And_Calls_Nobody()
+    {
+        using ManualResetEventSlim answered = new();
+        int calls = 0;
+
+        PackagedAppNames names = new(_ =>
+        {
+            Interlocked.Increment(ref calls);
+            answered.Set();
+            return null;
+        });
+
+        bool told = false;
+        names.Request(SettingsId, () => told = true);
+        Assert.True(answered.Wait(TimeSpan.FromSeconds(5)));
+        Thread.Sleep(50);
+
+        names.Request(SettingsId, () => told = true);
+        Thread.Sleep(50);
+
+        Assert.False(told);
+        Assert.Equal(1, calls);
+        Assert.Null(names.Lookup(SettingsId));
+    }
+
     [Fact]
     public void The_Apps_Folder_Names_Settings()
     {

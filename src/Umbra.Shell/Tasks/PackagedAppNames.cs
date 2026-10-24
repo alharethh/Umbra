@@ -33,7 +33,9 @@ internal sealed class PackagedAppNames
 
     private readonly Func<string, string?> _resolve;
     private readonly ConcurrentDictionary<string, string> _resolved = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, byte> _requested = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _gate = new();
+    private readonly Dictionary<string, List<Action>> _pending = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _finished = new(StringComparer.OrdinalIgnoreCase);
 
     public PackagedAppNames(Func<string, string?>? resolve = null) => _resolve = resolve ?? FromAppsFolder;
 
@@ -61,14 +63,37 @@ internal sealed class PackagedAppNames
     /// process, and calls <paramref name="onResolved"/> from that worker if a name was found.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Once, not retried: a packaged application's name is in its manifest and does not arrive
     /// late the way an icon from a cold shell cache can. A worker stranded by a shell call that
     /// never returns costs one thread per ID, and nothing on the UI thread waits for it.
+    /// </para>
+    /// <para>
+    /// <b>Every caller that asks while the worker runs is told, not only the first.</b> The
+    /// instance is shared by every bar, so with a bar on every monitor the same ID is asked for by
+    /// one slot per bar, and by each bar's model for a pin. Keeping the first caller's callback
+    /// alone left the other bars' slots named after the window title or the frame host until
+    /// something else happened to raise their name. A caller that asks after the name arrived is
+    /// not called back: it reads <see cref="Lookup"/>, as every caller does right after asking.
+    /// </para>
     /// </remarks>
     public void Request(string? aumid, Action onResolved)
     {
         if (string.IsNullOrWhiteSpace(aumid)) return;
-        if (_resolved.ContainsKey(aumid) || !_requested.TryAdd(aumid, 0)) return;
+        if (_resolved.ContainsKey(aumid)) return;
+
+        lock (_gate)
+        {
+            if (_finished.Contains(aumid)) return;
+
+            if (_pending.TryGetValue(aumid, out List<Action>? waiting))
+            {
+                waiting.Add(onResolved);
+                return;
+            }
+
+            _pending[aumid] = [onResolved];
+        }
 
         ThreadPool.QueueUserWorkItem(_ =>
         {
@@ -81,13 +106,23 @@ internal sealed class PackagedAppNames
             catch (Exception e)
             {
                 Diagnostics.BringUpLog.Write($"packaged app name failed: {aumid}: {e.Message}");
-                return;
+                name = null;
+            }
+
+            List<Action> callers;
+
+            lock (_gate)
+            {
+                // Published under the lock, so a caller either joins the list before it is taken
+                // or finds the ID finished and reads the name through Lookup.
+                if (!string.IsNullOrWhiteSpace(name)) _resolved[aumid] = name;
+                _finished.Add(aumid);
+                _pending.Remove(aumid, out callers!);
             }
 
             if (string.IsNullOrWhiteSpace(name)) return;
 
-            _resolved[aumid] = name;
-            onResolved();
+            foreach (Action callback in callers) callback();
         });
     }
 
