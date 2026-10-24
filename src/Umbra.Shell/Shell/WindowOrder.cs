@@ -138,6 +138,15 @@ internal static class WindowOrder
     /// raising the application ourselves</b>: this only makes its own call legal, so an
     /// application that would not have come forward still does not.
     /// </para>
+    /// <para>
+    /// <b>The borrow itself can leave the bar in front</b>, and that is put back here. Measured
+    /// on the 150% laptop with Windows Terminal in front: a press on an icon whose owner raises
+    /// nothing, left or right, ended with the bar's own window as the foreground 9 times in 9, so
+    /// the next keystroke went nowhere. With Notepad in front it did not happen. The foreground
+    /// is already ours while attached, so it is the attach that moves it, not the owner; it is
+    /// handed straight back to the window that had it, before the detach. Owners that do take the
+    /// foreground still can: see <see cref="ShouldHandBack"/>.
+    /// </para>
     /// </remarks>
     public static bool AllowForeground(IntPtr window)
     {
@@ -147,20 +156,64 @@ internal static class WindowOrder
         if (target == 0 || targetProcess == 0) return false;
 
         IntPtr foreground = GetForegroundWindow();
-        uint theirs = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, out _);
+        uint foregroundProcess = 0;
+        uint theirs = foreground == IntPtr.Zero
+            ? 0
+            : GetWindowThreadProcessId(foreground, out foregroundProcess);
         uint ours = GetCurrentThreadId();
+        uint ourProcess = (uint)Environment.ProcessId;
 
         bool attached = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, true);
 
         try
         {
-            return AllowSetForegroundWindow(targetProcess);
+            bool granted = AllowSetForegroundWindow(targetProcess);
+
+            // The attach is what moves the foreground, so it is read here, and handed back while
+            // still attached: done after the detach, SetForegroundWindow returned false every time.
+            IntPtr now = GetForegroundWindow();
+            uint nowProcess = 0;
+            if (now != IntPtr.Zero) GetWindowThreadProcessId(now, out nowProcess);
+
+            if (attached && ShouldHandBack(foreground, foregroundProcess, now, nowProcess, ourProcess))
+            {
+                bool back = SetForegroundWindow(foreground);
+                BringUpLog.Write(
+                    $"tray press: the foreground borrow moved it to the bar; handed back to 0x{foreground.ToInt64():X}, ok={back}");
+            }
+
+            return granted;
         }
         finally
         {
             if (attached) AttachThreadInput(ours, theirs, false);
         }
     }
+
+    /// <summary>
+    /// Whether the borrow in <see cref="AllowForeground"/> moved the foreground onto one of our
+    /// own windows, so that it should be returned to the window that had it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only a move <em>from someone else's window to ours</em> counts. A foreground that was
+    /// already ours — the settings window, say — is left where it is, and so is one that moved to
+    /// a third process, which can only be the owner using its grant, or the user.
+    /// </para>
+    /// <para>
+    /// Restoring at once rather than after a delay is safe for owners: the grant is made before
+    /// the hand-back and survives it. A WinForms test icon with a menu still took the foreground
+    /// and showed its menu on every right click (5 in 5, Terminal and Notepad in front).
+    /// </para>
+    /// </remarks>
+    internal static bool ShouldHandBack(
+        IntPtr before, uint beforeProcess, IntPtr after, uint afterProcess, uint ourProcess) =>
+        before != IntPtr.Zero
+        && beforeProcess != 0
+        && beforeProcess != ourProcess
+        && after != before
+        && after != IntPtr.Zero
+        && afterProcess == ourProcess;
 
     /// <summary>
     /// Puts a window belonging to <em>another process</em> in front, past the foreground lock.
