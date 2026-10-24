@@ -76,6 +76,15 @@ internal sealed class PackagedAppNames
     /// something else happened to raise their name. A caller that asks after the name arrived is
     /// not called back: it reads <see cref="Lookup"/>, as every caller does right after asking.
     /// </para>
+    /// <para>
+    /// <b>But each caller is told once, however often it asked.</b> A slot asks from its
+    /// <c>DisplayName</c> getter and the model from every rebuild, which runs on every window event
+    /// on the desktop, so one caller asks many times while the worker runs. Appending every ask
+    /// told it once per ask, and while a shell call never returns the list would grow by one
+    /// delegate per read for the rest of the session, each keeping its slot alive. A repeat is
+    /// recognised by delegate equality (same target, same method), which is why callers pass a
+    /// named method rather than a fresh lambda. Do not drop the <c>Contains</c> check.
+    /// </para>
     /// </remarks>
     public void Request(string? aumid, Action onResolved)
     {
@@ -88,7 +97,8 @@ internal sealed class PackagedAppNames
 
             if (_pending.TryGetValue(aumid, out List<Action>? waiting))
             {
-                waiting.Add(onResolved);
+                // A caller already waiting is not added again: see the remarks.
+                if (!waiting.Contains(onResolved)) waiting.Add(onResolved);
                 return;
             }
 

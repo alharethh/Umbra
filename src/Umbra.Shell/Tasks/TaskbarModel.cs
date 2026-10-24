@@ -248,9 +248,16 @@ internal sealed class TaskbarModel : IDisposable
             if (!pin.IsPackaged) continue;
 
             if (_packagedNames.Lookup(pin.Key) is { } name) _pins.UpdatePackaged(pin.Key, name);
-            else _packagedNames.Request(pin.Key, () => _dispatcher.BeginInvoke(new Action(Rebuild)));
+            else _packagedNames.Request(pin.Key, OnPackagedNameResolved);
         }
     }
+
+    /// <summary>
+    /// A packaged pin's name arrived, on the resolver's worker. A named method rather than a
+    /// lambda so that <see cref="PackagedAppNames.Request"/> recognises the same model asking
+    /// again on every rebuild and tells it once.
+    /// </summary>
+    private void OnPackagedNameResolved() => _dispatcher.BeginInvoke(new Action(Rebuild));
 
     private static List<(string Key, string? Executable)> RunningExecutables(
         Dictionary<string, List<ApplicationWindow>> running) =>

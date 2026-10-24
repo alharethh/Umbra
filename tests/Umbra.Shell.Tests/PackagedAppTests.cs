@@ -170,6 +170,51 @@ public sealed class PackagedAppTests
         Assert.Equal(1, calls);
     }
 
+    /// <summary>
+    /// A slot asks from its <c>DisplayName</c> getter and the model from every rebuild, so one
+    /// caller asks many times while the worker runs. Appending each ask told it once per ask when
+    /// the name arrived, and while a shell call never returned the list grew by one delegate per
+    /// read for the rest of the session, each keeping its slot alive.
+    /// </summary>
+    [Fact]
+    public void One_Caller_Asking_Many_Times_Is_Told_Once()
+    {
+        using ManualResetEventSlim release = new();
+        PackagedAppNames names = new(id =>
+        {
+            release.Wait(TimeSpan.FromSeconds(5));
+            return "Settings";
+        });
+
+        Caller firstSlot = new();
+        Caller secondSlot = new();
+        using ManualResetEventSlim last = new();
+
+        for (int i = 0; i < 100; i++)
+        {
+            names.Request(SettingsId, firstSlot.OnResolved);
+            names.Request(SettingsId, secondSlot.OnResolved);
+        }
+
+        // Callers are told in the order they joined, on one worker, so once this one has been
+        // told every earlier one has been too.
+        names.Request(SettingsId, last.Set);
+        release.Set();
+
+        Assert.True(last.Wait(TimeSpan.FromSeconds(5)));
+        Assert.Equal(1, firstSlot.Told);
+        Assert.Equal(1, secondSlot.Told);
+    }
+
+    private sealed class Caller
+    {
+        private int _told;
+
+        public int Told => Volatile.Read(ref _told);
+
+        public void OnResolved() => Interlocked.Increment(ref _told);
+    }
+
     [Fact]
     public void A_Caller_After_The_Name_Arrived_Reads_It_Instead_Of_Being_Called()
     {
