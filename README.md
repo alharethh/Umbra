@@ -4,7 +4,7 @@
 
 # Umbra – OLED Optimized taskbar
 
-**The Windows 11 taskbar burns into OLED panels. This one doesn't.**
+**A better Windows 11 taskbar, with more features and 260x less burn-in**
 
 [![Download Umbra 0.5.0 for Windows](https://img.shields.io/badge/Download-Umbra%200.5.0-B0F7FB?style=for-the-badge&logo=windows11&logoColor=B0F7FB&labelColor=0B0B0B)](https://github.com/alharethh/Umbra/releases/download/v0.5.0/Umbra-0.5.0-win-x64.exe)
 
