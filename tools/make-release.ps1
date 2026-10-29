@@ -13,6 +13,13 @@
 #
 # The licences are embedded in the binary and written beside the settings on first run, because the
 # single-file download has no files next to it to put them in.
+#
+# Every release is signed. SmartScreen's trust is a reputation counter keyed to the signing
+# identity, so an unsigned release starts from zero and spends downloads that a signed one would
+# have banked; a release that goes out unsigned by accident is worse than one that waits. So the
+# real thing refuses to build without -CertificateThumbprint, and only a scratch -Out may skip it.
+# With Certum's cloud certificate, SimplySign Desktop has to be connected while this runs: that is
+# what puts the certificate in the CurrentUser store.
 
 param(
     # The release's own version, MAJOR.MINOR.PATCH, e.g. 0.1.3. Required: it is stamped into the
@@ -25,10 +32,22 @@ param(
     # artifacts\release or artifacts\Umbra. It must be missing or empty; a relative path is taken
     # from PowerShell's current location. Left out, the downloads go to artifacts\release, which
     # is emptied first, and artifacts\Umbra is refreshed to match.
-    [string]$Out
+    [string]$Out,
+    # The thumbprint of the code-signing certificate in Cert:\CurrentUser\My. Required for a real
+    # release; left out, the script lists the code-signing certificates it can see and stops.
+    [string]$CertificateThumbprint,
+    # Builds without signing. Only with -Out, to try the script without a certificate.
+    [switch]$Unsigned,
+    # Accepts a signature Windows does not trust, so the script can be tried end to end with a
+    # self-signed certificate. Only with -Out: a release must verify as Valid.
+    [switch]$AllowUntrusted
 )
 
 $ErrorActionPreference = "Stop"
+
+# Certum's own timestamp server. A timestamped signature stays valid after the certificate expires;
+# one without a timestamp dies with it, a year from now, on every copy anyone has downloaded.
+$timestampServer = "http://time.certum.pl"
 
 # A scratch -Out is refused unless it is missing or empty, rather than emptied the way
 # artifacts\release is. Emptying is safe there because the script owns that folder; an -Out is
@@ -61,6 +80,79 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
 }
 $fileVersion = "$Version.0"
 $versionArg = "-p:Version=$Version"
+
+# --- the certificate, found before anything is built ---------------------------------------------
+#
+# Checked up front for the same reason the running bar is: three minutes of publishing is a poor way
+# to learn the certificate is missing or SimplySign is disconnected.
+if (($Unsigned -or $AllowUntrusted) -and -not $scratch) {
+    throw "-Unsigned and -AllowUntrusted are for trying the script with -Out. A release is signed with a trusted certificate."
+}
+
+$certificate = $null
+if (-not $Unsigned) {
+    if (-not $CertificateThumbprint) {
+        $found = @(Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue)
+        $list = if ($found.Count -eq 0) { "  none. With Certum's cloud certificate, connect SimplySign Desktop first." }
+                else { ($found | ForEach-Object { "  {0}  {1}  (until {2:yyyy-MM-dd})" -f $_.Thumbprint, $_.Subject, $_.NotAfter }) -join "`n" }
+        throw "A release is signed. Pass -CertificateThumbprint. Code-signing certificates in CurrentUser\My:`n$list"
+    }
+
+    $certificate = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue |
+        Where-Object { $_.Thumbprint -eq ($CertificateThumbprint -replace '\s', '').ToUpperInvariant() }
+    if (-not $certificate) { throw "No code-signing certificate with thumbprint $CertificateThumbprint in CurrentUser\My." }
+    if (-not $certificate.HasPrivateKey) { throw "The certificate $($certificate.Subject) has no private key here. Is SimplySign Desktop connected?" }
+    if ($certificate.NotAfter -lt (Get-Date)) { throw "The certificate $($certificate.Subject) expired on $($certificate.NotAfter.ToString('yyyy-MM-dd'))." }
+
+    "{0,-38} {1}" -f "signing as", $certificate.Subject
+}
+
+# Signs one file and reads the signature back. Checked rather than trusted, like the version:
+# Set-AuthenticodeSignature reports a failed timestamp as a status, not an exception, and a file
+# signed without one looks perfect until the certificate expires.
+#
+# Set-AuthenticodeSignature goes through the same Windows crypto layer as signtool, so nothing has
+# to be installed. Certum documents signtool; if SimplySign ever refuses this route, the Windows
+# SDK's signtool with /sha1 <thumbprint> /fd sha256 /tr $timestampServer /td sha256 is the same
+# signature.
+function Invoke-Sign([string]$Path) {
+    if (-not $certificate) { return }
+
+    $result = Set-AuthenticodeSignature -LiteralPath $Path -Certificate $certificate `
+        -HashAlgorithm SHA256 -TimestampServer $timestampServer
+    $check = Get-AuthenticodeSignature -LiteralPath $Path
+    $name = Split-Path $Path -Leaf
+
+    if ($check.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
+        throw "$name is not signed by $($certificate.Subject): $($result.StatusMessage)"
+    }
+    if (-not $check.TimeStamperCertificate) {
+        throw "$name was signed but not timestamped. Is $timestampServer reachable?"
+    }
+    if ($check.Status -ne 'Valid' -and -not $AllowUntrusted) {
+        throw "$name does not verify: $($check.Status), $($check.StatusMessage)"
+    }
+}
+
+# Signs what in a folder is ours to sign: every exe and dll without a valid signature of its own.
+# Microsoft's runtime files arrive signed and keep their signature. The rest, ManagedShell's
+# included, carry ours, because Smart App Control judges every binary that loads, and an unsigned
+# dll in a signed application is still an unsigned dll.
+function Invoke-SignFolder([string]$Folder) {
+    if (-not $certificate) { return }
+
+    $signed = 0
+    # Filtered by extension here, not with -Include, which -LiteralPath silently ignores: the first
+    # version tried to sign Umbra.deps.json.
+    $binaries = Get-ChildItem -LiteralPath $Folder -Recurse -File |
+        Where-Object { $_.Extension -in '.exe', '.dll' }
+    foreach ($file in $binaries) {
+        if ((Get-AuthenticodeSignature -LiteralPath $file.FullName).Status -eq 'Valid') { continue }
+        Invoke-Sign $file.FullName
+        $signed++
+    }
+    "{0,-38} {1}" -f "  signed", "$signed file(s)"
+}
 
 # Reads the stamped version back off a built file. Checked rather than trusted: a publish that
 # ignored the property would still succeed, and the file would still say 1.0.0.0.
@@ -118,6 +210,11 @@ Remove-Item -Recurse -Force $standalone
 "{0,-38} {1,7:N1} MB" -f (Split-Path $exe -Leaf), ((Get-Item $exe).Length / 1MB)
 Assert-FileVersion $exe
 
+# The bundle is signed as a whole. The assemblies inside it are extracted to memory, not disk, and
+# carry no signatures of their own; signing them would mean signing before bundling.
+Invoke-Sign $exe
+if ($certificate) { "{0,-38} {1}" -f "  signed", "and timestamped" }
+
 # --- and the small one for anyone who has the runtime --------------------------------------------
 $folder = Join-Path $out "Umbra-$Version-win-x64"
 
@@ -130,6 +227,8 @@ Assert-FileVersion (Join-Path $folder "Umbra.dll")
 
 # Symbols and XML docs are for building against, not for running.
 Remove-Item (Join-Path $folder "*.pdb"), (Join-Path $folder "*.xml") -ErrorAction SilentlyContinue
+
+Invoke-SignFolder $folder
 
 Copy-Item (Join-Path $Repo "LICENSE") $folder
 Copy-Item (Join-Path $Repo "THIRD-PARTY-NOTICES.md") $folder
@@ -152,7 +251,8 @@ Remove-Item -Recurse -Force $folder
 #
 # Not for a scratch -Out: a trial version in artifacts\Umbra would then be what gets launched.
 if ($scratch) {
-    Write-Host "`nBoth downloads built in $out. artifacts\Umbra left alone (scratch run)."
+    $how = if ($Unsigned) { "UNSIGNED" } elseif ($AllowUntrusted) { "signed, trust not required" } else { "signed" }
+    Write-Host "`nBoth downloads built in $out ($how). artifacts\Umbra left alone (scratch run)."
     return
 }
 
