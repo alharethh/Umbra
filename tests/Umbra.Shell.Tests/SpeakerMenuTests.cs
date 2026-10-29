@@ -44,4 +44,25 @@ public class SpeakerMenuTests
 
         Assert.All(SpeakerMenu.Entries, e => Assert.False(string.IsNullOrWhiteSpace(e.Label)));
     }
+
+    // Backlog 3p: the foreground borrow on the press left the bar's own window in front, and keys
+    // typed after the menu closed went nowhere. Our menu has no owner to grant anything to.
+    [Fact]
+    public void A_Right_Press_That_Opens_Our_Menu_Does_Not_Borrow_The_Foreground() =>
+        Assert.False(SpeakerMenu.GrantsOwnerForeground(rightButton: true, Volume, 0));
+
+    [Fact]
+    public void A_Left_Press_On_The_Speaker_Still_Borrows() =>
+        // ManagedShell opens Quick Settings for it; not ours to change.
+        Assert.True(SpeakerMenu.GrantsOwnerForeground(rightButton: false, Volume, 0));
+
+    [Fact]
+    public void Every_Other_Right_Press_Still_Borrows()
+    {
+        // An owner putting up its own menu needs the grant, or the menu does not dismiss.
+        Assert.True(SpeakerMenu.GrantsOwnerForeground(rightButton: true, Volume, 0x4C9));
+        Assert.True(SpeakerMenu.GrantsOwnerForeground(rightButton: true, Guid.Empty, 0));
+        Assert.True(SpeakerMenu.GrantsOwnerForeground(
+            rightButton: true, Guid.Parse(NotificationArea.POWER_GUID), 0x4C9));
+    }
 }

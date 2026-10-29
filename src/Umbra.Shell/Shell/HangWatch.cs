@@ -119,13 +119,26 @@ internal sealed class HangWatch
         }
 
         IntPtr window = WindowOf((uint)bar.Id);
-        if (window == IntPtr.Zero) return true;
-
-        return SendMessageTimeout(window, WmNull, IntPtr.Zero, IntPtr.Zero,
-                                  SmtoAbortIfHung | SmtoBlock, (uint)Timeout.TotalMilliseconds,
-                                  out _) != IntPtr.Zero;
+        return window == IntPtr.Zero || Answers(window);
     }
 
+    /// <summary>Whether the thread that owns <paramref name="window"/> answered <c>WM_NULL</c> in time.</summary>
+    /// <remarks>
+    /// Apart from choosing the window so a test can ask one it owns. Asked through
+    /// <see cref="Answers(Process)"/> from inside a test host, the question went to whichever of
+    /// the host's visible windows came first in Z-order, and a parallel test's WPF window on its
+    /// own, still pumping, thread answered for the one that had stopped: 4 failures in 12 runs.
+    /// </remarks>
+    internal static bool Answers(IntPtr window) =>
+        SendMessageTimeout(window, WmNull, IntPtr.Zero, IntPtr.Zero,
+                           SmtoAbortIfHung | SmtoBlock, (uint)Timeout.TotalMilliseconds,
+                           out _) != IntPtr.Zero;
+
+    /// <summary>
+    /// The window to ask. The first visible one stands for the whole bar because every window the
+    /// bar shows belongs to its one UI thread; a process with several UI threads, such as a test
+    /// host, would be answered for by whichever thread owns that window.
+    /// </summary>
     private static IntPtr WindowOf(uint processId)
     {
         IntPtr tray = IntPtr.Zero, visible = IntPtr.Zero;

@@ -265,7 +265,7 @@ internal sealed class MotionDriver : IDisposable
         else if (e.Mode == PowerModes.Resume) _clock.Release(MotionSuppression.DisplayOff);
     }
 
-    private static double SecondsSinceLastInput()
+    internal static double SecondsSinceLastInput()
     {
         NativeMethods.LASTINPUTINFO info = new()
         {

@@ -78,6 +78,19 @@ internal sealed class UmbraSettings
     public bool Motion { get; set; } = true;
 
     /// <summary>
+    /// Minutes without input, with nothing playing, before the bar fades to black. Zero is off.
+    /// </summary>
+    /// <remarks>
+    /// On at ten minutes by default, the project owner's choice. Read as a number rather than from
+    /// a fixed list so a hand-edited file can shorten it for a live check; the settings window
+    /// offers Off, 5, 10 and 30.
+    /// </remarks>
+    public double AwayAfterMinutes { get; set; } = 10.0;
+
+    /// <summary>The longest delay the file accepts: a day.</summary>
+    public const double MaxAwayAfterMinutes = 24 * 60;
+
+    /// <summary>
     /// Whether Umbra starts when the user signs in.
     /// </summary>
     /// <remarks>
@@ -249,6 +262,15 @@ internal sealed class UmbraSettings
                 else Unusable(key, value);
                 break;
 
+            case "awayafterminutes":
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double away)
+                    && away >= 0 && away <= MaxAwayAfterMinutes)
+                {
+                    AwayAfterMinutes = away;
+                }
+                else Unusable(key, value);
+                break;
+
             case "motion":
                 if (bool.TryParse(value, out bool motion)) Motion = motion;
                 else Unusable(key, value);
@@ -387,6 +409,10 @@ internal sealed class UmbraSettings
         "# The drift and micro-jitter layer.",
         $"motion = {Motion.ToString().ToLowerInvariant()}",
         "",
+        "# Minutes without input before the bar fades to black, unless something is playing",
+        "# sound. 0 turns it off. Any input brings the bar back at once.",
+        string.Create(CultureInfo.InvariantCulture, $"awayAfterMinutes = {AwayAfterMinutes}"),
+        "",
         "# Start Umbra when you sign in. Written to HKCU Run, and visible in Task Manager's",
         "# Startup tab, so it can be turned off from there too.",
         $"startWithWindows = {StartWithWindows.ToString().ToLowerInvariant()}",
@@ -423,6 +449,7 @@ internal sealed class UmbraSettings
         Alignment = Alignment,
         DormantIconSize = DormantIconSize,
         Motion = Motion,
+        AwayAfterMinutes = AwayAfterMinutes,
         StartWithWindows = StartWithWindows,
         BarOnEveryMonitor = BarOnEveryMonitor,
         ApplicationIcons = ApplicationIcons,

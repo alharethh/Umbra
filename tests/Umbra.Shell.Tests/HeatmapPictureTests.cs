@@ -20,6 +20,32 @@ public class HeatmapPictureTests
         Assert.Equal("umbra-heatmap-2026-10-23.png", HeatmapPicture.FileName(Day));
     }
 
+    [Fact]
+    public void A_Window_Left_Open_Across_A_Move_Knows_Its_Data_Is_The_Old_Grid()
+    {
+        // What BarWindow.StartWear does on an edge change: a new accumulator at the new size,
+        // while the window goes on holding the one it was opened with.
+        WearAccumulator opened = new(2560, 60);
+        WearAccumulator afterMove = new(70, 1440);
+
+        Assert.False(HeatmapPicture.IsSuperseded(opened, opened));
+        Assert.True(HeatmapPicture.IsSuperseded(opened, afterMove));
+
+        // Same size is still a different dataset: bottom to top on one screen.
+        Assert.True(HeatmapPicture.IsSuperseded(opened, new WearAccumulator(2560, 60)));
+
+        // No sampler (the bar is closing) is nothing to compare against, not a move.
+        Assert.False(HeatmapPicture.IsSuperseded(opened, null));
+    }
+
+    [Fact]
+    public void The_Status_Says_When_The_Picture_Is_From_Before_The_Move()
+    {
+        Assert.Equal("Saved", HeatmapPicture.Outcome("Saved", superseded: false));
+        Assert.Equal("Copied: the record from before the bar moved",
+            HeatmapPicture.Outcome("Copied", superseded: true));
+    }
+
     [Theory]
     [InlineData(0.0, "0.0 hours")]
     [InlineData(1440.0, "0.4 hours")]

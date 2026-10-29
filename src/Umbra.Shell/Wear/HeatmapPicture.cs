@@ -66,6 +66,25 @@ internal static class HeatmapPicture
             $"Taskbar wear heatmap · {figure} {unit} recorded · {date:yyyy-MM-dd}");
     }
 
+    /// <summary>
+    /// Whether the dataset a heatmap window holds is no longer the one the bar is recording into.
+    /// </summary>
+    /// <remarks>
+    /// Moving the bar to another edge or monitor gives it a new grid and a new accumulator
+    /// (<c>BarWindow.StartWear</c>), and a window opened before that keeps the old one. Its picture
+    /// is then still honest about what it shows, as of the move. The old record is not lost: it
+    /// was flushed to its own placement's file (<c>WearSampler.PathFor</c>) and resumes from there
+    /// if the bar moves back. But this window's copy stops at the move, and the bar is now
+    /// recording elsewhere. So the window keeps it and says so, rather than drawing the new,
+    /// nearly empty grid or closing on the user.
+    /// </remarks>
+    public static bool IsSuperseded(WearAccumulator shown, WearAccumulator? recording) =>
+        recording is not null && !ReferenceEquals(shown, recording);
+
+    /// <summary>What the window's status line reads after a copy or save.</summary>
+    public static string Outcome(string done, bool superseded) =>
+        superseded ? $"{done}: the record from before the bar moved" : done;
+
     /// <summary>The name the save dialog offers.</summary>
     public static string FileName(DateTime date) =>
         string.Create(CultureInfo.InvariantCulture, $"umbra-heatmap-{date:yyyy-MM-dd}.png");

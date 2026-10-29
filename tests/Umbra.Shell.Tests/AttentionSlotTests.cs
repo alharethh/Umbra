@@ -54,6 +54,52 @@ public class AttentionSlotTests
     }
 
     [Fact]
+    public void A_Withdrawn_Flash_Wakes_The_Slot_And_Ends_The_Badge()
+    {
+        (TaskbarSlot slot, ApplicationWindow window, Func<double, double> setClock) = Build();
+
+        window.State = ApplicationWindow.WindowState.Flashing;
+        setClock(1000.53);
+        window.State = ApplicationWindow.WindowState.Inactive;
+
+        // Nothing else will ask after FLASHW_STOP, so the slot has to have woken itself.
+        Assert.NotNull(slot.WakeDueIn);
+        Assert.Equal(AttentionLatch.QuietSeconds, slot.WakeDueIn!.Value, 6);
+
+        // What the wake-up does.
+        setClock(1000.53 + AttentionLatch.QuietSeconds + 0.05);
+        slot.UpdateAttention();
+        Assert.Equal(AttentionState.None, slot.Attention);
+        Assert.Null(slot.WakeDueIn);
+
+        slot.Detach();
+    }
+
+    [Fact]
+    public void While_Lit_The_Next_Wake_Up_Is_The_Decay()
+    {
+        (TaskbarSlot slot, ApplicationWindow window, _) = Build();
+
+        window.State = ApplicationWindow.WindowState.Flashing;
+        Assert.Equal(Umbra.Core.Tiers.NotificationBadge.DecayAfterSeconds, slot.WakeDueIn!.Value, 6);
+
+        slot.Detach();
+    }
+
+    [Fact]
+    public void Windows_Setting_Off_Hides_It_And_Holds_No_Timer()
+    {
+        (TaskbarSlot slot, ApplicationWindow window, _) = Build();
+        slot.FlashingEnabled = () => false;
+
+        window.State = ApplicationWindow.WindowState.Flashing;
+        Assert.Equal(AttentionState.None, slot.Attention);
+        Assert.Null(slot.WakeDueIn);
+
+        slot.Detach();
+    }
+
+    [Fact]
     public void Its_Window_Closing_Clears_It()
     {
         (TaskbarSlot slot, ApplicationWindow window, _) = Build();

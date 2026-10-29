@@ -46,6 +46,29 @@ internal static class SpeakerMenu
         callbackMessage == 0
         && string.Equals(guid.ToString(), NotificationArea.VOLUME_GUID, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Whether a press on this icon should borrow the foreground to grant it to the icon's owner.
+    /// False only for the right press that opens our own menu.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The grant (<see cref="WindowOrder.AllowForeground"/>) exists so an owner can put its menu
+    /// in front, and here there is no owner menu: nothing is forwarded. <b>The borrow is not
+    /// free.</b> Measured 2026-10-23 with Windows Terminal in front: the foreground was Terminal
+    /// just before the <c>AttachThreadInput</c> pair and the bar's own <c>WS_EX_NOACTIVATE</c>
+    /// window just after, and it stayed there after the menu closed, so typed keys went nowhere
+    /// (backlog 3p). With Notepad in front the same press left Notepad alone, which is why the
+    /// repro was 4 in 5 and not every time. An owner that raises a menu takes the foreground
+    /// straight back and hides this; our menu takes nothing, so it showed.
+    /// </para>
+    /// <para>
+    /// A left press still borrows: ManagedShell answers it for the volume icon by opening Quick
+    /// Settings, and that is not ours to change here.
+    /// </para>
+    /// </remarks>
+    public static bool GrantsOwnerForeground(bool rightButton, Guid guid, uint callbackMessage) =>
+        !(rightButton && Replaces(guid, callbackMessage));
+
     /// <summary>Opens an entry's target through the shell, which owns every one of these schemes.</summary>
     public static void Open(Entry entry)
     {

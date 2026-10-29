@@ -33,15 +33,15 @@ internal static class BringUpLog
                     Path,
                     string.Create(
                         CultureInfo.InvariantCulture,
-                        $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  {message}{Environment.NewLine}"));
+                        $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  {message}{Environment.NewLine}"),
+                    TextEncoding.Utf8);
             }
         }
-        catch (IOException)
+        catch (Exception)
         {
-            // Diagnostics must never be the reason the bar fails to start.
-        }
-        catch (UnauthorizedAccessException)
-        {
+            // Diagnostics must never be the reason the bar fails. The replacing encoder covers the
+            // failure that has happened; this covers the next one nobody has thought of, which
+            // would otherwise reach the dispatcher from whichever call site logged it.
         }
     }
 

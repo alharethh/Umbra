@@ -17,8 +17,8 @@ public class AttentionBadgeTests
     private static readonly IntPtr[] None = [], OnlyA = [A], Both = [A, B];
 
     private static AttentionState Step(AttentionLatch latch, IntPtr[] flashing, bool active, double now,
-        IntPtr[]? open = null, bool enabled = true) =>
-        latch.Update(open ?? Both, flashing, active, enabled, now);
+        IntPtr[]? open = null) =>
+        latch.Update(open ?? Both, flashing, active, now);
 
     [Fact]
     public void A_Flash_Raises_The_Badge_And_Switching_To_It_Clears_It()
@@ -100,20 +100,57 @@ public class AttentionBadgeTests
     [Fact]
     public void An_Ignored_Badge_Decays_After_Fifteen_Minutes()
     {
+        // A counted flash ends with the button lit and stays that way until the user comes.
         AttentionLatch latch = new();
 
         Step(latch, OnlyA, false, 100);
         Assert.Equal(100 + NotificationBadge.DecayAfterSeconds, latch.DecaysAt);
-        Assert.Equal(AttentionState.Pulsing, Step(latch, None, false, 100 + 899));
-        Assert.Equal(AttentionState.Decayed, Step(latch, None, false, 100 + 900));
+        Assert.Equal(AttentionState.Pulsing, Step(latch, OnlyA, false, 100 + 899));
+        Assert.Equal(AttentionState.Decayed, Step(latch, OnlyA, false, 100 + 900));
     }
 
     [Fact]
-    public void Windows_Setting_Off_Hides_It()
+    public void A_Withdrawn_Flash_Ends_The_Request_After_The_Quiet_Spell()
+    {
+        // FLASHW_STOP: one HSHELL_REDRAW, and then nothing at all. Measured 2026-10-29.
+        AttentionLatch latch = new();
+        const double stop = 0.53;
+
+        Step(latch, OnlyA, false, 0);
+        Assert.Equal(AttentionState.Pulsing, Step(latch, None, false, stop));
+        Assert.Equal(stop + AttentionLatch.QuietSeconds, latch.WithdrawsAt);
+
+        Assert.Equal(AttentionState.Pulsing, Step(latch, None, false, stop + AttentionLatch.QuietSeconds - 0.01));
+        Assert.Equal(AttentionState.None, Step(latch, None, false, stop + AttentionLatch.QuietSeconds + 0.01));
+        Assert.Null(latch.WithdrawsAt);
+        Assert.Null(latch.DecaysAt);
+    }
+
+    [Fact]
+    public void A_Counted_Flash_Left_Lit_Holds_And_Has_Nothing_To_Withdraw()
     {
         AttentionLatch latch = new();
-        Assert.Equal(AttentionState.None, Step(latch, OnlyA, false, 0, enabled: false));
-        Assert.Equal(AttentionState.Pulsing, Step(latch, OnlyA, false, 1));
+
+        for (int i = 0; i < 10; i++)
+            Step(latch, i % 2 == 0 ? OnlyA : None, false, i * 0.53);
+
+        // The last toggle turned the button on, and it stays on.
+        Assert.Equal(AttentionState.Pulsing, Step(latch, OnlyA, false, 9 * 0.53 + 600));
+        Assert.Null(latch.WithdrawsAt);
+    }
+
+    [Fact]
+    public void A_Lit_Window_Flashing_Again_After_A_Long_Silence_Keeps_Its_Request()
+    {
+        // A fresh FlashWindowEx on a window a counted flash left lit opens with an off-toggle. That
+        // window was lit the whole time, so the quiet spell starts now, not when it was last heard.
+        AttentionLatch latch = new();
+
+        Step(latch, OnlyA, false, 0);
+        Assert.Equal(AttentionState.Pulsing, Step(latch, None, false, 600));
+        Assert.Equal(600 + AttentionLatch.QuietSeconds, latch.WithdrawsAt);
+        Assert.Equal(AttentionState.Pulsing, Step(latch, OnlyA, false, 600.53));
+        Assert.Equal(0 + NotificationBadge.DecayAfterSeconds, latch.DecaysAt);
     }
 
     [Fact]

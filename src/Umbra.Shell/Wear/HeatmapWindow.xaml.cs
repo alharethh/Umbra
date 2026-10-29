@@ -12,12 +12,16 @@ namespace Umbra.Shell.Wear;
 internal partial class HeatmapWindow : Window
 {
     private readonly WearAccumulator _accumulator;
+    private readonly Func<WearAccumulator?> _recording;
 
-    public HeatmapWindow(WearAccumulator accumulator)
+    /// <param name="accumulator">The dataset to show.</param>
+    /// <param name="recording">The dataset the bar is recording into now, asked at each copy or save.</param>
+    public HeatmapWindow(WearAccumulator accumulator, Func<WearAccumulator?> recording)
     {
         InitializeComponent();
 
         _accumulator = accumulator;
+        _recording = recording;
         Heatmap.Source = HeatmapRenderer.Render(accumulator);
         Summary.Text = HeatmapRenderer.Summarise(accumulator);
     }
@@ -25,6 +29,8 @@ internal partial class HeatmapWindow : Window
     // Composed at the click, not when the window opened: the accumulator is live, and a picture
     // saved an hour after opening the window should say so.
     private BitmapSource Picture() => HeatmapPicture.Compose(_accumulator, DateTime.Now);
+
+    private bool Superseded => HeatmapPicture.IsSuperseded(_accumulator, _recording());
 
     private void OnCopyClick(object sender, RoutedEventArgs e)
     {
@@ -45,7 +51,7 @@ internal partial class HeatmapWindow : Window
             // Another process holding the clipboard open is ordinary; WPF's own retry gives up
             // after about a second and throws.
             Clipboard.SetDataObject(data, copy: true);
-            Status.Text = "Copied";
+            Status.Text = HeatmapPicture.Outcome("Copied", Superseded);
             BringUpLog.Write($"heatmap copied: {picture.PixelWidth}x{picture.PixelHeight}");
         }
         catch (COMException ex)
@@ -78,7 +84,7 @@ internal partial class HeatmapWindow : Window
         {
             using FileStream file = File.Create(path);
             HeatmapPicture.SavePng(picture, file);
-            Status.Text = "Saved";
+            Status.Text = HeatmapPicture.Outcome("Saved", Superseded);
             BringUpLog.Write($"heatmap saved: {picture.PixelWidth}x{picture.PixelHeight} -> {path}");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

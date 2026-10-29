@@ -139,15 +139,22 @@ public class HangWatchTests
     [Fact]
     public void A_Window_Whose_Thread_Stops_Pumping_Does_Not_Answer()
     {
+        // Asks the window this test owns, not the test host's first visible window, which is what
+        // Answers(Process) picks. Asked that way this test failed 4 runs in 12 of the full suite:
+        // OpenToolTipsTests and SettingsFitTests show WPF windows on their own STA threads in
+        // parallel, one of them came first in Z-order, and its thread, still pumping, answered for
+        // this one. The bar has a single UI thread, so the choice of window cannot do that there;
+        // choosing it is covered end to end, against a process of its own, by
+        // The_Guard_Ends_A_Process_That_Stops_Answering.
         using ManualResetEventSlim created = new();
+        using ManualResetEventSlim stopped = new();
         using ManualResetEventSlim release = new();
         using ManualResetEventSlim block = new();
         HwndSource? source = null;
 
         Thread owner = new(() =>
         {
-            // A visible popup far off screen: the probe looks for the first visible top-level
-            // window the process owns, which in a test host is this one.
+            // A visible popup far off screen, like the windows the probe chooses among.
             source = new HwndSource(new HwndSourceParameters("hang-watch-test")
             {
                 WindowStyle = unchecked((int)0x90000000), // WS_POPUP | WS_VISIBLE
@@ -166,6 +173,10 @@ public class HangWatchTests
                 Thread.Sleep(10);
             }
 
+            // Said once the last pump has returned, so the question below cannot land in it. A
+            // fixed sleep on the asking side would only make that likely.
+            stopped.Set();
+
             // Not release.Wait(): a managed wait on an STA thread pumps messages, so the window
             // would go on answering. Thread.Sleep does not pump, which is what a hang looks like.
             while (!release.IsSet) Thread.Sleep(10);
@@ -176,13 +187,13 @@ public class HangWatchTests
         owner.Start();
 
         Assert.True(created.Wait(TimeSpan.FromSeconds(10)));
+        IntPtr window = source!.Handle;
 
-        using Process self = Process.GetCurrentProcess();
-        Assert.True(HangWatch.Answers(self));
+        Assert.True(HangWatch.Answers(window));
 
         block.Set();
-        Thread.Sleep(100);
-        Assert.False(HangWatch.Answers(self));
+        Assert.True(stopped.Wait(TimeSpan.FromSeconds(10)));
+        Assert.False(HangWatch.Answers(window));
 
         release.Set();
         owner.Join(TimeSpan.FromSeconds(10));

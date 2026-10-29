@@ -25,8 +25,10 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     private ImageSource? _icon;
     private AppShortcut? _shortcut;
     private bool _shortcutChecked;
+    private string? _processId;
+    private bool _processIdChecked;
     private readonly AttentionLatch _attention = new();
-    private DispatcherTimer? _decayTimer;
+    private DispatcherTimer? _wakeTimer;
 
     /// <summary>The attention latch's clock, in seconds. Replaceable so a test can step it.</summary>
     internal Func<double> Clock { get; set; } = () => Environment.TickCount64 / 1000.0;
@@ -109,38 +111,65 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         double now = Clock();
 
         // The setting is read only while something is asking, so a quiet bar never touches it.
-        AttentionState state = _attention.Update(open, flashing, IsActive, enabled: true, now);
+        AttentionState state = _attention.Update(open, flashing, IsActive, now);
         if (state != AttentionState.None && !FlashingEnabled()) state = AttentionState.None;
-        ScheduleDecay(state == AttentionState.Pulsing && _attention.DecaysAt is { } at ? at - now : null);
+        ScheduleWake(state == AttentionState.None ? null : NextChange(state, now));
 
         if (state == Attention) return;
+
+        // Changes a few times per request at most, and is the only way to tell after the fact
+        // whether a dot was up, since a grey-pixel capture sees nothing with the pointer on the bar.
+        Diagnostics.BringUpLog.Write($"attention: {DisplayName} {Attention} -> {state}");
 
         Attention = state;
         Raise(nameof(Attention));
     }
 
-    /// <summary>
-    /// One wake-up, at the moment the badge steps down, and only while one is up. There is no
-    /// standing timer for this (§6.6): a bar with nothing asking holds none.
-    /// </summary>
-    private void ScheduleDecay(double? seconds)
+    /// <summary>Seconds until the badge would change with no further event: it decays, or the
+    /// application has taken its request back.</summary>
+    private double? NextChange(AttentionState state, double now)
     {
-        _decayTimer?.Stop();
-        if (seconds is not { } s) return;
+        double? decays = state == AttentionState.Pulsing ? _attention.DecaysAt : null;
+        double? withdraws = _attention.WithdrawsAt;
 
-        if (_decayTimer is null)
+        double? at = (decays, withdraws) switch
         {
-            _decayTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher);
-            _decayTimer.Tick += OnDecayDue;
-        }
+            ({ } d, { } w) => Math.Min(d, w),
+            ({ } d, null) => d,
+            (null, { } w) => w,
+            _ => null,
+        };
 
-        _decayTimer.Interval = TimeSpan.FromSeconds(Math.Max(0.05, s + 0.05));
-        _decayTimer.Start();
+        return at - now;
     }
 
-    private void OnDecayDue(object? sender, EventArgs e)
+    /// <summary>When the slot will next re-read its attention unprompted, or null for never.
+    /// Exposed for tests: the timer itself cannot be run in one.</summary>
+    internal double? WakeDueIn { get; private set; }
+
+    /// <summary>
+    /// One wake-up, at the moment the badge steps down or is withdrawn, and only while one is up.
+    /// There is no standing timer for this (§6.6): a bar with nothing asking holds none.
+    /// </summary>
+    private void ScheduleWake(double? seconds)
     {
-        _decayTimer?.Stop();
+        WakeDueIn = seconds;
+        _wakeTimer?.Stop();
+        if (seconds is not { } s) return;
+
+        if (_wakeTimer is null)
+        {
+            _wakeTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher);
+            _wakeTimer.Tick += OnWakeDue;
+        }
+
+        _wakeTimer.Interval = TimeSpan.FromSeconds(Math.Max(0.05, s + 0.05));
+        _wakeTimer.Start();
+    }
+
+    private void OnWakeDue(object? sender, EventArgs e)
+    {
+        _wakeTimer?.Stop();
         UpdateAttention();
     }
 
@@ -170,12 +199,58 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
                     return NameFor(file, null, aumid, window.Title, _packagedNames.Lookup(aumid)) ?? Key;
                 }
 
-                if (NameFor(file, window.WinFileDescription, null, null, null) is { } name) return name;
+                // A packaged desktop application is named as the Apps folder names it, like a
+                // frame-hosted one: Windows Terminal's file description is "Windows Terminal Host".
+                string? packaged = null;
+                if (PackagedProcessId is { } id)
+                {
+                    _packagedNames.Request(id, OnPackagedNameResolved);
+                    packaged = _packagedNames.Lookup(id);
+                }
+
+                if (NameFor(file, window.WinFileDescription, null, null, packaged) is { } name) return name;
             }
 
             return Key;
         }
     }
+
+    /// <summary>
+    /// The app user model ID this slot's application runs under when its windows do not say, read
+    /// from the owning process; null for an unpackaged application. See <see cref="ProcessAppId"/>.
+    /// </summary>
+    /// <remarks>
+    /// Only asked when the window carries no ID of its own — then the key is already that ID — and
+    /// never of the UWP frame host, which is not packaged. Read once per set of windows.
+    /// </remarks>
+    private string? PackagedProcessId
+    {
+        get
+        {
+            if (_processIdChecked) return _processId;
+            _processIdChecked = true;
+
+            foreach (ApplicationWindow window in _windows)
+            {
+                if (!string.IsNullOrWhiteSpace(window.AppUserModelID)) continue;
+                if (PackagedAppNames.IsFrameHost(window.WinFileName)) continue;
+
+                if (ProcessAppId.For(window.Handle) is { } id) return _processId = id;
+            }
+
+            return _processId = null;
+        }
+    }
+
+    /// <summary>
+    /// What to hand <c>ActivateApplication</c> when there is no file to run: the slot's key, unless
+    /// that is the executable path of a packaged process, which cannot be activated.
+    /// </summary>
+    public string ActivationId => ActivationIdFor(Key, PackagedProcessId);
+
+    /// <summary>Pure, so it can be tested without a process. See <see cref="ActivationId"/>.</summary>
+    internal static string ActivationIdFor(string key, string? processAppId) =>
+        string.IsNullOrWhiteSpace(processAppId) ? key : processAppId;
 
     /// <summary>
     /// A window's application name, from what is known about it. Pure, so it can be tested
@@ -198,9 +273,11 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     /// </remarks>
     internal static string? NameFor(string? file, string? description, string? aumid, string? title, string? packagedName)
     {
+        // Resolved from an app user model ID, the frame's or the process's: what Start calls it.
+        if (!string.IsNullOrWhiteSpace(packagedName)) return packagedName;
+
         if (PackagedAppNames.IsFrameHost(file))
         {
-            if (!string.IsNullOrWhiteSpace(packagedName)) return packagedName;
             if (!string.IsNullOrWhiteSpace(title)) return title;
 
             return string.IsNullOrWhiteSpace(aumid) ? null : aumid;
@@ -366,6 +443,10 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
             // asked: a shortcut found by the name "Settings" could be anybody's.
             if (Pin is { IsPackaged: true }) return null;
 
+            // Likewise an unpinned packaged desktop application keyed by its path (Windows
+            // Terminal): it has no shortcut of its own, and the caller activates its process's ID.
+            if (Pin is null && PackagedProcessId is not null) return null;
+
             if (PathIsUsable(Pin?.Path)) return (Pin!.Path, string.Empty);
 
             return Shortcut() is { } shortcut ? (shortcut.Target, shortcut.Arguments) : null;
@@ -415,6 +496,8 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 
         _windows.Clear();
         _windows.AddRange(windows);
+        _processIdChecked = false;
+        _processId = null;
 
         foreach (ApplicationWindow window in _windows) window.PropertyChanged += OnWindowChanged;
 
@@ -428,7 +511,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     {
         foreach (ApplicationWindow window in _windows) window.PropertyChanged -= OnWindowChanged;
         _windows.Clear();
-        _decayTimer?.Stop();
+        _wakeTimer?.Stop();
     }
 
     /// <summary>Tells the view the pin state changed.</summary>
