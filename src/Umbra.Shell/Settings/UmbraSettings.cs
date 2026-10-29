@@ -74,6 +74,21 @@ internal sealed class UmbraSettings
     /// </remarks>
     public double DormantIconSize { get; set; } = 16.0;
 
+    /// <summary>
+    /// How much of their designed light the resting tiers keep, in percent: 100 is the §3.1 table,
+    /// 10 is the floor.
+    /// </summary>
+    /// <remarks>
+    /// Only ever darker, and only at rest; pointing at the bar is as bright as it always was. See
+    /// <see cref="Umbra.Core.Tiers.TierPalette.Resolve"/>. A percentage rather than a fraction so
+    /// the file reads the way the slider does.
+    /// </remarks>
+    public int RestingBrightness { get; set; } = 100;
+
+    /// <summary>The lowest <see cref="RestingBrightness"/> the file accepts.</summary>
+    public static int MinRestingBrightness =>
+        (int)Math.Round(Umbra.Core.Tiers.TierPalette.MinRestingBrightness * 100);
+
     /// <summary>Whether the motion layer runs (§6).</summary>
     public bool Motion { get; set; } = true;
 
@@ -262,6 +277,15 @@ internal sealed class UmbraSettings
                 else Unusable(key, value);
                 break;
 
+            case "restingbrightness":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int brightness)
+                    && brightness >= MinRestingBrightness && brightness <= 100)
+                {
+                    RestingBrightness = brightness;
+                }
+                else Unusable(key, value);
+                break;
+
             case "awayafterminutes":
                 if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double away)
                     && away >= 0 && away <= MaxAwayAfterMinutes)
@@ -406,6 +430,10 @@ internal sealed class UmbraSettings
         "# 20 buys nothing; 16 is the first size where burn-in actually improves.",
         string.Create(CultureInfo.InvariantCulture, $"dormantIconSize = {DormantIconSize}"),
         "",
+        "# Percent of the resting greys' light, 10 to 100. Never brighter than the default;",
+        "# pointing at the bar is unaffected. Half the light is about a third of the wear.",
+        string.Create(CultureInfo.InvariantCulture, $"restingBrightness = {RestingBrightness}"),
+        "",
         "# The drift and micro-jitter layer.",
         $"motion = {Motion.ToString().ToLowerInvariant()}",
         "",
@@ -448,6 +476,7 @@ internal sealed class UmbraSettings
         Edge = Edge,
         Alignment = Alignment,
         DormantIconSize = DormantIconSize,
+        RestingBrightness = RestingBrightness,
         Motion = Motion,
         AwayAfterMinutes = AwayAfterMinutes,
         StartWithWindows = StartWithWindows,

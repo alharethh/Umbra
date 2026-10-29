@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:ClassModifier="internal"
         Title="Umbra — settings"
-        Width="520" SizeToContent="Height"
+        Width="580" SizeToContent="Height"
         ResizeMode="NoResize"
         Background="#FF14140F"
         Foreground="#FFB6B6AD"
@@ -221,6 +221,24 @@
 
                 <TextBlock Style="{StaticResource Hint}"
                            Text="Icons shrink while the bar is resting and grow back to 24 px when you point at it, so the smaller size is only ever seen out of the corner of your eye. Applies immediately." />
+
+                <!-- The explanation is a tooltip rather than a hint line: the window is within a few
+                     DIP of a 150% laptop's screen, and a line here made it scroll. -->
+                <Grid Margin="0,0,0,10"
+                      ToolTip="Only ever darker, and only at rest: pointing at the bar is as bright as ever. Applies immediately.">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Resting brightness" />
+                    <Slider Grid.Column="1" x:Name="Brightness"
+                            Minimum="10" Maximum="100" TickFrequency="5"
+                            IsSnapToTickEnabled="True"
+                            ValueChanged="OnBrightnessChanged" />
+                    <TextBlock Grid.Column="2" x:Name="BrightnessReadout"
+                               MinWidth="112" TextAlignment="Right" FontFamily="Consolas" FontSize="11" />
+                </Grid>
 
                 <CheckBox x:Name="StartupBox" Content="Start Umbra when I sign in" Margin="0,0,0,2" />
                 <TextBlock Style="{StaticResource Hint}"
