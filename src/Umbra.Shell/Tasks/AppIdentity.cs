@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.RegularExpressions;
 using ManagedShell.WindowsTasks;
 
 namespace Umbra.Shell.Tasks;
@@ -92,7 +93,9 @@ internal static class AppIdentity
     /// </para>
     /// <para>
     /// The rule is deliberately narrow: the same executable file name, in sibling directories under
-    /// a shared parent. That is the shape a versioned install has and very little else does, and
+    /// a shared parent, or the same file in two versions of one package (see
+    /// <see cref="IsSamePackageUpdated"/>). That is the shape a versioned install has and very
+    /// little else does, and
     /// the caller only asks about pins whose own path has already gone — so the alternative to
     /// adopting is a permanently broken icon, not a working one.
     /// </para>
@@ -111,8 +114,9 @@ internal static class AppIdentity
 
             if (deadVersion is null || liveVersion is null) return false;
             if (Same(deadVersion, liveVersion)) return true;
+            if (Same(Path.GetDirectoryName(deadVersion), Path.GetDirectoryName(liveVersion))) return true;
 
-            return Same(Path.GetDirectoryName(deadVersion), Path.GetDirectoryName(liveVersion));
+            return IsSamePackageUpdated(deadPath, livePath);
         }
         catch (ArgumentException)
         {
@@ -120,5 +124,55 @@ internal static class AppIdentity
             // or unrelated — there is no "moved" for them.
             return false;
         }
+    }
+
+    /// <summary>
+    /// A package full name: <c>Name_Version_Architecture_ResourceId_PublisherId</c>, the shape of
+    /// every folder under <c>WindowsApps</c>. The resource ID is usually empty, hence the double
+    /// underscore in <c>Claude_4.29.0.0_x64__pzs8sxrjxfjjc</c>.
+    /// </summary>
+    private static readonly Regex PackageFullName = new(
+        @"^(?<name>[^_]+)_(?<version>\d+(\.\d+){3})_(?<rest>[^_]+_[^_]*_[a-z0-9]{13})$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Whether two executables are the same file in two versions of one package.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A packaged application keeps its version wherever its package folder is, not beside the
+    /// executable.</b> Claude went from <c>Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app\claude.exe</c>
+    /// to <c>Claude_4.29.0.0_x64__pzs8sxrjxfjjc\app\claude.exe</c>: the directories above the two
+    /// executables are both <c>app</c>, so the sibling rule saw two unrelated trees.
+    /// </para>
+    /// <para>
+    /// Exactly one path segment may differ, it must be a package full name in both, and only its
+    /// version may change. Name, architecture, resource and publisher are the package's identity,
+    /// and the publisher hash is what keeps a different vendor's package of the same name out.
+    /// </para>
+    /// </remarks>
+    private static bool IsSamePackageUpdated(string deadPath, string livePath)
+    {
+        string[] dead = deadPath.Split(Path.DirectorySeparatorChar);
+        string[] live = livePath.Split(Path.DirectorySeparatorChar);
+
+        if (dead.Length != live.Length) return false;
+
+        int differing = -1;
+        for (int i = 0; i < dead.Length; i++)
+        {
+            if (Same(dead[i], live[i])) continue;
+            if (differing >= 0) return false;
+            differing = i;
+        }
+
+        if (differing < 0) return false;
+
+        Match before = PackageFullName.Match(dead[differing]);
+        Match after = PackageFullName.Match(live[differing]);
+
+        return before.Success && after.Success
+            && Same(before.Groups["name"].Value, after.Groups["name"].Value)
+            && Same(before.Groups["rest"].Value, after.Groups["rest"].Value);
     }
 }
