@@ -368,7 +368,8 @@ internal sealed class PinSettings
             List<string> lines = ["# Pinned applications, in bar order. key|path|name"];
             lines.AddRange(_pins.Select(p => $"{p.Key}|{p.Path}|{p.Name}"));
 
-            File.WriteAllLines(_path, lines);
+            // Names can be window titles, which can hold a lone surrogate. See TextEncoding.
+            File.WriteAllLines(_path, lines, TextEncoding.Utf8);
         }
         catch (IOException e)
         {
