@@ -27,6 +27,14 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     private bool _shortcutChecked;
     private string? _processId;
     private bool _processIdChecked;
+    private readonly AttentionLatch _attention = new();
+    private DispatcherTimer? _wakeTimer;
+
+    /// <summary>The attention latch's clock, in seconds. Replaceable so a test can step it.</summary>
+    internal Func<double> Clock { get; set; } = () => Environment.TickCount64 / 1000.0;
+
+    /// <summary>Windows' "Show flashing on taskbar apps". Replaceable so a test need not read HKCU.</summary>
+    internal Func<bool> FlashingEnabled { get; set; } = Umbra.Shell.Shell.TaskbarFlashingSetting.Enabled;
 
     public TaskbarSlot(
         string key,
@@ -82,7 +90,87 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
 
         IsActive = active;
         Raise(nameof(IsActive));
+        UpdateAttention();
         return true;
+    }
+
+    /// <summary>
+    /// Whether this application is asking for attention, and how loudly (§3.3). See
+    /// <see cref="AttentionLatch"/> for the rule.
+    /// </summary>
+    public AttentionState Attention { get; private set; }
+
+    /// <summary>Re-reads <see cref="Attention"/> from the windows' state.</summary>
+    public void UpdateAttention()
+    {
+        IntPtr[] open = _windows.Select(w => w.Handle).ToArray();
+        IntPtr[] flashing = _windows
+            .Where(w => w.State == ApplicationWindow.WindowState.Flashing)
+            .Select(w => w.Handle)
+            .ToArray();
+        double now = Clock();
+
+        // The setting is read only while something is asking, so a quiet bar never touches it.
+        AttentionState state = _attention.Update(open, flashing, IsActive, now);
+        if (state != AttentionState.None && !FlashingEnabled()) state = AttentionState.None;
+        ScheduleWake(state == AttentionState.None ? null : NextChange(state, now));
+
+        if (state == Attention) return;
+
+        // Changes a few times per request at most, and is the only way to tell after the fact
+        // whether a dot was up, since a grey-pixel capture sees nothing with the pointer on the bar.
+        Diagnostics.BringUpLog.Write($"attention: {DisplayName} {Attention} -> {state}");
+
+        Attention = state;
+        Raise(nameof(Attention));
+    }
+
+    /// <summary>Seconds until the badge would change with no further event: it decays, or the
+    /// application has taken its request back.</summary>
+    private double? NextChange(AttentionState state, double now)
+    {
+        double? decays = state == AttentionState.Pulsing ? _attention.DecaysAt : null;
+        double? withdraws = _attention.WithdrawsAt;
+
+        double? at = (decays, withdraws) switch
+        {
+            ({ } d, { } w) => Math.Min(d, w),
+            ({ } d, null) => d,
+            (null, { } w) => w,
+            _ => null,
+        };
+
+        return at - now;
+    }
+
+    /// <summary>When the slot will next re-read its attention unprompted, or null for never.
+    /// Exposed for tests: the timer itself cannot be run in one.</summary>
+    internal double? WakeDueIn { get; private set; }
+
+    /// <summary>
+    /// One wake-up, at the moment the badge steps down or is withdrawn, and only while one is up.
+    /// There is no standing timer for this (§6.6): a bar with nothing asking holds none.
+    /// </summary>
+    private void ScheduleWake(double? seconds)
+    {
+        WakeDueIn = seconds;
+        _wakeTimer?.Stop();
+        if (seconds is not { } s) return;
+
+        if (_wakeTimer is null)
+        {
+            _wakeTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher);
+            _wakeTimer.Tick += OnWakeDue;
+        }
+
+        _wakeTimer.Interval = TimeSpan.FromSeconds(Math.Max(0.05, s + 0.05));
+        _wakeTimer.Start();
+    }
+
+    private void OnWakeDue(object? sender, EventArgs e)
+    {
+        _wakeTimer?.Stop();
+        UpdateAttention();
     }
 
     /// <summary>
@@ -414,6 +502,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         foreach (ApplicationWindow window in _windows) window.PropertyChanged += OnWindowChanged;
 
         RaiseAll();
+        UpdateAttention();
         return true;
     }
 
@@ -422,6 +511,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     {
         foreach (ApplicationWindow window in _windows) window.PropertyChanged -= OnWindowChanged;
         _windows.Clear();
+        _wakeTimer?.Stop();
     }
 
     /// <summary>Tells the view the pin state changed.</summary>
@@ -452,6 +542,9 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
                 break;
             case nameof(ApplicationWindow.Icon):
                 Raise(nameof(Icon));
+                break;
+            case nameof(ApplicationWindow.State):
+                UpdateAttention();
                 break;
         }
     }

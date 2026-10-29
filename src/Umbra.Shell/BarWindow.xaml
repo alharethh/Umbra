@@ -55,6 +55,7 @@
         <render:TierIconConverter x:Key="TrayTierIcon" Element="TrayIcon" />
         <shell:TrayIconNameConverter x:Key="TrayIconName" />
         <render:TierBrushConverter x:Key="IndicatorBrush" Element="RunningIndicator" />
+        <render:AttentionBrushConverter x:Key="AttentionBrush" />
         <render:TierBrushConverter x:Key="ClockBrush" Element="Clock" />
         <render:TierBrushConverter x:Key="StartGlyphBrush" Element="StartGlyph" />
 
@@ -726,6 +727,40 @@
                                 </MultiBinding>
                             </Rectangle.Height>
                         </Rectangle>
+
+                        <!--
+                            The attention badge (§3.3): an application that flashed its taskbar
+                            button gets a dot on its icon's corner, pulsed 1 s on / 3 s off, until
+                            it is switched to. Collapsed, and with no animation, while nothing asks.
+
+                            Drawn inside the icon's own box and carried by the icon's offset, so it
+                            can never leave the slot the icon cannot leave (P5). It does not have
+                            §3.3's independent drift frequency: a second offset would need its own
+                            containment proof against a box that grows from 16 to 26 DIP.
+                        -->
+                        <Grid IsHitTestVisible="False"
+                              Width="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                              Height="{Binding IconExtent, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <Grid.RenderTransform>
+                                <TranslateTransform
+                                    X="{Binding ContentOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Y="{Binding ContentOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
+                            </Grid.RenderTransform>
+                            <Ellipse x:Name="AttentionDot"
+                                     Width="5"
+                                     Height="5"
+                                     HorizontalAlignment="Right" VerticalAlignment="Top"
+                                     Opacity="0" Visibility="Collapsed"
+                                     render:AttentionBadge.State="{Binding Attention}">
+                                <Ellipse.Fill>
+                                    <MultiBinding Converter="{StaticResource AttentionBrush}">
+                                        <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                        <Binding Path="Attention" />
+                                        <Binding Path="AccentColor" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                    </MultiBinding>
+                                </Ellipse.Fill>
+                            </Ellipse>
+                        </Grid>
                     </Grid>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
