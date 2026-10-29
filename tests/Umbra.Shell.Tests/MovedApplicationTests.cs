@@ -59,6 +59,56 @@ public class MovedApplicationTests : IDisposable
         Assert.False(AppIdentity.IsSameApplicationMoved(dead, live));
     }
 
+    /// <summary>
+    /// A packaged desktop application keeps its version two levels up, in the package folder.
+    /// </summary>
+    /// <remarks>
+    /// Measured 2026-10-29: Claude updated from <c>Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app</c> to
+    /// <c>Claude_4.29.0.0_x64__pzs8sxrjxfjjc\app</c>, the old folder was deleted, and the bar drew a
+    /// dead pin beside the running application. The sibling rule never fired, because the
+    /// directories directly above the two executables are both called <c>app</c> and their parents
+    /// are the two package folders.
+    /// </remarks>
+    [Theory]
+    [InlineData(
+        @"C:\Program Files\WindowsApps\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+        @"C:\Program Files\WindowsApps\Claude_4.29.0.0_x64__pzs8sxrjxfjjc\app\claude.exe")]
+    [InlineData(
+        @"C:\Program Files\WindowsApps\Microsoft.WindowsTerminal_1.21.2911.0_x64__8wekyb3d8bbwe\WindowsTerminal.exe",
+        @"C:\Program Files\WindowsApps\Microsoft.WindowsTerminal_1.22.10352.0_x64__8wekyb3d8bbwe\WindowsTerminal.exe")]
+    [InlineData(
+        @"C:\Program Files\WindowsApps\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+        @"c:\program files\windowsapps\CLAUDE_4.29.0.0_X64__PZS8SXRJXFJJC\APP\CLAUDE.EXE")]
+    public void APackageVersionChangeIsRecognised(string dead, string live)
+    {
+        Assert.True(AppIdentity.IsSameApplicationMoved(dead, live));
+    }
+
+    /// <summary>
+    /// Only the version may differ. Everything else in the package name is its identity.
+    /// </summary>
+    [Theory]
+    [InlineData(@"C:\WindowsApps\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+                @"C:\WindowsApps\Claude_4.29.0.0_x64__aaaaaaaaaaaaa\app\claude.exe")]   // another publisher
+    [InlineData(@"C:\WindowsApps\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+                @"C:\WindowsApps\Claude_4.29.0.0_arm64__pzs8sxrjxfjjc\app\claude.exe")] // another architecture
+    [InlineData(@"C:\WindowsApps\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+                @"C:\WindowsApps\Clawed_4.29.0.0_x64__pzs8sxrjxfjjc\app\claude.exe")]   // another package
+    [InlineData(@"C:\WindowsApps\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+                @"C:\WindowsApps\Claude_4.29.0.0_x64__pzs8sxrjxfjjc\bin\claude.exe")]   // moved inside the package
+    [InlineData(@"C:\WindowsApps\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+                @"C:\WindowsApps\Claude_4.29.0.0_x64__pzs8sxrjxfjjc\app\helper.exe")]   // another executable
+    [InlineData(@"C:\WindowsApps\Claude_3.6556.2.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+                @"D:\WindowsApps\Claude_4.29.0.0_x64__pzs8sxrjxfjjc\app\claude.exe")]   // another volume
+    [InlineData(@"C:\WindowsApps\Claude_3.6556.2.0_x64_neutral_pzs8sxrjxfjjc\app\claude.exe",
+                @"C:\WindowsApps\Claude_4.29.0.0_x64__pzs8sxrjxfjjc\app\claude.exe")]   // another resource
+    [InlineData(@"C:\Apps\Claude_v3\app\claude.exe",
+                @"C:\Apps\Claude_v4\app\claude.exe")]                                    // not a package name
+    public void UnrelatedPackagesAreNotAdopted(string dead, string live)
+    {
+        Assert.False(AppIdentity.IsSameApplicationMoved(dead, live));
+    }
+
     [Fact]
     public void AnAppUserModelIdIsNeverTreatedAsMoved()
     {
