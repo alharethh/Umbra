@@ -54,13 +54,26 @@ internal partial class BarWindow
 
         CloseEverythingLit();
 
+        // Nothing under the pointer may start anything new while the light goes out. A stock
+        // tooltip opens from hover alone, and closing the open ones once is not enough: a bar
+        // that starts with the user already away begins its fade before its first paint, so the
+        // pointer it appears under raises a tooltip a second later, mid-fade, and it stayed up
+        // over the black strip until the pointer moved (backlog F5c). Out of hit-testing, the
+        // content is not under the pointer at all, so no tooltip is started.
+        AwayContent.Darken(ContentRoot);
+
         DoubleAnimation fade = new(0.0, AwayFade) { EasingFunction = new LinearLightFade() };
         fade.Completed += (_, _) =>
         {
             // A fade that finished after the user came back must not hide a bar that is in use.
             if (!_away.IsAway) return;
             _blackedOut = true;
-            ContentRoot.Visibility = Visibility.Hidden;
+
+            // Closed again once black, for anything that opened before the hit-test change
+            // reached the pointer: a tooltip outlives its owner going hidden.
+            int tips = AwayContent.Hide(ContentRoot);
+            if (tips > 0) BringUpLog.Write($"away: closed {tips} tooltip(s) at black");
+            CloseVolumeTip();
         };
 
         ContentRoot.BeginAnimation(OpacityProperty, fade);
@@ -102,7 +115,7 @@ internal partial class BarWindow
         // the moment the user looks, and a fade-in would be the bar arriving late.
         ContentRoot.BeginAnimation(OpacityProperty, null);
         ContentRoot.Opacity = 1.0;
-        ContentRoot.Visibility = Visibility.Visible;
+        AwayContent.Restore(ContentRoot);
         _blackedOut = false;
 
         BringUpLog.Write("away: back");
