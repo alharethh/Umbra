@@ -77,6 +77,16 @@ public static class TierPalette
     /// </remarks>
     public const double Tier2LuminanceCap = 0.45;
 
+    /// <summary>
+    /// The darkest the user may make the resting tiers: a tenth of their designed light.
+    /// </summary>
+    /// <remarks>
+    /// <c>#333333</c> at a tenth is about <c>#0B0B0B</c>, nearly black and still there to find in a
+    /// dark room. Zero would be a bar with nothing on it until the pointer arrived, which is the
+    /// away blackout's job, not a brightness.
+    /// </remarks>
+    public const double MinRestingBrightness = 0.1;
+
     /// <summary>Ambient-band radius in pixels at 100% scaling — Tier 1 begins here (§3).</summary>
     public const double AmbientBandPixels = 120.0;
 
@@ -153,26 +163,51 @@ public static class TierPalette
     /// value holds at its Tier 1 setting and <see cref="TierRender.ChromaBlend"/> cross-fades to
     /// the capped artwork instead.
     /// </para>
+    /// <para>
+    /// <b><paramref name="restingBrightness"/> scales the light of Tiers 0 and 1 only</b>, in linear
+    /// light, between <see cref="MinRestingBrightness"/> and 1. It can only darken: brighter than
+    /// the table would spend §2.3's duty budget, which is built on these greys. Tier 2 is left
+    /// alone, so the bar is as legible as ever while it is in use, and both resting tiers move
+    /// together, so the bar keeps three states rather than collapsing to two. Wear goes as
+    /// <c>L^n</c>, so half the light is about a third of the wear. The notification badge is
+    /// exempt: it is an alert, and an alert dimmed with the rest of the bar defeats itself.
+    /// </para>
     /// </remarks>
-    public static TierRender Resolve(BarElement element, double level)
+    public static TierRender Resolve(BarElement element, double level, double restingBrightness = 1.0)
     {
         level = Math.Clamp(level, 0.0, 2.0);
+        restingBrightness = Math.Clamp(restingBrightness, MinRestingBrightness, 1.0);
 
         int lower = (int)Math.Floor(level);
         if (lower >= 2) lower = 1;
         int upper = lower + 1;
         double fraction = level - lower;
 
-        TierAppearance from = Appearance(element, (Tier)lower);
+        Rgb from = Resting(element, (Tier)lower, restingBrightness);
         TierAppearance to = Appearance(element, (Tier)upper);
 
         bool blendsToChroma = to.Kind is TierAppearanceKind.FullChromaCapped or TierAppearanceKind.SystemAccent;
         if (blendsToChroma)
-            return new TierRender(from.EffectiveColour, fraction, to.Kind == TierAppearanceKind.SystemAccent);
+            return new TierRender(from, fraction, to.Kind == TierAppearanceKind.SystemAccent);
+
+        Rgb toColour = upper == (int)Tier.Engaged
+            ? to.EffectiveColour
+            : Resting(element, (Tier)upper, restingBrightness);
 
         return new TierRender(
-            Srgb.Lerp(from.EffectiveColour, to.EffectiveColour, fraction),
+            Srgb.Lerp(from, toColour, fraction),
             ChromaBlend: 0.0,
             UsesSystemAccent: false);
+    }
+
+    /// <summary>A resting tier's colour at the user's brightness.</summary>
+    private static Rgb Resting(BarElement element, Tier tier, double brightness)
+    {
+        Rgb colour = Appearance(element, tier).EffectiveColour;
+
+        // Exactly the table at 1, so the default draws byte-for-byte what it always did.
+        if (brightness >= 1.0 || element == BarElement.NotificationBadge) return colour;
+
+        return Srgb.Scale(colour, brightness);
     }
 }

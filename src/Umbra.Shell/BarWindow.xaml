@@ -238,7 +238,7 @@
                     <Image.Source>
                         <MultiBinding Converter="{StaticResource TrayTierIcon}">
                             <Binding Path="Icon" />
-                            <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                            <Binding Path="DrawnTierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
                         </MultiBinding>
                     </Image.Source>
                 </Image>
@@ -275,7 +275,7 @@
                     <Image.Source>
                         <MultiBinding Converter="{StaticResource TrayTierIcon}">
                             <Binding Path="Icon" />
-                            <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                            <Binding Path="DrawnTierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
                         </MultiBinding>
                     </Image.Source>
                 </Image>
@@ -397,7 +397,7 @@
                         <Setter Property="Width" Value="11.25" />
                         <Setter Property="Height" Value="11.25" />
                         <Setter Property="Fill"
-                                Value="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource StartGlyphBrush}}" />
+                                Value="{Binding DrawnTierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource StartGlyphBrush}}" />
                     </Style>
                 </Canvas.Resources>
 
@@ -680,7 +680,7 @@
                             <Image.Source>
                                 <MultiBinding Converter="{StaticResource TierIcon}">
                                     <Binding Path="Icon" />
-                                    <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                    <Binding Path="DrawnTierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
                                     <!-- The slot, so the converter can report its icon's cost once. -->
                                     <Binding />
                                 </MultiBinding>
@@ -697,7 +697,7 @@
                                    HorizontalAlignment="{Binding PillHorizontalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
                                    VerticalAlignment="{Binding PillVerticalAlignment, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Margin="{Binding PillMargin, RelativeSource={RelativeSource AncestorType=Window}}"
-                                   Fill="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource IndicatorBrush}}">
+                                   Fill="{Binding DrawnTierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource IndicatorBrush}}">
 
                             <!--
                                 Its own TranslateTransform, fed the same values, rather than the
@@ -754,7 +754,7 @@
                                      render:AttentionBadge.State="{Binding Attention}">
                                 <Ellipse.Fill>
                                     <MultiBinding Converter="{StaticResource AttentionBrush}">
-                                        <Binding Path="TierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                        <Binding Path="DrawnTierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
                                         <Binding Path="Attention" />
                                         <Binding Path="AccentColor" RelativeSource="{RelativeSource AncestorType=Window}" />
                                     </MultiBinding>
@@ -808,7 +808,7 @@
                       Height="{Binding TrayChevronHeight, RelativeSource={RelativeSource AncestorType=Window}}"
                       StrokeThickness="1.4"
                       StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                      Stroke="{Binding TierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ClockBrush}}"
+                      Stroke="{Binding DrawnTierLevel, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ClockBrush}}"
                       RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}" />
             </Grid>
         </Grid>
@@ -899,7 +899,7 @@
                               Height="{Binding TrayIconExtent}"
                               StrokeThickness="1.5"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                              Stroke="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
+                              Stroke="{Binding DrawnTierLevel, Converter={StaticResource ClockBrush}}"
                               RenderTransform="{Binding NetworkOffset}" />
                     </Grid>
                 </StackPanel>
@@ -945,7 +945,7 @@
                                Margin="7,0"
                                VerticalAlignment="Center"
                                HorizontalAlignment="Center"
-                               Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}"
+                               Foreground="{Binding DrawnTierLevel, Converter={StaticResource ClockBrush}}"
                                RenderTransform="{Binding LanguageOffset}" />
                 </Grid>
             </Grid>
@@ -996,14 +996,14 @@
                            Margin="{Binding ClockTimeMargin}"
                            FontSize="14"
                            TextAlignment="Center"
-                           Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}" />
+                           Foreground="{Binding DrawnTierLevel, Converter={StaticResource ClockBrush}}" />
 
                 <TextBlock x:Name="ClockDateText"
                            Text="{Binding ClockDate}"
                            FontSize="10"
                            TextAlignment="Center"
                            Opacity="0.75"
-                           Foreground="{Binding TierLevel, Converter={StaticResource ClockBrush}}">
+                           Foreground="{Binding DrawnTierLevel, Converter={StaticResource ClockBrush}}">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Setter Property="Visibility" Value="Collapsed" />
@@ -1058,7 +1058,7 @@
                        Height="{Binding ShowDesktopLineHeight}"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        Opacity="0.35"
-                       Fill="{Binding TierLevel, Converter={StaticResource ClockBrush}}">
+                       Fill="{Binding DrawnTierLevel, Converter={StaticResource ClockBrush}}">
                 <Rectangle.Style>
                     <Style TargetType="Rectangle">
                         <Setter Property="Visibility" Value="Collapsed" />

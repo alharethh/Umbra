@@ -52,6 +52,7 @@ internal partial class SettingsWindow : Window
         PopulateHover();
 
         IconSize.Value = _working.DormantIconSize;
+        Brightness.Value = _working.RestingBrightness;
         MotionBox.IsChecked = _working.Motion;
         TrayBox.IsChecked = _working.Tray;
         EveryMonitorBox.IsChecked = _working.BarOnEveryMonitor;
@@ -64,6 +65,7 @@ internal partial class SettingsWindow : Window
         StartupBox.IsChecked = _working.StartWithWindows;
 
         UpdateIconSizeReadout();
+        UpdateBrightnessReadout();
         UpdateRestartNote();
 
         _loaded = true;
@@ -292,6 +294,29 @@ internal partial class SettingsWindow : Window
         IconSizeReadout.Text = string.Create(CultureInfo.InvariantCulture, $"{size:F0} px · {effect}");
     }
 
+    private void OnBrightnessChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_loaded) return;
+
+        UpdateBrightnessReadout();
+        Commit();
+    }
+
+    private void UpdateBrightnessReadout() =>
+        BrightnessReadout.Text = BrightnessEffect((int)Math.Round(Brightness.Value));
+
+    /// <summary>
+    /// What a resting brightness buys, from the wear model rather than a table: wear goes as
+    /// <c>L^n</c>, so the gain is the reciprocal of the light raised to the model's exponent.
+    /// </summary>
+    internal static string BrightnessEffect(int percent)
+    {
+        if (percent >= 100) return "100% · no change";
+
+        double gain = Math.Pow(100.0 / percent, Umbra.Core.Wear.WearModel.DefaultExponent);
+        return string.Create(CultureInfo.InvariantCulture, $"{percent}% · {gain:0.#}x cooler");
+    }
+
     /// <summary>Copies the controls into the working settings, saves, and applies what can apply.</summary>
     private void Commit()
     {
@@ -302,6 +327,7 @@ internal partial class SettingsWindow : Window
         if (MonitorBox.SelectedItem is Choice { Value: string monitor }) _working.Monitor = monitor;
 
         _working.DormantIconSize = Math.Round(IconSize.Value);
+        _working.RestingBrightness = (int)Math.Round(Brightness.Value);
         _working.Motion = MotionBox.IsChecked == true;
         if (AwayBox.SelectedItem is Choice { Value: double away }) _working.AwayAfterMinutes = away;
         _working.Tray = TrayBox.IsChecked == true;

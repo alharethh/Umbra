@@ -162,6 +162,7 @@ public partial class App : Application
             // startup.
             bar.ApplyHoverSettings(Settings);
             bar.ApplyIconSourceSetting(Settings);
+            bar.ApplyRestingBrightness(Settings);
             bar.ApplyAwaySetting(Settings);
 
             // Any bar closing ends the session. There is no way to close one from the UI, so this

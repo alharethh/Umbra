@@ -48,11 +48,14 @@ internal sealed class IconPipeline
         if (source is not BitmapSource bitmap) return null;
 
         int quantised = (int)Math.Round(Math.Clamp(level, 0.0, 2.0) / 2.0 * LevelSteps);
-        Dictionary<int, BitmapSource> levels = _cache.GetOrCreateValue(source);
-        if (levels.TryGetValue(quantised, out BitmapSource? cached)) return cached;
+        int percent = RestingBrightness.Percent;
+        int key = percent * 1000 + quantised;
 
-        BitmapSource rendered = Build(bitmap, element, quantised / (double)LevelSteps * 2.0);
-        levels[quantised] = rendered;
+        Dictionary<int, BitmapSource> levels = _cache.GetOrCreateValue(source);
+        if (levels.TryGetValue(key, out BitmapSource? cached)) return cached;
+
+        BitmapSource rendered = Build(bitmap, element, quantised / (double)LevelSteps * 2.0, percent / 100.0);
+        levels[key] = rendered;
         return rendered;
     }
 
@@ -65,11 +68,11 @@ internal sealed class IconPipeline
         if (source is BitmapSource bitmap) IconDiagnostics.Report(title, ToIconBitmap(bitmap));
     }
 
-    private static BitmapSource Build(BitmapSource source, BarElement element, double level)
+    private static BitmapSource Build(BitmapSource source, BarElement element, double level, double restingBrightness)
     {
         IconBitmap art = ToIconBitmap(source);
 
-        TierRender appearance = TierPalette.Resolve(element, level);
+        TierRender appearance = TierPalette.Resolve(element, level, restingBrightness);
 
         // The monochrome layer, normalised so its P90 lands on the tier's target luminance.
         double target = Srgb.RelativeLuminance(appearance.Monochrome);

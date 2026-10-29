@@ -680,6 +680,7 @@ internal partial class BarWindow : AppBarWindow
 
         ApplyHoverSettings(settings);
         ApplyIconSourceSetting(settings);
+        ApplyRestingBrightness(settings);
 
         ApplyPlacement(settings.Edge, settings.Alignment,
                        PlacementScreen(OwnsItsScreen, Screen, () => ResolveScreen(settings.Monitor)));
@@ -690,6 +691,7 @@ internal partial class BarWindow : AppBarWindow
 
         BringUpLog.Write(string.Create(CultureInfo.InvariantCulture,
             $"settings applied live: dormant icon {_dormantIconExtent:F0} px, " +
+            $"resting brightness {settings.RestingBrightness}%, " +
             $"motion {settings.Motion}, edge {Metrics.Edge}, alignment {Metrics.Alignment}, " +
             $"hover {settings.AppIconHover} {settings.HoverAccent}, " +
             $"applicationIcons {settings.ApplicationIcons}"));
@@ -1954,6 +1956,29 @@ internal partial class BarWindow : AppBarWindow
             : new Thickness(Metrics.RowInset + Metrics.Slot.Pitch, 0, 0, 0);
 
     /// <summary>
+    /// <see cref="TierLevel"/>, as the tier-coloured bindings read it.
+    /// </summary>
+    /// <remarks>
+    /// A plain property raised alongside the dependency property, because the drawn colour depends
+    /// on the resting brightness too. A change notification on a plain property re-runs the
+    /// bindings' converters even when the value is the same, which is how a new brightness reaches
+    /// every glyph and icon at once; a dependency property set to its own value raises nothing.
+    /// </remarks>
+    public double DrawnTierLevel => TierLevel;
+
+    /// <summary>
+    /// Applies the resting brightness: the converters read it, and raising the drawn level makes
+    /// them run again. Live, and called before the first paint.
+    /// </summary>
+    public void ApplyRestingBrightness(Settings.UmbraSettings settings)
+    {
+        // Raised whether or not this call changed the factor: with a bar on every monitor the
+        // first bar to apply it changes the shared value, and every other bar still has to redraw.
+        RestingBrightness.Factor = settings.RestingBrightness / 100.0;
+        OnPropertyChanged(nameof(DrawnTierLevel));
+    }
+
+    /// <summary>
     /// The continuous tier level, 0..2, driven by pointer proximity (§3.4). A dependency property
     /// so that every tier-dependent binding re-evaluates as the ramp moves.
     /// </summary>
@@ -1966,6 +1991,7 @@ internal partial class BarWindow : AppBarWindow
         // plain properties rather than the dependency property, so they need telling.
         if (d is not BarWindow bar) return;
 
+        bar.OnPropertyChanged(nameof(DrawnTierLevel));
         bar.OnPropertyChanged(nameof(ShowsDate));
         bar.OnPropertyChanged(nameof(ClockTimeMargin));
         bar.ApplyClockOffset();

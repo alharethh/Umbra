@@ -57,15 +57,18 @@ internal sealed class TierBrushConverter : IValueConverter
     {
         double level = value is double d ? d : 0.0;
 
-        // Quantise so a smooth ramp does not allocate a brush per frame.
+        // Quantise so a smooth ramp does not allocate a brush per frame. The resting brightness is
+        // part of the key: a brush cached at one brightness is the wrong colour at another.
         int quantised = (int)Math.Round(Math.Clamp(level, 0.0, 2.0) * 128);
-        if (_cache.TryGetValue(quantised, out SolidColorBrush? cached)) return cached;
+        int percent = RestingBrightness.Percent;
+        int key = percent * 1000 + quantised;
+        if (_cache.TryGetValue(key, out SolidColorBrush? cached)) return cached;
 
-        Rgb colour = TierPalette.Resolve(Element, quantised / 128.0).Monochrome;
+        Rgb colour = TierPalette.Resolve(Element, quantised / 128.0, percent / 100.0).Monochrome;
         SolidColorBrush brush = new(Color.FromRgb(colour.R, colour.G, colour.B));
         brush.Freeze();
 
-        _cache[quantised] = brush;
+        _cache[key] = brush;
         return brush;
     }
 
