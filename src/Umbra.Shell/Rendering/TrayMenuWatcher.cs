@@ -119,6 +119,9 @@ internal sealed class TrayMenuWatcher
         _sampler.Start();
     }
 
+    /// <summary>Whether a top-level window is the tray menu this watcher found.</summary>
+    public bool IsMenu(IntPtr window) => window != IntPtr.Zero && window == _menu;
+
     /// <summary>
     /// Closes the tracked menu, if there is one still on screen.
     /// </summary>
