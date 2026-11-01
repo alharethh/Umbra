@@ -176,7 +176,7 @@ internal partial class BarWindow : AppBarWindow
         _proximity.Ticked += () =>
         {
             _startMenu.Poll();
-            SurfaceOverFullScreenWhileStartIsOpen();
+            SurfaceOverFullScreen();
 
             // A tray icon's menu belongs to the application that owns the icon, and clicking the
             // bar does not close it for the same reason nothing else does — the foreground never
@@ -209,7 +209,10 @@ internal partial class BarWindow : AppBarWindow
             // Keep polling at the fast interval while the menu is up, even if the pointer has
             // wandered off the bar. Otherwise the tick drops to 100 ms and the colour outlives the
             // menu by up to a tenth of a second, which is long enough to look like lag.
-            _proximity.KeepFast = StartActive;
+            //
+            // And while the bar is up over a fullscreen application, because the press that sends
+            // it back is polled, and a quick click on the game fits inside a 100 ms tick.
+            _proximity.KeepFast = StartActive || _surfacing.Raised;
 
             // The bar going black while nobody is there, and back on the first input.
             PollAway();
@@ -2038,16 +2041,19 @@ internal partial class BarWindow : AppBarWindow
     /// </summary>
     private FullScreenApp? _concededTo;
 
-    /// <summary>Whether the bar is currently raised over <see cref="_concededTo"/> for Start.</summary>
-    private bool _raisedForStart;
+    /// <summary>Whether the bar is up over <see cref="_concededTo"/>, and why. See <see cref="FullScreenSurfacing"/>.</summary>
+    private readonly FullScreenSurfacing _surfacing = new();
+
+    /// <summary>Whether a mouse button was already down on the previous surfacing tick.</summary>
+    private bool _surfacingPressWasDown;
 
     /// <summary>
-    /// Records the fullscreen application, and gives way to it unless Start is open.
+    /// Records the fullscreen application, and gives way to it unless the bar is up over it.
     /// </summary>
     protected override void OnFullScreenEnter(FullScreenApp app)
     {
         _concededTo = app;
-        if (_raisedForStart) return;
+        if (_surfacing.Raised) return;
 
         base.OnFullScreenEnter(app);
     }
@@ -2056,13 +2062,13 @@ internal partial class BarWindow : AppBarWindow
     protected override void OnFullScreenLeave()
     {
         _concededTo = null;
-        _raisedForStart = false;
+        _surfacing.Reset();
         base.OnFullScreenLeave();
     }
 
     /// <summary>
-    /// Brings the bar up over a fullscreen application while Start is open, and gives way again
-    /// once it closes.
+    /// Brings the bar up over a fullscreen application while Start is open or the bar is in use,
+    /// and gives way again after.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -2078,23 +2084,78 @@ internal partial class BarWindow : AppBarWindow
     /// application from Start instead, the game leaves the list, ManagedShell raises the bar
     /// itself, and <see cref="OnFullScreenLeave"/> clears the state.
     /// </para>
+    /// <para>
+    /// <b>Following Start alone made the raised bar useless</b>, because nearly every press on it
+    /// closes Start. A pressed bar is held until a press lands off it; <see cref="FullScreenSurfacing"/>
+    /// has the rule.
+    /// </para>
     /// </remarks>
-    private void SurfaceOverFullScreenWhileStartIsOpen()
+    private void SurfaceOverFullScreen()
     {
         if (_concededTo is null) return;
 
-        if (_startMenu.IsOpen && !_raisedForStart)
+        switch (_surfacing.Tick(_startMenu.IsOpen, PressedOffTheBar()))
         {
-            _raisedForStart = true;
-            BringUpLog.Write($"start opened over fullscreen '{_concededTo.title}': raising the bar");
-            base.OnFullScreenLeave();
+            case SurfacingChange.Raise:
+                BringUpLog.Write($"start opened over fullscreen '{_concededTo.title}': raising the bar");
+                base.OnFullScreenLeave();
+                break;
+
+            case SurfacingChange.Lower:
+                BringUpLog.Write($"bar no longer in use over fullscreen '{_concededTo.title}': giving way again");
+                base.OnFullScreenEnter(_concededTo);
+                break;
         }
-        else if (!_startMenu.IsOpen && _raisedForStart)
-        {
-            _raisedForStart = false;
-            BringUpLog.Write($"start closed over fullscreen '{_concededTo.title}': giving way again");
-            base.OnFullScreenEnter(_concededTo);
-        }
+    }
+
+    /// <summary>
+    /// Whether a press began since the last tick on something that is not the bar's.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Polled, like the overflow flyout's watch, because a press outside our windows is never
+    /// routed to us. The edge, not the state: the press that held the bar may still be down.
+    /// </para>
+    /// <para>
+    /// <b>The bar's own surfaces are read by the window under the pointer, not by rectangles.</b>
+    /// Our process covers the bar, its menus, the picker and the flyout. An application's tray menu
+    /// is either the window <see cref="Rendering.TrayMenuWatcher"/> adopted or a Win32 menu
+    /// (<c>#32768</c>) in some other process. Quick Settings and the notification centre count as
+    /// the bar's because the bar opened them: changing the volume in Quick Settings must not send
+    /// the bar back under the game.
+    /// </para>
+    /// </remarks>
+    private bool PressedOffTheBar()
+    {
+        bool down = (GetAsyncKeyState(VkLeftButton) & 0x8000) != 0
+                 || (GetAsyncKeyState(VkRightButton) & 0x8000) != 0
+                 || (GetAsyncKeyState(VkMiddleButton) & 0x8000) != 0;
+
+        bool pressed = down && !_surfacingPressWasDown;
+        _surfacingPressWasDown = down;
+
+        if (!pressed || !_surfacing.Raised) return false;
+        if (!TrayNative.GetCursorPos(out TrayNative.POINT cursor)) return false;
+
+        IntPtr window = TrayNative.GetAncestor(TrayNative.WindowFromPoint(cursor), TrayNative.GaRoot);
+        return !BelongsToTheBar(window);
+    }
+
+    /// <summary>Whether a top-level window is the bar or a surface the bar opened.</summary>
+    private bool BelongsToTheBar(IntPtr window)
+    {
+        // Nothing under the pointer that we can name: keep the bar rather than guess.
+        if (window == IntPtr.Zero) return true;
+
+        TrayNative.GetWindowThreadProcessId(window, out uint pid);
+        if (pid == (uint)Environment.ProcessId) return true;
+
+        if (_trayMenus.IsMenu(window)) return true;
+
+        System.Text.StringBuilder name = new(64);
+        if (TrayNative.GetClassName(window, name, name.Capacity) > 0 && name.ToString() == "#32768") return true;
+
+        return ShellSurfaceWatcher.SurfaceOf(window) != ShellSurface.None;
     }
 
     /// <summary>
@@ -2803,6 +2864,10 @@ internal partial class BarWindow : AppBarWindow
     /// </remarks>
     private void OnBarPressed(object sender, MouseButtonEventArgs e)
     {
+        // First, before anything below closes Start: over a fullscreen application a used bar
+        // stays up until a press lands off it.
+        _surfacing.BarPressed();
+
         // Clicking a control that raises its own panel is that control's business.
         if (OwnsShellDismissal(e.OriginalSource as DependencyObject)) return;
 
@@ -3181,6 +3246,20 @@ internal partial class BarWindow : AppBarWindow
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
+        public const uint GaRoot = 2;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr WindowFromPoint(POINT point);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        public static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int capacity);
     }
 
     /// <summary>Starts the hover-preview countdown for the icon under the pointer.</summary>

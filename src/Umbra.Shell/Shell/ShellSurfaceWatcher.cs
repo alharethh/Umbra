@@ -170,16 +170,25 @@ internal sealed class ShellSurfaceWatcher
     /// <see cref="SurfaceFor"/>. It is looked up rather than cached because the hosts change
     /// between builds, and a wrong answer here sends a toggle at the wrong window.
     /// </remarks>
-    private static (string? ClassName, string? ProcessName) Foreground()
+    private static (string? ClassName, string? ProcessName) Foreground() =>
+        Describe(NativeMethods.GetForegroundWindow());
+
+    /// <summary>Which of Windows' surfaces a top-level window is, if any.</summary>
+    public static ShellSurface SurfaceOf(IntPtr window)
     {
-        IntPtr foreground = NativeMethods.GetForegroundWindow();
-        if (foreground == IntPtr.Zero) return (null, null);
+        (string? className, string? processName) = Describe(window);
+        return className is null ? ShellSurface.None : SurfaceFor(className, processName);
+    }
+
+    private static (string? ClassName, string? ProcessName) Describe(IntPtr window)
+    {
+        if (window == IntPtr.Zero) return (null, null);
 
         StringBuilder name = new(256);
-        int length = NativeMethods.GetClassName(foreground, name, name.Capacity);
+        int length = NativeMethods.GetClassName(window, name, name.Capacity);
         if (length <= 0) return (null, null);
 
-        return (name.ToString(), ProcessNameOf(foreground));
+        return (name.ToString(), ProcessNameOf(window));
     }
 
     private static string? ProcessNameOf(IntPtr window)
