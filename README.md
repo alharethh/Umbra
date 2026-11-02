@@ -6,8 +6,6 @@
 
 **A better Windows 11 taskbar, with more features and 260x less burn-in**
 
-<sub>by Al Hareth Salem Adel · [@alharethh](https://github.com/alharethh)</sub>
-
 [![Download Umbra 0.5.0 for Windows](https://img.shields.io/badge/Download-Umbra%200.5.0-B0F7FB?style=for-the-badge&logo=windows11&logoColor=B0F7FB&labelColor=0B0B0B)](https://github.com/alharethh/Umbra/releases/download/v0.5.0/Umbra-0.5.0-win-x64.exe)
 
 <sub>Windows 11 · x64 · 73 MB · nothing to install &nbsp;·&nbsp; [smaller build and all releases](https://github.com/alharethh/Umbra/releases)</sub>
@@ -282,7 +280,7 @@ as a regression baseline.
 
 ## Licence
 
-[MIT](LICENSE), © 2026 Al Hareth Salem Adel. [ManagedShell](https://github.com/cairoshell/ManagedShell) is Apache 2.0 and is
+[MIT](LICENSE). [ManagedShell](https://github.com/cairoshell/ManagedShell) is Apache 2.0 and is
 redistributed unmodified in the release — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ---
