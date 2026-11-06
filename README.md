@@ -6,14 +6,14 @@
 
 **A better Windows 11 taskbar, with more features and 260x less burn-in**
 
-[![Download Umbra 0.5.0 for Windows](https://img.shields.io/badge/Download-Umbra%200.5.0-B0F7FB?style=for-the-badge&logo=windows11&logoColor=B0F7FB&labelColor=0B0B0B)](https://github.com/alharethh/Umbra/releases/download/v0.5.0/Umbra-0.5.0-win-x64.exe)
+[![Download Umbra 0.6.0 for Windows](https://img.shields.io/badge/Download-Umbra%200.6.0-B0F7FB?style=for-the-badge&logo=windows11&logoColor=B0F7FB&labelColor=0B0B0B)](https://github.com/alharethh/Umbra/releases/download/v0.6.0/Umbra-0.6.0-win-x64.exe)
 
 <sub>Windows 11 · x64 · 73 MB · nothing to install &nbsp;·&nbsp; [smaller build and all releases](https://github.com/alharethh/Umbra/releases)</sub>
 
 ![Windows 11](https://img.shields.io/badge/Windows%2011-0078D4?logo=windows11&logoColor=white)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
 ![WPF](https://img.shields.io/badge/WPF-C%23-239120)
-![tests](https://img.shields.io/badge/tests-766%20passing-2ea44f)
+![tests](https://img.shields.io/badge/tests-851%20passing-2ea44f)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![licence](https://img.shields.io/badge/licence-MIT-blue)
 
@@ -162,8 +162,8 @@ Two downloads, and the difference is only what your machine already has:
 
 | | |
 | :---- | :---- |
-| **[`Umbra-0.5.0-win-x64.exe`](https://github.com/alharethh/Umbra/releases/download/v0.5.0/Umbra-0.5.0-win-x64.exe)** · 73 MB | One file. Double-click it. Nothing to install. |
-| [`Umbra-0.5.0-win-x64.zip`](https://github.com/alharethh/Umbra/releases/download/v0.5.0/Umbra-0.5.0-win-x64.zip) · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
+| **[`Umbra-0.6.0-win-x64.exe`](https://github.com/alharethh/Umbra/releases/download/v0.6.0/Umbra-0.6.0-win-x64.exe)** · 73 MB | One file. Double-click it. Nothing to install. |
+| [`Umbra-0.6.0-win-x64.zip`](https://github.com/alharethh/Umbra/releases/download/v0.6.0/Umbra-0.6.0-win-x64.zip) · 1.2 MB | Unzip and run `Umbra.exe`. Needs the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) — if it does not start, that is what is missing. |
 
 Or build it, which needs the [.NET 10 SDK](https://dotnet.microsoft.com/download):
 
@@ -174,7 +174,8 @@ dotnet publish src\Umbra.Shell -c Release -o artifacts\Umbra
 artifacts\Umbra\Umbra.exe
 ```
 
-The release is not code-signed yet, so Windows may stop the first launch with *Windows protected
+The release is code-signed, but Windows trusts a new publisher only over time, so it may still stop
+the first launch with *Windows protected
 your PC*. Choose **More info**, then **Run anyway**.
 
 Umbra replaces Explorer's taskbar while it runs: your usual taskbar goes away and Umbra's bar
@@ -230,7 +231,7 @@ Pressing the Windows key on its own does not bring the taskbar back in this stat
 
 ## Status
 
-Runs daily on Windows 11 25H2. Latest release is `0.5.0`, built and used on one machine and tried on
+Runs daily on Windows 11 25H2. Latest release is `0.6.0`, built and used on one machine and tried on
 a second — treat it as early.
 
 **Works:** every edge on one monitor · space-reserving AppBar · Explorer suppressed and restored ·
@@ -265,7 +266,7 @@ provides tray hosting, the tasks service and AppBar registration; everything abo
 original.
 
 The wear model, colour handling, layout geometry, motion and tier systems live in `Umbra.Core`,
-which has no WPF dependency. **766 tests**, and the suite is written to fail on the silent traps
+which has no WPF dependency. **851 tests**, and the suite is written to fail on the silent traps
 specifically — accumulating light linearly instead of by the burn-in exponent, easing a drift
 turnaround, interpolating a tier ramp in the wrong colour space. Every published figure is asserted
 as a regression baseline.
