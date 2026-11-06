@@ -21,7 +21,8 @@ RUNNING IT
 
   Umbra.exe
 
-  The release is not code-signed yet, so Windows may stop the first launch with "Windows
+  The release is code-signed, but Windows trusts a new publisher only over time, so it may
+  still stop the first launch with "Windows
   protected your PC". Choose More info, then Run anyway.
 
   Umbra replaces Explorer's taskbar while it runs. Right-click an empty part of the bar for
