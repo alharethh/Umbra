@@ -26,15 +26,9 @@ same build however it was installed. The cost is size: 73 MB, against 1.2 MB plu
 user may already have. The zip with the runtime dependency stays a real option for later, for
 example as a second installer entry.
 
-`InstallerType: portable` is what makes this work unsigned and with no installer: winget copies
+`InstallerType: portable` is what makes this work with no installer: winget copies
 the file into its own packages folder, adds a `umbra` command, and writes the Apps & features
 entry itself.
-
-## Before it can be submitted
-
-**The repository must be public.** The `InstallerUrl` points at the GitHub release asset, which
-returns 404 to anyone not signed in while the repository is private, and winget-pkgs' validation
-downloads it anonymously. Nothing else in the manifest depends on that.
 
 ## Refreshing it for a new release
 
@@ -61,14 +55,13 @@ downloads it anonymously. Nothing else in the manifest depends on that.
 Submission needs a GitHub account to open the pull request from and a one-time agreement to
 Microsoft's Contributor License Agreement, so it is the owner's to do.
 
-1. Make the repository public (see above).
-2. Fork <https://github.com/microsoft/winget-pkgs>, copy the version folder to the same path in
+1. Fork <https://github.com/microsoft/winget-pkgs>, copy the version folder to the same path in
    the fork, and open a pull request titled `New package: alharethh.Umbra version <version>`.
    Alternatively, `wingetcreate submit <folder>` does the fork and pull request in one step.
-3. Sign the CLA when the bot asks. The pipeline then checks the URL and hash, scans the file with
+2. Sign the CLA when the bot asks. The pipeline then checks the URL and hash, scans the file with
    several antivirus engines and Microsoft Defender, and installs and runs it in a sandbox.
    A moderator approves it after that.
-4. Later versions are pull requests titled `New version: …`, made the same way.
+3. Later versions are pull requests titled `New version: …`, made the same way.
 
 **Expect a possible antivirus false positive.** A 73 MB self-contained single-file executable
 looks like a packed binary to heuristics. A flag from one engine is common and is resolved in the
@@ -102,11 +95,8 @@ existing user as an upgrade.
 
 ## Things worth knowing about a winget install
 
-- **The exe's own version reads 1.0.0.0**, not the release version, because the project does not
-  stamp one. winget does not care for a portable package, which takes the version from the
-  manifest, but Explorer's Properties dialog will disagree with `winget list`.
 - **`winget uninstall` deletes the exe, not the bar's state.** Exit the bar first (right-click,
   Exit Umbra) and untick "Start Umbra when I sign in"; `%LOCALAPPDATA%\Umbra` stays behind, as it
   does with the plain download. Uninstalling while the bar runs should fail, the file being in use; not tried.
-- **Not tested:** an actual `winget install --manifest` of this package. It cannot work until the
-  repository is public, and it would change the machine it ran on.
+- **Not tested:** an actual `winget install --manifest` of this package. It would change the machine it
+  ran on, and needs winget's local-manifest setting turned on from an elevated prompt.
