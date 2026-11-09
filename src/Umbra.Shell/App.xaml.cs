@@ -182,6 +182,11 @@ public partial class App : Application
         if (_bars.Count > 1)
             BringUpLog.Write($"bars on {_bars.Count} monitors; the tray is on the primary only");
 
+        // A fullscreen application already in front at launch would otherwise be drawn over until
+        // the user switched windows. Once the bars have registered, so they hear the answer.
+        FullScreenHelper fullScreen = _host.ShellManager.FullScreenHelper;
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => FullScreenRecheck.Run(fullScreen));
+
         // Recorded here, not read back off the bars later: ManagedShell rewrites the old primary
         // bar's screen during the very display change that has to be judged. See MonitorTopology.
         if (Settings.BarOnEveryMonitor)
