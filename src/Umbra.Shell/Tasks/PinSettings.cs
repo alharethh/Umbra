@@ -82,9 +82,18 @@ internal sealed class PinSettings
         string? key = AppIdentity.For(window);
         if (key is null || IsPinned(key)) return;
 
-        string? packagedName = (packagedNames ?? PackagedAppNames.Shared).Lookup(window.AppUserModelID);
+        PackagedAppNames names = packagedNames ?? PackagedAppNames.Shared;
+        string? packagedName = names.Lookup(window.AppUserModelID);
 
-        _pins.Add(RecordFor(key, window.WinFileName, window.WinFileDescription, window.Title, packagedName));
+        // A packaged desktop application need not put its ID on its window (WhatsApp, Windows
+        // Terminal); its process has one. Without this the pin was named after the file:
+        // "WhatsApp.Root". The running slot asked the same question to name itself, so the
+        // answer is normally already there.
+        string? processName = null;
+        if (string.IsNullOrWhiteSpace(window.AppUserModelID) && ProcessAppId.For(window.Handle) is { } processId)
+            processName = names.Lookup(processId);
+
+        _pins.Add(RecordFor(key, window.WinFileName, window.WinFileDescription, window.Title, packagedName, processName));
         Save();
     }
 
@@ -100,12 +109,19 @@ internal sealed class PinSettings
     /// Apps-folder path of its key instead, which is never a file, so the launch falls through to
     /// <c>ActivateApplication</c> by app user model ID — which is how Windows starts it.
     /// </remarks>
-    internal static PinnedApp RecordFor(string key, string? file, string? description, string? title, string? packagedName)
+    /// <param name="processName">
+    /// The Apps folder's name for the app ID of the window's process, when the window carries none
+    /// of its own: a packaged desktop application. It wins over the file's description, which is
+    /// "WhatsApp.Root" for WhatsApp and "Windows Terminal Host" for Terminal.
+    /// </param>
+    internal static PinnedApp RecordFor(
+        string key, string? file, string? description, string? title, string? packagedName, string? processName = null)
     {
         if (PackagedAppNames.IsFrameHost(file))
             return new PinnedApp(key, PinnedApp.AppsFolderPrefix + key, TaskbarSlot.NameFor(file, description, key, title, packagedName) ?? key);
 
-        return new PinnedApp(key, file ?? string.Empty, DisplayNameFor(file, description, title));
+        string name = string.IsNullOrWhiteSpace(processName) ? DisplayNameFor(file, description, title) : processName.Trim();
+        return new PinnedApp(key, file ?? string.Empty, name);
     }
 
     /// <summary>
