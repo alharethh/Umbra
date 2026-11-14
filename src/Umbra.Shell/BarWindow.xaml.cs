@@ -100,7 +100,8 @@ internal partial class BarWindow : AppBarWindow
         ShellHost host,
         BarMetrics metrics,
         AppBarScreen? screen = null,
-        bool hostsTray = true)
+        bool hostsTray = true,
+        TrayChoice? trayChoice = null)
         : base(
             host.ShellManager.AppBarManager,
             host.ShellManager.ExplorerHelper,
@@ -126,16 +127,13 @@ internal partial class BarWindow : AppBarWindow
 
         // Null when tray hosting is switched off — see ShellHost.
         //
-        // Two collections now that §7.1's overflow chevron exists: the system indicators stay on
-        // the bar, everything else lives behind the chevron. ManagedShell maintains both views off
-        // the pinned-GUID list ShellHost supplies, so nothing here has to filter.
+        // Three views: the system indicators in their cluster, the icons the user put on the bar,
+        // and everything else behind the chevron. See BarWindow.Tray.cs.
         _notificationArea = hostsTray ? host.ShellManager.NotificationArea : null;
         IsPrimaryBar = hostsTray;
-        TrayIcons = _notificationArea?.PinnedIcons;
-        OverflowTrayIcons = _notificationArea?.UnpinnedIcons;
 
         if (_notificationArea is not null)
-            _notificationArea.TrayIcons.CollectionChanged += (_, _) => OnTrayIconsChanged();
+            BuildTrayViews(_notificationArea, trayChoice);
 
         DataContext = this;
         InitializeComponent();
@@ -1013,10 +1011,10 @@ internal partial class BarWindow : AppBarWindow
     /// The notification icons shown on the bar itself — the system indicators (§11.1).
     /// </summary>
     /// <remarks>Null when tray hosting is off.</remarks>
-    public ICollectionView? TrayIcons { get; }
+    public ICollectionView? TrayIcons { get; private set; }
 
     /// <summary>The notification icons behind the overflow chevron.</summary>
-    public ICollectionView? OverflowTrayIcons { get; }
+    public ICollectionView? OverflowTrayIcons { get; private set; }
 
     /// <summary>
     /// How many icons wide the overflow flyout is: as many as it holds, up to five.
@@ -1038,8 +1036,12 @@ internal partial class BarWindow : AppBarWindow
     /// Hidden rather than disabled when the overflow is empty. A permanently lit affordance that
     /// opens an empty panel is both a lie and, on this bar, a fixed lit pixel for nothing.
     /// </remarks>
+    /// <remarks>
+    /// The exception is "show all icons on the bar": the panel is empty then by the user's own
+    /// choice, and the chevron's menu is where they turn it off again.
+    /// </remarks>
     public Visibility TrayOverflowVisibility =>
-        OverflowTrayIcons is not null && OverflowTrayIcons.Cast<object>().Any()
+        OverflowTrayIcons is not null && (KeepsChevronForShowAll || OverflowTrayIcons.Cast<object>().Any())
             ? Visibility.Visible
             : Visibility.Collapsed;
 
@@ -2966,7 +2968,7 @@ internal partial class BarWindow : AppBarWindow
 
         if (!TrayOverflowPopup.IsOpen) return;
 
-        if (TrayOverflowVisibility != Visibility.Visible)
+        if (TrayOverflowVisibility != Visibility.Visible || !OverflowTrayIcons!.Cast<object>().Any())
         {
             SetTrayOverflowOpen(false);
             return;
@@ -3001,6 +3003,13 @@ internal partial class BarWindow : AppBarWindow
         e.Handled = true;
 
         PlayPress(TrayChevronScale);
+
+        // With every icon on the bar there is no panel to open; the click offers the way back.
+        if (OverflowTrayIcons?.Cast<object>().Any() != true)
+        {
+            OpenTrayChevronMenu();
+            return;
+        }
 
         bool opening = !TrayOverflowPopup.IsOpen;
 
@@ -4054,6 +4063,12 @@ internal partial class BarWindow : AppBarWindow
         {
             _trayPressCompletesDoubleClick = TrayOverflowClickClose.CompletesDoubleClick(
                 _trayLastLeftUpIcon, _trayLastLeftUpMs, icon, Environment.TickCount64, DoubleClickTime);
+
+            // May turn into a drag between the menu and the bar. The press still goes to the
+            // application now: holding it back until the button-up broke clicks, measured on
+            // Bluetooth's icon, whose menu opens on the press. A menu a drag opened that way is
+            // closed when the drag starts (BeginTrayDrag).
+            if (sender is FrameworkElement pressed) NoteTrayPress(icon, pressed);
         }
 
         UpdateTrayHostSize();
@@ -4063,6 +4078,15 @@ internal partial class BarWindow : AppBarWindow
 
     private void OnTrayIconMouseUp(object sender, MouseButtonEventArgs e)
     {
+        // The end of a drag is not a click: nothing is forwarded and the flyout stays.
+        if (e.ChangedButton == MouseButton.Left && EndTrayDrag(drop: true))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (e.ChangedButton == MouseButton.Left) _trayPress = null;
+
         // A left click on an icon dismisses the panel it was in, or the flyout sits over whatever
         // window the click just raised.
         //
@@ -4113,6 +4137,7 @@ internal partial class BarWindow : AppBarWindow
         AllowIconOwnerForeground(icon);
 
         uint cursor = PackedCursorPosition();
+
         icon.IconMouseUp(e.ChangedButton, cursor, DoubleClickTime);
 
         // Explorer's battery icon reports version 0, so ManagedShell stops at the button-up, which

@@ -258,8 +258,52 @@
                   MouseRightButtonUp="OnTrayIconMouseUp"
                   MouseEnter="OnTrayIconMouseEnter"
                   MouseLeave="OnTrayIconMouseLeave"
+                  MouseMove="OnTrayIconMouseMove"
                   Width="{Binding TrayOverflowCellWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                   Height="{Binding TrayOverflowCellHeight, RelativeSource={RelativeSource AncestorType=Window}}">
+
+                <Control Style="{StaticResource HolographicChip}" Margin="2,6">
+                    <Control.RenderTransform>
+                        <TranslateTransform X="{Binding TrayOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            Y="{Binding TrayOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    </Control.RenderTransform>
+                </Control>
+
+                <Image Width="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Height="{Binding TrayIconExtent, RelativeSource={RelativeSource AncestorType=Window}}"
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <Image.Source>
+                        <MultiBinding Converter="{StaticResource TrayTierIcon}">
+                            <Binding Path="Icon" />
+                            <Binding Path="DrawnTierLevel" RelativeSource="{RelativeSource AncestorType=Window}" />
+                        </MultiBinding>
+                    </Image.Source>
+                </Image>
+            </Grid>
+        </DataTemplate>
+
+        <!--
+            An icon the user took out of the overflow (TrayChoice): sized like the system
+            indicators' slots, clicked like an icon in the flyout, since its click belongs to its
+            application rather than to Quick Settings. Dragging moves it. See BarWindow.Tray.cs.
+        -->
+        <DataTemplate x:Key="TrayBarIconTemplate">
+            <Grid Background="Transparent"
+                  Tag="ShellToggle"
+                  AutomationProperties.Name="{Binding Title}"
+                  AutomationProperties.AutomationId="TrayIcon"
+                  ToolTip="{Binding Title}"
+                  ToolTipService.Placement="{Binding TooltipPlacement, RelativeSource={RelativeSource AncestorType=Window}}"
+                  MouseLeftButtonDown="OnTrayIconMouseDown"
+                  MouseLeftButtonUp="OnTrayIconMouseUp"
+                  MouseRightButtonDown="OnTrayIconMouseDown"
+                  MouseRightButtonUp="OnTrayIconMouseUp"
+                  MouseEnter="OnTrayIconMouseEnter"
+                  MouseLeave="OnTrayIconMouseLeave"
+                  MouseMove="OnTrayIconMouseMove"
+                  Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                  Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
                 <Control Style="{StaticResource HolographicChip}" Margin="2,6">
                     <Control.RenderTransform>
@@ -784,6 +828,7 @@
               ToolTipService.Placement="{Binding TooltipPlacement}"
               Visibility="{Binding TrayOverflowVisibility}"
               MouseLeftButtonUp="OnTrayChevronClick"
+              MouseRightButtonUp="OnTrayChevronRightClick"
               VerticalAlignment="Center"
               Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
               Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
@@ -812,6 +857,36 @@
                       RenderTransform="{Binding TrayOffset, RelativeSource={RelativeSource AncestorType=Window}}" />
             </Grid>
         </Grid>
+
+        <!--
+            The icons the user put on the bar, between the chevron and the system cluster, where
+            Windows puts the icons dragged out of its own overflow.
+        -->
+        <ItemsControl x:Name="TrayBarHost"
+                      AutomationProperties.Name="Notification icons on the bar"
+                      ItemsSource="{Binding BarTrayIcons}"
+                      ItemTemplate="{StaticResource TrayBarIconTemplate}"
+                      VerticalAlignment="Center">
+            <ItemsControl.ItemContainerStyle>
+                <Style TargetType="ContentPresenter">
+                    <!-- Never empty: an empty name is announced as the type name. TrayIconName. -->
+                    <Setter Property="AutomationProperties.Name">
+                        <Setter.Value>
+                            <MultiBinding Converter="{StaticResource TrayIconName}">
+                                <Binding Path="Title" />
+                                <Binding Path="GUID" />
+                                <Binding Path="Path" />
+                            </MultiBinding>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ItemsControl.ItemContainerStyle>
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="{Binding RowOrientation, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+        </ItemsControl>
 
         <!--
             The system cluster: the pinned indicators and the network glyph, as one control.

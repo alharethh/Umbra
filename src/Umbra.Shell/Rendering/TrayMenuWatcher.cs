@@ -195,6 +195,27 @@ internal sealed class TrayMenuWatcher
         return true;
     }
 
+    /// <summary>
+    /// Ends a Win32 menu the icon's owner has open, if its thread is in menu mode.
+    /// </summary>
+    /// <remarks>
+    /// For a press that turned into a drag: the press was forwarded, and an icon that opens its
+    /// menu on the press (Bluetooth does) would leave it up over the drop. Only a real menu mode
+    /// is acted on, so an owner with nothing open is not sent anything.
+    /// </remarks>
+    /// <returns>True when a menu was cancelled.</returns>
+    public static bool CancelMenuOf(IntPtr iconWindow)
+    {
+        if (iconWindow == IntPtr.Zero) return false;
+
+        IntPtr menuOwner = MenuOwnerOn(GetWindowThreadProcessId(iconWindow, out _));
+        if (menuOwner == IntPtr.Zero) return false;
+
+        PostMessage(menuOwner, WmCancelMode, IntPtr.Zero, IntPtr.Zero);
+        BringUpLog.Write($"tray menu cancelled for a drag: Win32 menu owned by 0x{menuOwner.ToInt64():X}");
+        return true;
+    }
+
     private static IntPtr MenuOwnerOn(uint thread)
     {
         if (thread == 0) return IntPtr.Zero;

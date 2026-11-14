@@ -572,6 +572,21 @@
                                   ToolTip="Costs a permanent 100 ms timer that makes sure applications keep sending their icons to Umbra rather than to Windows. A missing icon appears once its application next updates it, or from Refresh tray icons in the bar's menu." />
                         <TextBlock Style="{StaticResource Hint}"
                                    Text="Shows notification icons next to the clock. Needs a restart." />
+
+                        <!--
+                            Which icons sit on the bar rather than behind the chevron. Not part of
+                            settings.txt: the bar changes this list too, by dragging and from the
+                            chevron's menu, so it lives in TrayChoice, which every one of them
+                            shares. Each icon on the bar is lit area, dimmed as it is.
+                        -->
+                        <CheckBox x:Name="ShowAllTrayBox" Content="Show every icon on the bar" Margin="0,6,0,2"
+                                  ToolTip="Nothing is kept behind the ^ menu. Right-click the ^ to switch back." />
+                        <TextBlock x:Name="TrayChoiceHint" Style="{StaticResource Hint}"
+                                   Text="Or choose them one by one. You can also drag an icon between the ^ menu and the bar. Every icon on the bar is lit, dimmed like the rest." />
+                        <ScrollViewer x:Name="TrayIconScroller" MaxHeight="200"
+                                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel x:Name="TrayIconList" />
+                        </ScrollViewer>
                     </StackPanel>
 
                 </Grid>
