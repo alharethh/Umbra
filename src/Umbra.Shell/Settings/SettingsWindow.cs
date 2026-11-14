@@ -33,9 +33,19 @@ internal partial class SettingsWindow : Window
 
     private bool _loaded;
 
-    public SettingsWindow(UmbraSettings current, Action<UmbraSettings> applyLive, Action restart)
+    /// <param name="current">The settings as they stand now, which the controls start from.</param>
+    /// <param name="applyLive">Called with the saved settings after every change.</param>
+    /// <param name="restart">Restarts Umbra.</param>
+    /// <param name="running">
+    /// What the running bar was started with, which decides whether a change needs a restart.
+    /// Not <paramref name="current"/>: once a restart-only setting has been changed and saved,
+    /// a window opened later would otherwise compare against the saved value and stop saying a
+    /// restart is needed, while the bar still runs the old one.
+    /// </param>
+    public SettingsWindow(UmbraSettings current, Action<UmbraSettings> applyLive, Action restart,
+                          UmbraSettings? running = null)
     {
-        _saved = current;
+        _saved = running ?? current;
         _working = current.Clone();
         _applyLive = applyLive;
         _restart = restart;
@@ -427,6 +437,22 @@ internal partial class SettingsWindow : Window
         // and the user has no other way to restart it — Umbra has no window to close.
         RestartButton.IsEnabled = true;
     }
+
+    /// <summary>
+    /// Wraps <paramref name="applyLive"/> so the caller keeps a copy of every save.
+    /// </summary>
+    /// <remarks>
+    /// <b>The bug this exists for:</b> the window edits a clone, and the app used to keep only
+    /// what it loaded at launch. Change a setting, close the window, open it again, and it showed
+    /// the launch values; the next change then saved all of them back, undoing the first. The copy
+    /// is a clone because the window goes on editing its own instance after handing it over.
+    /// </remarks>
+    internal static Action<UmbraSettings> Remembering(Action<UmbraSettings> remember, Action<UmbraSettings> applyLive) =>
+        saved =>
+        {
+            remember(saved.Clone());
+            applyLive(saved);
+        };
 
     private void OnRestartClick(object sender, RoutedEventArgs e)
     {
