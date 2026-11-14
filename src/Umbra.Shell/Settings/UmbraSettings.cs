@@ -110,7 +110,8 @@ internal sealed class UmbraSettings
     /// <remarks>
     /// On at ten minutes by default, the project owner's choice. Read as a number rather than from
     /// a fixed list so a hand-edited file can shorten it for a live check; the settings window
-    /// offers Off, 15 and 30 seconds, and 1, 5, 10 and 30 minutes.
+    /// offers Off, 15 and 30 seconds, 1, 5, 10 and 30 minutes, and any number of seconds under
+    /// Custom.
     /// </remarks>
     public double AwayAfterMinutes { get; set; } = 10.0;
 
