@@ -230,6 +230,9 @@ public partial class App : Application
         // the user is most likely looking at, which is the primary.
         _bar = _bars.Count > 0 ? _bars[0] : null;
 
+        // Once per install, on the primary bar only: where the settings are. See SettingsHint.
+        _bar?.OfferSettingsHint(Settings.SettingsHintShown, MarkSettingsHintShown);
+
         if (_bars.Count > 1)
             BringUpLog.Write($"bars on {_bars.Count} monitors; the tray is on the primary only");
 
@@ -411,6 +414,21 @@ public partial class App : Application
     internal void ApplyLiveSettingsToAll(UmbraSettings settings)
     {
         foreach (BarWindow bar in _bars) bar.ApplyLiveSettings(settings);
+    }
+
+    /// <summary>Records that the settings note has been shown, so it never shows again.</summary>
+    /// <remarks>
+    /// Read from disk, changed, written back — not <see cref="Settings"/> saved whole. That copy
+    /// carries any command-line overrides, which must never be written into the file, and is not
+    /// updated by the settings window, so saving it could undo a change made there.
+    /// </remarks>
+    private void MarkSettingsHintShown()
+    {
+        Settings.SettingsHintShown = true;
+
+        UmbraSettings onDisk = UmbraSettings.Load();
+        onDisk.SettingsHintShown = true;
+        onDisk.Save();
     }
 
     /// <summary>The live settings, shared with the settings window.</summary>

@@ -241,6 +241,16 @@ internal sealed class UmbraSettings
     /// </remarks>
     public string Monitor { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Whether the one-time "right-click the bar for settings" note has been shown.
+    /// </summary>
+    /// <remarks>
+    /// Set as soon as the note appears, not when it is dismissed, so a note that times out unread
+    /// is still never shown again. Existing installs start false and see it once too: the users
+    /// who most needed it were the ones already running Umbra without knowing about the menu.
+    /// </remarks>
+    public bool SettingsHintShown { get; set; }
+
     /// <summary>Reads the settings, falling back to the defaults for anything missing or unusable.</summary>
     public static UmbraSettings Load(string? path = null)
     {
@@ -342,6 +352,11 @@ internal sealed class UmbraSettings
 
             case "monitor":
                 Monitor = value;
+                break;
+
+            case "settingshintshown":
+                if (bool.TryParse(value, out bool hintShown)) SettingsHintShown = hintShown;
+                else Unusable(key, value);
                 break;
 
             case "hoveraccent":
@@ -484,6 +499,9 @@ internal sealed class UmbraSettings
         @"# Device name of the monitor to occupy, e.g. \\.\DISPLAY1. Empty means the primary.",
         $"monitor = {Monitor}",
         "",
+        "# Whether the one-time note about right-clicking the bar for settings has been shown.",
+        $"settingsHintShown = {SettingsHintShown.ToString().ToLowerInvariant()}",
+        "",
         "# Colour of the holographic hover animation, as #RRGGBB or #AARRGGBB. Capped to the",
         "# Tier 2 luminance ceiling whatever you pick, so this chooses the hue and not the light.",
         $"hoverAccent = {HoverAccent}",
@@ -513,6 +531,7 @@ internal sealed class UmbraSettings
         ApplicationIcons = ApplicationIcons,
         Tray = Tray,
         Monitor = Monitor,
+        SettingsHintShown = SettingsHintShown,
         HoverAccent = HoverAccent,
         AppIconHover = AppIconHover,
         AppIconHoverColour = AppIconHoverColour,
