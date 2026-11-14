@@ -259,6 +259,7 @@
                   MouseEnter="OnTrayIconMouseEnter"
                   MouseLeave="OnTrayIconMouseLeave"
                   MouseMove="OnTrayIconMouseMove"
+                  Loaded="OnTrayIconLoaded"
                   Width="{Binding TrayOverflowCellWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                   Height="{Binding TrayOverflowCellHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
@@ -302,6 +303,7 @@
                   MouseEnter="OnTrayIconMouseEnter"
                   MouseLeave="OnTrayIconMouseLeave"
                   MouseMove="OnTrayIconMouseMove"
+                  Loaded="OnTrayIconLoaded"
                   Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                   Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 

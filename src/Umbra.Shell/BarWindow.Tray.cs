@@ -6,6 +6,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using ManagedShell.WindowsTray;
 using Umbra.Shell.Diagnostics;
 using Umbra.Shell.Rendering;
@@ -223,6 +224,9 @@ internal partial class BarWindow
         press.Element.CaptureMouse();
         press.Element.LostMouseCapture += OnTrayDragLostCapture;
 
+        // Lifted out: what stays in the slot is a faint placeholder.
+        Fade(press.Element, TrayDragPlaceholderOpacity, TrayAnimationShort);
+
         _trayGhost = new Popup
         {
             AllowsTransparency = true,
@@ -311,9 +315,16 @@ internal partial class BarWindow
         TrayDropTarget target = drop ? TrayDropAt(CursorScreen()) : TrayDropTarget.None;
 
         SetChevronDropLit(false);
-        if (target.Kind == TrayDrop.Kind.Overflow) PlayPress(TrayChevronScale);
 
-        if (_trayGhost is not null) _trayGhost.IsOpen = false;
+        bool intoChevron = target.Kind == TrayDrop.Kind.Overflow && !TrayOverflowPopup.IsOpen;
+        if (_trayGhost is { } ghost)
+        {
+            // Into a closed chevron the icon is seen going in; anywhere else it simply goes, and
+            // the icon itself arrives in its new place (OnTrayIconLoaded).
+            if (intoChevron) FlyGhostInto(ghost, TrayChevron);
+            else FadeOutGhost(ghost);
+        }
+
         if (_trayCaret is not null) _trayCaret.IsOpen = false;
         _trayGhost = null;
         _trayCaret = null;
@@ -321,9 +332,132 @@ internal partial class BarWindow
         drag.Element.LostMouseCapture -= OnTrayDragLostCapture;
         if (drag.Element.IsMouseCaptured) drag.Element.ReleaseMouseCapture();
 
+        // Back to full if it stayed where it was. If it moved, this element is about to be
+        // replaced and the arrival animation shows it in the new place.
+        Fade(drag.Element, 1, TrayAnimationShort);
+
         TrayMenuWatcher.CancelMenuOf(drag.Icon.HWnd);
+        _trayArriving = target.Kind == TrayDrop.Kind.None || intoChevron ? null : drag.Icon;
         ApplyTrayDrop(drag.Icon, target);
         return true;
+    }
+
+    // ---------------------------------------------------------------- drag animations
+    //
+    // Short and plain: a fade, a scale, one small overshoot on arrival. Every one of them is
+    // skipped when Windows' animation effects are off. Easing is fine here for the reason the
+    // icon row's slide gives: these are one-off transitions, not drift, so they put no residence
+    // time anywhere (§6.1 is about turnarounds that repeat for hours).
+
+    private static readonly TimeSpan TrayAnimationShort = TimeSpan.FromMilliseconds(150);
+    private static readonly TimeSpan TrayAnimationArrive = TimeSpan.FromMilliseconds(220);
+    private const double TrayDragPlaceholderOpacity = 0.3;
+
+    /// <summary>The icon just dropped, so its new container can animate in when it is built.</summary>
+    private NotifyIcon? _trayArriving;
+
+    private static Duration Animated(TimeSpan time) =>
+        new(SystemParameters.ClientAreaAnimation ? time : TimeSpan.Zero);
+
+    private static void Fade(UIElement element, double to, TimeSpan time)
+    {
+        DoubleAnimation fade = new(to, Animated(time)) { FillBehavior = FillBehavior.Stop };
+        fade.Completed += (_, _) => element.Opacity = to;
+        element.BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>
+    /// A tray icon's container has been built. If it is the icon just dropped, it arrives: a
+    /// quick scale up from 60% with a touch of overshoot, fading in.
+    /// </summary>
+    /// <remarks>
+    /// Containers are rebuilt when the views refresh after a change, so the arriving icon's
+    /// container is new and this is where it first exists. The scale sits on the container, not
+    /// on the image, whose transform is the drift offset.
+    /// </remarks>
+    private void OnTrayIconLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: NotifyIcon icon } element) return;
+        if (_trayArriving is null || !ReferenceEquals(icon, _trayArriving)) return;
+
+        _trayArriving = null;
+        if (!SystemParameters.ClientAreaAnimation) return;
+
+        ScaleTransform scale = new(0.6, 0.6);
+        element.RenderTransformOrigin = new Point(0.5, 0.5);
+        element.RenderTransform = scale;
+
+        DoubleAnimation grow = new(0.6, 1, Animated(TrayAnimationArrive))
+        {
+            EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.4 },
+        };
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+
+        element.Opacity = 0;
+        Fade(element, 1, TrayAnimationShort);
+    }
+
+    /// <summary>The floating icon shrinks into the chevron and is gone; the chevron bounces as it lands.</summary>
+    private void FlyGhostInto(Popup ghost, FrameworkElement target)
+    {
+        if (!SystemParameters.ClientAreaAnimation || ghost.Child is not FrameworkElement image)
+        {
+            ghost.IsOpen = false;
+            PlayPress(TrayChevronScale);
+            return;
+        }
+
+        double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
+        Rect into = ScreenRect(target);
+        double toX = (into.Left + into.Width / 2) / dpi - TrayIconExtent / 2;
+        double toY = (into.Top + into.Height / 2) / dpi - TrayIconExtent / 2;
+
+        Duration time = Animated(TrayAnimationShort);
+        QuadraticEase ease = new() { EasingMode = EasingMode.EaseIn };
+
+        ScaleTransform shrink = new(1, 1);
+        image.RenderTransformOrigin = new Point(0.5, 0.5);
+        image.RenderTransform = shrink;
+
+        // The move is set frame by frame. Animating a popup's offsets does not move its window
+        // (measured: the icon shrank where it stood); setting them does, which is how the drag
+        // itself moves it.
+        double fromX = ghost.HorizontalOffset;
+        double fromY = ghost.VerticalOffset;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        void Step(object? sender, EventArgs e)
+        {
+            double t = Math.Min(1, clock.Elapsed.TotalMilliseconds / TrayAnimationShort.TotalMilliseconds);
+            double eased = ease.Ease(t);
+            ghost.HorizontalOffset = fromX + (toX - fromX) * eased;
+            ghost.VerticalOffset = fromY + (toY - fromY) * eased;
+
+            if (t < 1) return;
+
+            CompositionTarget.Rendering -= Step;
+            ghost.IsOpen = false;
+            PlayPress(TrayChevronScale);
+        }
+
+        CompositionTarget.Rendering += Step;
+        shrink.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.3, time) { EasingFunction = ease });
+        shrink.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.3, time) { EasingFunction = ease });
+        image.BeginAnimation(OpacityProperty, new DoubleAnimation(0, time));
+    }
+
+    private static void FadeOutGhost(Popup ghost)
+    {
+        if (!SystemParameters.ClientAreaAnimation || ghost.Child is not UIElement image)
+        {
+            ghost.IsOpen = false;
+            return;
+        }
+
+        DoubleAnimation fade = new(0, Animated(TimeSpan.FromMilliseconds(110)));
+        fade.Completed += (_, _) => ghost.IsOpen = false;
+        image.BeginAnimation(OpacityProperty, fade);
     }
 
     private bool _chevronDropLit;
@@ -347,16 +481,16 @@ internal partial class BarWindow
 
         if (lit)
         {
-            TrayChevronChip.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(1, duration));
-            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleXProperty, new System.Windows.Media.Animation.DoubleAnimation(1.18, duration));
-            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleYProperty, new System.Windows.Media.Animation.DoubleAnimation(1.18, duration));
+            TrayChevronChip.BeginAnimation(OpacityProperty, new DoubleAnimation(1, duration));
+            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.18, duration));
+            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.18, duration));
         }
         else
         {
             // Back to whatever the chip's own style says, then the scale back to rest.
             TrayChevronChip.BeginAnimation(OpacityProperty, null);
-            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleXProperty, new System.Windows.Media.Animation.DoubleAnimation(1, duration));
-            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleYProperty, new System.Windows.Media.Animation.DoubleAnimation(1, duration));
+            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, duration));
+            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, duration));
         }
 
         if (_trayGhost?.Child is UIElement ghost) ghost.Opacity = lit ? 0.45 : 0.85;
