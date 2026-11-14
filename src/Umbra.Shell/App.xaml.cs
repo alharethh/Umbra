@@ -31,6 +31,33 @@ public partial class App : Application
     private DevFaults? _devFaults;
 #endif
     private string[] _args = [];
+    private SettingsRequest? _settingsRequest;
+    private Settings.SettingsWindow? _settingsWindow;
+
+    /// <summary>
+    /// Opens the settings window, or brings the open one to the front.
+    /// </summary>
+    /// <remarks>
+    /// One window, wherever it is asked for from — the bar's menu or a second launch. Two settings
+    /// windows editing two copies of the same settings would each save over the other.
+    /// <c>ShowInFront</c>, not <c>Show</c>: the bar never holds the foreground, so a window it
+    /// opens lands behind whatever the user was looking at. See <c>WindowOrder</c>.
+    /// </remarks>
+    internal void OpenSettings()
+    {
+        if (_settingsWindow is { } open)
+        {
+            if (open.WindowState == WindowState.Minimized) open.WindowState = WindowState.Normal;
+            open.ShowInFront();
+            return;
+        }
+
+        // ApplyLiveSettingsToAll: with a bar per monitor, every bar must change, not only the one
+        // the window was opened from.
+        _settingsWindow = new Settings.SettingsWindow(Settings, ApplyLiveSettingsToAll, Restart);
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.ShowInFront();
+    }
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -65,15 +92,26 @@ public partial class App : Application
 
         if (_instance is null)
         {
-            // Silently. Double-clicking a taskbar and getting a dialog would be worse than
-            // double-clicking it and getting nothing, which is what every other shell does.
-            BringUpLog.Write("another Umbra already holds the bar; exiting without touching Explorer");
+            // No dialog: the running bar opens its settings instead, which is the useful answer
+            // to someone starting Umbra again. Still without touching Explorer. See SettingsRequest.
+            if (SettingsRequest.ShouldSignal(restarting))
+                SettingsRequest.LogOutcome(SettingsRequest.Signal());
+            else
+                BringUpLog.Write("another Umbra already holds the bar; exiting without touching Explorer");
+
             Shutdown();
             return;
         }
 
         if (_instance.WasAbandoned)
             BringUpLog.Write("the single-instance lock was abandoned: the previous exit was not clean");
+
+        // After the lock, so only the bar that is actually running listens.
+        _settingsRequest = new SettingsRequest(() => Dispatcher.BeginInvoke(() =>
+        {
+            BringUpLog.Write("settings: opened because Umbra was started again");
+            OpenSettings();
+        }));
 
 #if DEBUG
         // After the lock, so only the bar that is actually running listens. See DevControl.
@@ -314,6 +352,9 @@ public partial class App : Application
         // not be relaunched by the guard. Exit and Restart have declared already; this catches
         // every other way to Shutdown. See ExitIntent.
         ExitIntent.Declare("exit");
+
+        _settingsRequest?.Dispose();
+        _settingsRequest = null;
 
 #if DEBUG
         _devControl?.Dispose();

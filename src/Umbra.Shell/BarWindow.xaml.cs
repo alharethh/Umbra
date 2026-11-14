@@ -586,13 +586,7 @@ internal partial class BarWindow : AppBarWindow
     /// </summary>
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
-        if (Application.Current is not App app) return;
-
-        // ShowInFront, not Show: the bar never holds the foreground, so a window it opens lands
-        // behind whatever the user was looking at. See WindowOrder.
-        // ApplyLiveSettingsToAll, not this bar's own: the window is opened from whichever bar
-        // was right-clicked, and with a bar per monitor the others must change too.
-        new Settings.SettingsWindow(app.Settings, app.ApplyLiveSettingsToAll, app.Restart).ShowInFront();
+        if (Application.Current is App app) app.OpenSettings();
     }
 
 #if DEBUG
