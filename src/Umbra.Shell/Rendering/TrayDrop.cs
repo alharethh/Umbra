@@ -29,6 +29,22 @@ internal static class TrayDrop
         Math.Abs(now.X - start.X) >= thresholdX || Math.Abs(now.Y - start.Y) >= thresholdY;
 
     /// <summary>
+    /// Where the dragged icon is drawn relative to the pointer: an icon and a bit towards the middle
+    /// of the screen, off the bar, so it never covers what it is about to be dropped on.
+    /// </summary>
+    public static Vector GhostLift(Umbra.Core.Layout.BarEdge edge, double iconExtent)
+    {
+        double away = iconExtent * 1.1;
+        return edge switch
+        {
+            Umbra.Core.Layout.BarEdge.Top => new Vector(0, away),
+            Umbra.Core.Layout.BarEdge.Left => new Vector(away, 0),
+            Umbra.Core.Layout.BarEdge.Right => new Vector(-away, 0),
+            _ => new Vector(0, -away),
+        };
+    }
+
+    /// <summary>
     /// The gap a point along the bar falls into: the index of the first slot whose middle lies
     /// beyond it, or the slot count for the end of the row.
     /// </summary>

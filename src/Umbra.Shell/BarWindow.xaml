@@ -833,7 +833,7 @@
               Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
               Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
-            <Control Style="{StaticResource HolographicChip}" Margin="2,6">
+            <Control x:Name="TrayChevronChip" Style="{StaticResource HolographicChip}" Margin="2,6">
                 <Control.RenderTransform>
                     <TranslateTransform X="{Binding TrayOffset.X, RelativeSource={RelativeSource AncestorType=Window}}"
                                         Y="{Binding TrayOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />

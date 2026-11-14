@@ -265,12 +265,17 @@ internal partial class BarWindow
         double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
         Point cursor = CursorScreen();
 
-        // AbsolutePoint offsets are device-independent; the cursor is physical.
-        _trayGhost.HorizontalOffset = cursor.X / dpi - TrayIconExtent / 2;
-        _trayGhost.VerticalOffset = cursor.Y / dpi - TrayIconExtent / 2;
+        // AbsolutePoint offsets are device-independent; the cursor is physical. The ghost rides a
+        // little inboard of the pointer rather than under it, so the chevron or the gap the
+        // pointer is over stays visible.
+        Vector lift = TrayDrop.GhostLift(Metrics.Edge, TrayIconExtent);
+        _trayGhost.HorizontalOffset = cursor.X / dpi - TrayIconExtent / 2 + lift.X;
+        _trayGhost.VerticalOffset = cursor.Y / dpi - TrayIconExtent / 2 + lift.Y;
         _trayGhost.IsOpen = true;
 
         TrayDropTarget target = TrayDropAt(cursor);
+
+        SetChevronDropLit(target.Kind == TrayDrop.Kind.Overflow);
 
         if (target.Kind == TrayDrop.Kind.Bar && target.Caret is { } caret)
         {
@@ -305,6 +310,9 @@ internal partial class BarWindow
         _trayDrag = null;
         TrayDropTarget target = drop ? TrayDropAt(CursorScreen()) : TrayDropTarget.None;
 
+        SetChevronDropLit(false);
+        if (target.Kind == TrayDrop.Kind.Overflow) PlayPress(TrayChevronScale);
+
         if (_trayGhost is not null) _trayGhost.IsOpen = false;
         if (_trayCaret is not null) _trayCaret.IsOpen = false;
         _trayGhost = null;
@@ -316,6 +324,42 @@ internal partial class BarWindow
         TrayMenuWatcher.CancelMenuOf(drag.Icon.HWnd);
         ApplyTrayDrop(drag.Icon, target);
         return true;
+    }
+
+    private bool _chevronDropLit;
+
+    /// <summary>
+    /// Lights the chevron while a drop would put the icon back behind it: its hover chip, a little
+    /// growth, and the dragged icon fading as if already on its way in.
+    /// </summary>
+    /// <remarks>
+    /// Done from here because the chip's own trigger is the pointer being over the chevron, and
+    /// that never fires during a drag: the dragged icon holds the mouse capture. The bar gets its
+    /// caret for the same reason; without this the chevron gave no sign it would take the drop.
+    /// </remarks>
+    private void SetChevronDropLit(bool lit)
+    {
+        if (_chevronDropLit == lit) return;
+        _chevronDropLit = lit;
+
+        TimeSpan time = TimeSpan.FromMilliseconds(lit ? 140 : 200);
+        Duration duration = SystemParameters.ClientAreaAnimation ? new Duration(time) : new Duration(TimeSpan.Zero);
+
+        if (lit)
+        {
+            TrayChevronChip.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(1, duration));
+            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleXProperty, new System.Windows.Media.Animation.DoubleAnimation(1.18, duration));
+            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleYProperty, new System.Windows.Media.Animation.DoubleAnimation(1.18, duration));
+        }
+        else
+        {
+            // Back to whatever the chip's own style says, then the scale back to rest.
+            TrayChevronChip.BeginAnimation(OpacityProperty, null);
+            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleXProperty, new System.Windows.Media.Animation.DoubleAnimation(1, duration));
+            TrayChevronScale.BeginAnimation(ScaleTransform.ScaleYProperty, new System.Windows.Media.Animation.DoubleAnimation(1, duration));
+        }
+
+        if (_trayGhost?.Child is UIElement ghost) ghost.Opacity = lit ? 0.45 : 0.85;
     }
 
     private void OnTrayDragLostCapture(object sender, MouseEventArgs e) => EndTrayDrag(drop: false);
