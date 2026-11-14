@@ -15,6 +15,18 @@ internal enum AppIconHover
     Holographic,
 }
 
+/// <summary>Whether the clock counts the day in 24 hours or 12.</summary>
+internal enum ClockFormat
+{
+    /// <summary>Whatever Windows' own short time format uses, as the Windows clock does.</summary>
+    Windows,
+
+    /// <summary>Always 24-hour, which was the only clock before this setting existed.</summary>
+    TwentyFourHour,
+
+    /// <summary>Always 12-hour, with AM and PM.</summary>
+    TwelveHour,
+}
 
 /// <summary>
 /// Umbra's configuration, as stored on disk.
@@ -98,7 +110,7 @@ internal sealed class UmbraSettings
     /// <remarks>
     /// On at ten minutes by default, the project owner's choice. Read as a number rather than from
     /// a fixed list so a hand-edited file can shorten it for a live check; the settings window
-    /// offers Off, 5, 10 and 30.
+    /// offers Off, 15 and 30 seconds, and 1, 5, 10 and 30 minutes.
     /// </remarks>
     public double AwayAfterMinutes { get; set; } = 10.0;
 
@@ -210,6 +222,14 @@ internal sealed class UmbraSettings
 
     /// <inheritdoc cref="AppIconHoverColour"/>
     public const string DefaultAppIconHoverColour = "#1F1F1A";
+
+    /// <summary>12 or 24 hours on the clock.</summary>
+    /// <remarks>
+    /// Follows Windows by default, as the Windows clock does. Before this setting the clock was
+    /// always 24-hour, so a user whose Windows is set to 12-hour sees it change on updating; that
+    /// was the owner's call, because the old clock ignored their setting.
+    /// </remarks>
+    public ClockFormat ClockFormat { get; set; } = ClockFormat.Windows;
 
     /// <summary>
     /// Device name of the monitor to occupy, or empty for the primary.
@@ -337,6 +357,11 @@ internal sealed class UmbraSettings
             case "appiconhovercolour":
             case "appiconhovercolor":
                 if (IsColour(value)) AppIconHoverColour = value;
+                else Unusable(key, value);
+                break;
+
+            case "clockformat":
+                if (TryParseName(value, out ClockFormat clockFormat)) ClockFormat = clockFormat;
                 else Unusable(key, value);
                 break;
 
@@ -468,6 +493,10 @@ internal sealed class UmbraSettings
         "",
         "# Colour of the plain chip behind a hovered application icon.",
         $"appIconHoverColour = {AppIconHoverColour}",
+        "",
+        "# windows | twentyFourHour | twelveHour -- the clock's hours. windows follows the",
+        "# short time format in Windows' own region settings.",
+        $"clockFormat = {ClockFormat}",
     ];
 
     /// <summary>A copy, so a settings window can be cancelled without having mutated anything.</summary>
@@ -487,6 +516,7 @@ internal sealed class UmbraSettings
         HoverAccent = HoverAccent,
         AppIconHover = AppIconHover,
         AppIconHoverColour = AppIconHoverColour,
+        ClockFormat = ClockFormat,
     };
 
     /// <summary>

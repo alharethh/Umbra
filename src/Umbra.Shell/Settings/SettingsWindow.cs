@@ -45,9 +45,13 @@ internal partial class SettingsWindow : Window
         // Taller than some screens' work areas; the settings scroll and the footer stays put.
         WorkAreaFit.Attach(this);
 
+        Nav.SelectionChanged += (_, _) => ShowPage(Nav.SelectedIndex);
+        Nav.SelectedIndex = 0;
+
         PopulateEdges();
         PopulateAlignments();
         PopulateAway();
+        PopulateClockFormats();
         PopulateMonitors();
         PopulateHover();
 
@@ -75,6 +79,7 @@ internal partial class SettingsWindow : Window
         EdgeBox.SelectionChanged += (_, _) => Commit();
         AlignmentBox.SelectionChanged += (_, _) => Commit();
         AwayBox.SelectionChanged += (_, _) => Commit();
+        ClockFormatBox.SelectionChanged += (_, _) => Commit();
         MonitorBox.SelectionChanged += (_, _) => Commit();
         StartupBox.Checked += (_, _) => Commit();
         StartupBox.Unchecked += (_, _) => Commit();
@@ -191,23 +196,78 @@ internal partial class SettingsWindow : Window
         EdgeBox.SelectedIndex = Math.Max(0, IndexOf(EdgeBox, _working.Edge));
     }
 
+    /// <summary>The pages, in the order the list on the left names them.</summary>
+    internal IReadOnlyList<FrameworkElement> PageElements => [BarPage, WearPage, ClockPage, HoverPage, TrayPage];
+
     /// <summary>
-    /// Off, 5, 10 and 30 minutes, plus whatever the file holds if it is none of those, so a
-    /// hand-edited delay is shown as it is rather than overwritten by the first change made here.
+    /// Shows one page and hides the rest.
+    /// </summary>
+    /// <remarks>
+    /// Hidden, not Collapsed: a hidden page still takes its height in the shared cell, so the
+    /// window stays the height of the tallest page whichever is open. Collapsing them would resize
+    /// the window on every click in the list.
+    /// </remarks>
+    internal void ShowPage(int index)
+    {
+        if (index < 0) return;
+
+        IReadOnlyList<FrameworkElement> pages = PageElements;
+        for (int i = 0; i < pages.Count; i++)
+            pages[i].Visibility = i == index ? Visibility.Visible : Visibility.Hidden;
+
+        if (Nav.SelectedIndex != index) Nav.SelectedIndex = index;
+        Body.ScrollToTop();
+    }
+
+    /// <summary>The presets offered for "Black when away", in minutes.</summary>
+    /// <remarks>
+    /// Seconds as well as minutes since 0.7, asked for by a user who wanted it gone as soon as
+    /// they looked away. The file has always stored fractional minutes, so nothing about it changes.
+    /// </remarks>
+    internal static readonly double[] AwayPresets = [0.0, 0.25, 0.5, 1.0, 5.0, 10.0, 30.0];
+
+    /// <summary>
+    /// The presets, plus whatever the file holds if it is none of those, so a hand-edited delay is
+    /// shown as it is rather than overwritten by the first change made here.
     /// </summary>
     private void PopulateAway()
     {
-        AwayBox.Items.Add(new Choice("Off", 0.0));
-        AwayBox.Items.Add(new Choice("After 5 minutes", 5.0));
-        AwayBox.Items.Add(new Choice("After 10 minutes", 10.0));
-        AwayBox.Items.Add(new Choice("After 30 minutes", 30.0));
+        foreach (double minutes in AwayPresets)
+            AwayBox.Items.Add(new Choice(AwayLabel(minutes), minutes));
 
         if (IndexOf(AwayBox, _working.AwayAfterMinutes) < 0)
-            AwayBox.Items.Add(new Choice(
-                string.Create(CultureInfo.InvariantCulture, $"After {_working.AwayAfterMinutes:0.##} minutes"),
-                _working.AwayAfterMinutes));
+            AwayBox.Items.Add(new Choice(AwayLabel(_working.AwayAfterMinutes), _working.AwayAfterMinutes));
 
         AwayBox.SelectedIndex = Math.Max(0, IndexOf(AwayBox, _working.AwayAfterMinutes));
+    }
+
+    /// <summary>"Off", "After 30 seconds", "After 1 minute", "After 10 minutes".</summary>
+    /// <remarks>
+    /// Under a minute reads in seconds, rounded to the second, because "After 0.25 minutes" is
+    /// what a hand-edited file used to show and nobody thinks in quarter-minutes.
+    /// </remarks>
+    internal static string AwayLabel(double minutes)
+    {
+        if (minutes <= 0) return "Off";
+
+        if (minutes < 1.0)
+        {
+            long seconds = Math.Max(1, (long)Math.Round(minutes * 60.0));
+            return string.Create(CultureInfo.InvariantCulture, $"After {seconds} {(seconds == 1 ? "second" : "seconds")}");
+        }
+
+        return minutes == 1.0
+            ? "After 1 minute"
+            : string.Create(CultureInfo.InvariantCulture, $"After {minutes:0.##} minutes");
+    }
+
+    private void PopulateClockFormats()
+    {
+        ClockFormatBox.Items.Add(new Choice("Follow Windows", ClockFormat.Windows));
+        ClockFormatBox.Items.Add(new Choice("24-hour (14:05)", ClockFormat.TwentyFourHour));
+        ClockFormatBox.Items.Add(new Choice("12-hour (2:05 PM)", ClockFormat.TwelveHour));
+
+        ClockFormatBox.SelectedIndex = Math.Max(0, IndexOf(ClockFormatBox, _working.ClockFormat));
     }
 
     private void PopulateAlignments()
@@ -330,6 +390,7 @@ internal partial class SettingsWindow : Window
         _working.RestingBrightness = (int)Math.Round(Brightness.Value);
         _working.Motion = MotionBox.IsChecked == true;
         if (AwayBox.SelectedItem is Choice { Value: double away }) _working.AwayAfterMinutes = away;
+        if (ClockFormatBox.SelectedItem is Choice { Value: ClockFormat clockFormat }) _working.ClockFormat = clockFormat;
         _working.Tray = TrayBox.IsChecked == true;
         _working.BarOnEveryMonitor = EveryMonitorBox.IsChecked == true;
         _working.StartWithWindows = StartupBox.IsChecked == true;
