@@ -1979,6 +1979,7 @@ internal partial class BarWindow : AppBarWindow
         // Raised whether or not this call changed the factor: with a bar on every monitor the
         // first bar to apply it changes the shared value, and every other bar still has to redraw.
         RestingBrightness.Factor = settings.RestingBrightness / 100.0;
+        RestingBrightness.Tint = Rendering.Themes.UmbraTheme.TintOf(settings.Theme);
         OnPropertyChanged(nameof(DrawnTierLevel));
     }
 
@@ -2180,6 +2181,9 @@ internal partial class BarWindow : AppBarWindow
     }
 
     /// <summary>The Windows logo blue, capped to the Tier 2 luminance ceiling (§3.2).</summary>
+    /// <remarks>
+    /// Not the theme's accent: it says Windows' own Start menu is open, so it is Windows' colour.
+    /// </remarks>
     public System.Windows.Media.Brush StartAccentBrush { get; } = CreateStartAccent();
 
     /// <summary>

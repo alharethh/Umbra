@@ -40,7 +40,7 @@ internal sealed class IconPipeline
     /// memory per change, which is native, so the managed heap stayed small while the process
     /// grew. An entry here goes when nothing draws its source any more.
     /// </summary>
-    private readonly ConditionalWeakTable<ImageSource, Dictionary<int, BitmapSource>> _cache = [];
+    private readonly ConditionalWeakTable<ImageSource, Dictionary<(int Look, int Level), BitmapSource>> _cache = [];
 
     /// <summary>Renders <paramref name="source"/> as it should appear at a continuous tier level.</summary>
     public BitmapSource? Render(ImageSource? source, BarElement element, double level)
@@ -49,12 +49,13 @@ internal sealed class IconPipeline
 
         int quantised = (int)Math.Round(Math.Clamp(level, 0.0, 2.0) / 2.0 * LevelSteps);
         int percent = RestingBrightness.Percent;
-        int key = percent * 1000 + quantised;
+        (int, int) key = (RestingBrightness.CacheKey, quantised);
 
-        Dictionary<int, BitmapSource> levels = _cache.GetOrCreateValue(source);
+        Dictionary<(int Look, int Level), BitmapSource> levels = _cache.GetOrCreateValue(source);
         if (levels.TryGetValue(key, out BitmapSource? cached)) return cached;
 
-        BitmapSource rendered = Build(bitmap, element, quantised / (double)LevelSteps * 2.0, percent / 100.0);
+        BitmapSource rendered = Build(bitmap, element, quantised / (double)LevelSteps * 2.0, percent / 100.0,
+                                      RestingBrightness.Tint);
         levels[key] = rendered;
         return rendered;
     }
@@ -68,7 +69,8 @@ internal sealed class IconPipeline
         if (source is BitmapSource bitmap) IconDiagnostics.Report(title, ToIconBitmap(bitmap));
     }
 
-    private static BitmapSource Build(BitmapSource source, BarElement element, double level, double restingBrightness)
+    private static BitmapSource Build(BitmapSource source, BarElement element, double level, double restingBrightness,
+                                      RestingTint tint)
     {
         IconBitmap art = ToIconBitmap(source);
 
@@ -77,6 +79,10 @@ internal sealed class IconPipeline
         // The monochrome layer, normalised so its P90 lands on the tier's target luminance.
         double target = Srgb.RelativeLuminance(appearance.Monochrome);
         IconBitmap result = IconNormalizer.Prepare(art, target, monochrome: true);
+
+        // The theme's hue. The monochrome layer is grey, so the tint holds its luminance and the
+        // P90 the normaliser just landed (RestingTint).
+        if (!tint.IsNone) result = Tinted(result, tint);
 
         if (appearance.ChromaBlend > 0.0)
         {
@@ -87,6 +93,21 @@ internal sealed class IconPipeline
         BitmapSource output = ToBitmapSource(result);
         output.Freeze();
         return output;
+    }
+
+    private static IconBitmap Tinted(IconBitmap from, RestingTint tint)
+    {
+        IconBitmap result = new(from.Width, from.Height);
+        Span<Rgba> a = from.Pixels;
+        Span<Rgba> output = result.Pixels;
+
+        for (int i = 0; i < a.Length; i++)
+        {
+            Rgb tinted = tint.Apply(a[i].Rgb);
+            output[i] = new Rgba(tinted.R, tinted.G, tinted.B, a[i].A);
+        }
+
+        return result;
     }
 
     private static IconBitmap BlendInLinearLight(IconBitmap from, IconBitmap to, double t)

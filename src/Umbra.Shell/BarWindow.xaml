@@ -1116,10 +1116,10 @@
                StaysOpen="True"
                PopupAnimation="None">
 
-            <Border Background="#F21C1C18"
+            <Border Background="{DynamicResource Umbra.MenuSurface}"
                     ToolTipService.InitialShowDelay="2400"
                     ToolTipService.BetweenShowDelay="0"
-                    BorderBrush="#FF3A3A33"
+                    BorderBrush="{DynamicResource Umbra.Border}"
                     BorderThickness="1"
                     CornerRadius="8"
                     Padding="6"

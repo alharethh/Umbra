@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using ManagedShell.AppBar;
 using Umbra.Core.Layout;
 using Umbra.Shell.Diagnostics;
+using Umbra.Shell.Rendering.Themes;
 
 namespace Umbra.Shell.Settings;
 
@@ -50,6 +51,8 @@ internal partial class SettingsWindow : Window
         _applyLive = applyLive;
         _restart = restart;
 
+        // Before the XAML loads, so its theme references resolve with no application (tests).
+        Rendering.Themes.ThemeResources.EnsureFor(this);
         InitializeComponent();
 
         // Taller than some screens' work areas; the settings scroll and the footer stays put.
@@ -64,6 +67,7 @@ internal partial class SettingsWindow : Window
         PopulateClockFormats();
         PopulateMonitors();
         PopulateHover();
+        PopulateThemes();
 
         IconSize.Value = _working.DormantIconSize;
         Brightness.Value = _working.RestingBrightness;
@@ -101,79 +105,189 @@ internal partial class SettingsWindow : Window
         TrayBox.Checked += (_, _) => Commit();
         TrayBox.Unchecked += (_, _) => Commit();
 
-        AccentBox.SelectionChanged += (_, _) => OnAccentChosen();
         AppHoverBox.SelectionChanged += (_, _) => Commit();
+        ThemeList.SelectionChanged += (_, _) => OnThemeChosen();
 
         // On every keystroke, but only acted on once the text is a colour — see ColourFrom. A
         // half-typed "#53E" is not an error to report, it is someone still typing.
-        AccentHex.TextChanged += (_, _) => Commit();
         AppHoverHex.TextChanged += (_, _) => Commit();
+        foreach (TextBox box in ThemeHexBoxes) box.TextChanged += (_, _) => Commit();
     }
 
-    /// <summary>
-    /// The accent presets, and the row's two hover treatments.
-    /// </summary>
+    /// <summary>The row's two hover treatments and the chip's colour.</summary>
     /// <remarks>
-    /// Presets rather than a colour wheel, with a hex field beside them for anything else. A full
-    /// picker is a lot of window for a choice most people make once, and the hex field is what
-    /// makes the setting genuinely open rather than a list of six opinions.
+    /// The hover accent used to have its own preset list here. It is the theme's bar accent now,
+    /// on the Themes page, where the themes are the presets.
     /// </remarks>
     private void PopulateHover()
     {
-        AccentBox.Items.Add(new Choice("Cyan", UmbraSettings.DefaultHoverAccent));
-        AccentBox.Items.Add(new Choice("Windows blue", "#4CC2FF"));
-        AccentBox.Items.Add(new Choice("Violet", "#B69CFF"));
-        AccentBox.Items.Add(new Choice("Green", "#6BE39A"));
-        AccentBox.Items.Add(new Choice("Amber", "#FFC24C"));
-        AccentBox.Items.Add(new Choice("Rose", "#FF8FA8"));
-        AccentBox.Items.Add(new Choice("White", "#FFFFFF"));
-
-        AccentBox.SelectedIndex = IndexOf(AccentBox, _working.HoverAccent);
-        AccentHex.Text = _working.HoverAccent;
-
         AppHoverBox.Items.Add(new Choice("Plain chip", AppIconHover.Chip));
         AppHoverBox.Items.Add(new Choice("Holographic pane", AppIconHover.Holographic));
         AppHoverBox.SelectedIndex = IndexOf(AppHoverBox, _working.AppIconHover);
 
         AppHoverHex.Text = _working.AppIconHoverColour;
+    }
 
+    /// <summary>The five theme colours' text boxes, in <see cref="ThemeColours"/> order.</summary>
+    private TextBox[] ThemeHexBoxes => [BarAccentHex, BarTintHex, WindowBackgroundHex, WindowTextHex, WindowAccentHex];
+
+    /// <summary>True while a chosen theme is being copied into the boxes, so that is one change, not five.</summary>
+    private bool _applyingTheme;
+
+    /// <summary>True while the list is being moved to follow the boxes, so that is not a choice.</summary>
+    private bool _followingColours;
+
+    /// <summary>
+    /// The theme tiles, and the five colours in their boxes.
+    /// </summary>
+    /// <remarks>
+    /// <b>The boxes are the truth and the list follows them</b>, as the hover colour's presets
+    /// always did: choosing a theme fills the boxes, and a theme is shown selected only while the
+    /// boxes hold exactly its colours. Editing one makes it Custom, and says so.
+    /// </remarks>
+    private void PopulateThemes()
+    {
+        foreach (ThemePreset preset in UmbraTheme.Presets)
+        {
+            ListBoxItem item = new() { Content = ThemeTile(preset), Tag = preset, ToolTip = preset.Name };
+            System.Windows.Automation.AutomationProperties.SetName(item, preset.Name);
+            ThemeList.Items.Add(item);
+        }
+
+        ShowColours(_working.Theme);
         UpdateSwatches();
     }
 
     /// <summary>
-    /// Copies a chosen preset into the hex field, which is what the setting is actually read from.
+    /// A small picture of a theme: its window background with its name and accent, over a strip of
+    /// black bar carrying three resting icons in its tint and one hover dot in its bar accent.
     /// </summary>
-    /// <remarks>
-    /// One source of truth: the field. Reading the setting from whichever of the two was touched
-    /// last would make the pair disagree the moment someone types a colour that happens to be a
-    /// preset, and the preset list would then be lying about the current value.
-    /// </remarks>
-    private void OnAccentChosen()
+    private static FrameworkElement ThemeTile(ThemePreset preset)
     {
-        if (!_loaded) return;
-        if (AccentBox.SelectedItem is not Choice { Value: string hex }) return;
-        if (string.Equals(hex, AccentHex.Text.Trim(), StringComparison.OrdinalIgnoreCase)) return;
+        static System.Windows.Media.SolidColorBrush Brush(Umbra.Core.Color.Rgb c)
+        {
+            System.Windows.Media.SolidColorBrush b = new(System.Windows.Media.Color.FromRgb(c.R, c.G, c.B));
+            b.Freeze();
+            return b;
+        }
 
-        AccentHex.Text = hex;
+        WindowPalette palette = UmbraTheme.Palette(preset.Colours);
+        Umbra.Core.Color.RestingTint tint = UmbraTheme.TintOf(preset.Colours);
+
+        // The Tier 2 grey rather than the resting one, so a tile shows its hue at all: #404040 on
+        // a 6 px dot is nearly black. The bar itself draws the tint at whatever grey is current.
+        var resting = Brush(tint.Apply(Umbra.Core.Color.Rgb.FromHex("#808080")));
+        var accent = Brush(Umbra.Core.Color.Srgb.CapLuminance(
+            UmbraTheme.Parse(preset.Colours.BarAccent, Umbra.Core.Color.Rgb.White),
+            Umbra.Core.Tiers.TierPalette.Tier2LuminanceCap));
+
+        StackPanel icons = new()
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0),
+        };
+        for (int i = 0; i < 3; i++)
+            icons.Children.Add(new System.Windows.Shapes.Ellipse { Width = 6, Height = 6, Fill = resting, Margin = new Thickness(0, 0, 6, 0) });
+        icons.Children.Add(new System.Windows.Shapes.Ellipse { Width = 6, Height = 6, Fill = accent });
+
+        Grid face = new() { Width = 84, Height = 54 };
+        face.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        face.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
+
+        StackPanel title = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(7, 8, 4, 0) };
+        title.Children.Add(new Border
+        {
+            Width = 3, Height = 12, CornerRadius = new CornerRadius(1.5),
+            Background = Brush(palette.Accent), Margin = new Thickness(0, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        title.Children.Add(new TextBlock { Text = preset.Name, FontSize = 12, Foreground = Brush(palette.TextStrong) });
+        face.Children.Add(title);
+
+        Border bar = new()
+        {
+            Background = System.Windows.Media.Brushes.Black,
+            CornerRadius = new CornerRadius(0, 0, 5, 5),
+            Child = icons,
+        };
+        Grid.SetRow(bar, 1);
+        face.Children.Add(bar);
+
+        return new Border
+        {
+            Background = Brush(palette.Background),
+            BorderBrush = Brush(palette.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Child = face,
+        };
     }
 
-    /// <summary>Shows each chosen colour beside its control, and keeps the preset list honest.</summary>
-    /// <remarks>
-    /// The preset selection follows the hex field rather than the other way round, so typing a
-    /// colour that is not a preset clears the list instead of leaving it pointing at whatever was
-    /// picked last. A list that names a colour the bar is not using is worse than an empty one.
-    /// Setting the index re-enters through SelectionChanged, which stops at the first comparison
-    /// because the text already is that preset.
-    /// </remarks>
+    /// <summary>Copies a chosen theme into the boxes, then commits once.</summary>
+    private void OnThemeChosen()
+    {
+        if (!_loaded || _followingColours) return;
+        if (ThemeList.SelectedItem is not ListBoxItem { Tag: ThemePreset preset }) return;
+
+        _applyingTheme = true;
+        try { ShowColours(preset.Colours); }
+        finally { _applyingTheme = false; }
+
+        Commit();
+    }
+
+    private void ShowColours(ThemeColours colours)
+    {
+        BarAccentHex.Text = colours.BarAccent;
+        BarTintHex.Text = colours.BarTint;
+        WindowBackgroundHex.Text = colours.WindowBackground;
+        WindowTextHex.Text = colours.WindowText;
+        WindowAccentHex.Text = colours.WindowAccent;
+    }
+
+    /// <summary>The theme the boxes ask for, keeping the last good colour for any box mid-edit.</summary>
+    internal ThemeColours ChosenTheme()
+    {
+        ThemeColours current = _working.Theme;
+        string Pick(TextBox box, string fallback) => ColourFrom(box.Text) is null ? fallback : box.Text.Trim();
+
+        return new ThemeColours(
+            Pick(BarAccentHex, current.BarAccent),
+            Pick(BarTintHex, current.BarTint),
+            Pick(WindowBackgroundHex, current.WindowBackground),
+            Pick(WindowTextHex, current.WindowText),
+            Pick(WindowAccentHex, current.WindowAccent));
+    }
+
+    /// <summary>Shows each chosen colour beside its box, and moves the theme list to match.</summary>
     private void UpdateSwatches()
     {
-        AccentBox.SelectedIndex = IndexOf(AccentBox, AccentHex.Text.Trim());
+        Swatch(AppHoverHex, AppHoverSwatch);
+        Swatch(BarAccentHex, BarAccentSwatch);
+        Swatch(BarTintHex, BarTintSwatch);
+        Swatch(WindowBackgroundHex, WindowBackgroundSwatch);
+        Swatch(WindowTextHex, WindowTextSwatch);
+        Swatch(WindowAccentHex, WindowAccentSwatch);
 
-        if (ColourFrom(AccentHex.Text) is { } accent)
-            AccentSwatch.Background = new System.Windows.Media.SolidColorBrush(accent);
+        ThemePreset? matching = UmbraTheme.Matching(ChosenTheme());
 
-        if (ColourFrom(AppHoverHex.Text) is { } chip)
-            AppHoverSwatch.Background = new System.Windows.Media.SolidColorBrush(chip);
+        _followingColours = true;
+        try
+        {
+            ThemeList.SelectedItem = matching is null
+                ? null
+                : ThemeList.Items.OfType<ListBoxItem>().First(i => ReferenceEquals(i.Tag, matching));
+        }
+        finally { _followingColours = false; }
+
+        ThemeCustomNote.Visibility = matching is null ? Visibility.Visible : Visibility.Hidden;
+    }
+
+    private static void Swatch(TextBox box, Border swatch)
+    {
+        if (ColourFrom(box.Text) is { } colour)
+            swatch.Background = new System.Windows.Media.SolidColorBrush(colour);
     }
 
     /// <summary>
@@ -208,7 +322,7 @@ internal partial class SettingsWindow : Window
     }
 
     /// <summary>The pages, in the order the list on the left names them.</summary>
-    internal IReadOnlyList<FrameworkElement> PageElements => [BarPage, WearPage, ClockPage, HoverPage, TrayPage];
+    internal IReadOnlyList<FrameworkElement> PageElements => [BarPage, WearPage, ClockPage, ThemesPage, HoverPage, TrayPage];
 
     /// <summary>
     /// Shows one page and hides the rest.
@@ -462,7 +576,7 @@ internal partial class SettingsWindow : Window
     /// <summary>Copies the controls into the working settings, saves, and applies what can apply.</summary>
     private void Commit()
     {
-        if (!_loaded) return;
+        if (!_loaded || _applyingTheme) return;
 
         if (EdgeBox.SelectedItem is Choice { Value: BarEdge edge }) _working.Edge = edge;
         if (AlignmentBox.SelectedItem is Choice { Value: Alignment alignment }) _working.Alignment = alignment;
@@ -485,8 +599,8 @@ internal partial class SettingsWindow : Window
 
         // Only when the text is a colour. Half-typed values leave the last good one in place
         // rather than writing something the bar would have to fall back from.
-        if (ColourFrom(AccentHex.Text) is not null) _working.HoverAccent = AccentHex.Text.Trim();
         if (ColourFrom(AppHoverHex.Text) is not null) _working.AppIconHoverColour = AppHoverHex.Text.Trim();
+        _working.Theme = ChosenTheme();
 
         UpdateSwatches();
 

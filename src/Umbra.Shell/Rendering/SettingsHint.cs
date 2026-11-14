@@ -54,20 +54,21 @@ internal sealed class SettingsHint : Window
         Title = "Umbra hint";
         TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
 
-        Content = new Border
+        // The theme's colours, by reference, so a hint up while the theme changes follows it.
+        Themes.ThemeResources.EnsureFor(this);
+        TextBlock text = new() { Text = Message, FontSize = 13 };
+        text.SetResourceReference(TextBlock.ForegroundProperty, Themes.ThemeResources.TextItem);
+
+        Border panel = new()
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x1B, 0x1B, 0x16)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x33)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(14, 9, 14, 9),
-            Child = new TextBlock
-            {
-                Text = Message,
-                FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xD8)),
-            },
+            Child = text,
         };
+        panel.SetResourceReference(Border.BackgroundProperty, Themes.ThemeResources.Surface);
+        panel.SetResourceReference(Border.BorderBrushProperty, Themes.ThemeResources.Border);
+        Content = panel;
 
         MouseDown += (_, _) => Close();
 

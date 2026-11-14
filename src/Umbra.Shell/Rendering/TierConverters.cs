@@ -48,7 +48,7 @@ internal sealed class TierIconConverter : IMultiValueConverter
 /// </remarks>
 internal sealed class TierBrushConverter : IValueConverter
 {
-    private readonly Dictionary<int, SolidColorBrush> _cache = [];
+    private readonly Dictionary<(int Look, int Level), SolidColorBrush> _cache = [];
 
     /// <summary>Which row of the §3.1 table this element follows.</summary>
     public BarElement Element { get; set; } = BarElement.RunningIndicator;
@@ -61,10 +61,13 @@ internal sealed class TierBrushConverter : IValueConverter
         // part of the key: a brush cached at one brightness is the wrong colour at another.
         int quantised = (int)Math.Round(Math.Clamp(level, 0.0, 2.0) * 128);
         int percent = RestingBrightness.Percent;
-        int key = percent * 1000 + quantised;
+        (int, int) key = (RestingBrightness.CacheKey, quantised);
         if (_cache.TryGetValue(key, out SolidColorBrush? cached)) return cached;
 
         Rgb colour = TierPalette.Resolve(Element, quantised / 128.0, percent / 100.0).Monochrome;
+
+        // The theme's hue, at the grey's own luminance. Not the badge: it is an alert.
+        if (Element != BarElement.NotificationBadge) colour = RestingBrightness.Tint.Apply(colour);
         SolidColorBrush brush = new(Color.FromRgb(colour.R, colour.G, colour.B));
         brush.Freeze();
 

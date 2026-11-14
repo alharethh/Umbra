@@ -18,6 +18,8 @@ internal partial class HeatmapWindow : Window
     /// <param name="recording">The dataset the bar is recording into now, asked at each copy or save.</param>
     public HeatmapWindow(WearAccumulator accumulator, Func<WearAccumulator?> recording)
     {
+        // Before the XAML loads, so its theme references resolve with no application (tests).
+        Rendering.Themes.ThemeResources.EnsureFor(this);
         InitializeComponent();
 
         _accumulator = accumulator;

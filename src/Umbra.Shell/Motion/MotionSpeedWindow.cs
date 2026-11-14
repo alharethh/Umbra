@@ -38,6 +38,8 @@ internal partial class MotionSpeedWindow : Window
         _metrics = metrics;
         _setWearSuspended = setWearSuspended;
 
+        // Before the XAML loads, so its theme references resolve with no application (tests).
+        Rendering.Themes.ThemeResources.EnsureFor(this);
         InitializeComponent();
         Update(_motion.TimeScale);
     }

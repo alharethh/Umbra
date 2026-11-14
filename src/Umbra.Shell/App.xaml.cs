@@ -140,6 +140,9 @@ public partial class App : Application
         // against. Settings itself moves on as the settings window saves.
         _launchSettings = Settings.Clone();
 
+        // The theme's window colours, before any window or menu exists to look them up.
+        Rendering.Themes.ThemeResources.ApplyToApplication(Settings.Theme);
+
         // <b>Re-point the sign-in entry if we have moved.</b> The standalone download is commonly
         // run out of the Downloads folder and then put somewhere permanent, which leaves the Run
         // value naming a file that is gone — and Windows drops such an entry without saying so,
@@ -413,6 +416,7 @@ public partial class App : Application
     /// </remarks>
     internal void ApplyLiveSettingsToAll(UmbraSettings settings)
     {
+        Rendering.Themes.ThemeResources.ApplyToApplication(settings.Theme);
         foreach (BarWindow bar in _bars) bar.ApplyLiveSettings(settings);
     }
 
