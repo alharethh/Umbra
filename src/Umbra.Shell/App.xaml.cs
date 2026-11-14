@@ -33,6 +33,7 @@ public partial class App : Application
     private string[] _args = [];
     private SettingsRequest? _settingsRequest;
     private Settings.SettingsWindow? _settingsWindow;
+    private UmbraSettings _launchSettings = new();
 
     /// <summary>
     /// Opens the settings window, or brings the open one to the front.
@@ -54,7 +55,14 @@ public partial class App : Application
 
         // ApplyLiveSettingsToAll: with a bar per monitor, every bar must change, not only the one
         // the window was opened from.
-        _settingsWindow = new Settings.SettingsWindow(Settings, ApplyLiveSettingsToAll, Restart);
+        // Remembering: the window edits a copy, so without handing each saved copy back here the
+        // next window opened this session would start from the values at launch, and its first
+        // change would save them all back over what the user had just set.
+        _settingsWindow = new Settings.SettingsWindow(
+            Settings,
+            SettingsWindow.Remembering(saved => Settings = saved, ApplyLiveSettingsToAll),
+            Restart,
+            running: _launchSettings);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.ShowInFront();
     }
@@ -127,6 +135,10 @@ public partial class App : Application
         // Beside the settings, because the single-file download has no files beside it.
         Shell.LicenceFiles.EnsureWritten(UmbraSettings.DefaultPath);
         ApplyCommandLineOverrides(Settings, e.Args);
+
+        // What this process was built with, which is what a restart-only setting is compared
+        // against. Settings itself moves on as the settings window saves.
+        _launchSettings = Settings.Clone();
 
         // <b>Re-point the sign-in entry if we have moved.</b> The standalone download is commonly
         // run out of the Downloads folder and then put somewhere permanent, which leaves the Run
