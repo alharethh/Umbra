@@ -164,6 +164,7 @@ public partial class App : Application
             bar.ApplyIconSourceSetting(Settings);
             bar.ApplyRestingBrightness(Settings);
             bar.ApplyAwaySetting(Settings);
+            bar.ApplyClockSetting(Settings);
 
             // Any bar closing ends the session. There is no way to close one from the UI, so this
             // only fires on shutdown — and a surviving bar with the others gone would be a worse

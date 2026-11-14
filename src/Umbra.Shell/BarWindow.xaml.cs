@@ -684,6 +684,7 @@ internal partial class BarWindow : AppBarWindow
         ApplyHoverSettings(settings);
         ApplyIconSourceSetting(settings);
         ApplyRestingBrightness(settings);
+        ApplyClockSetting(settings);
 
         ApplyPlacement(settings.Edge, settings.Alignment,
                        PlacementScreen(OwnsItsScreen, Screen, () => ResolveScreen(settings.Monitor)));
@@ -1301,7 +1302,13 @@ internal partial class BarWindow : AppBarWindow
     /// one string, and it does not change with the tier.
     /// </remarks>
     public string ClockAutomationName =>
-        string.IsNullOrEmpty(ClockDate) ? ClockTime : $"{ClockTime}, {ClockDate}";
+        string.IsNullOrEmpty(ClockDate) ? ClockSpoken : $"{ClockSpoken}, {ClockDate}";
+
+    /// <summary>
+    /// The time as a screen reader says it, with AM or PM even on a vertical bar that does not
+    /// draw it. See <see cref="Rendering.ClockText"/>.
+    /// </summary>
+    private string ClockSpoken { get; set; } = string.Empty;
 
     /// <summary>
     /// Seconds appear from Tier 1 upward — that is, only while the pointer is near the bar.
@@ -2447,30 +2454,53 @@ internal partial class BarWindow : AppBarWindow
         }
         else
         {
-            FormattedText widest = new(
-                "00:00:00",
-                CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight,
-                new Typeface(ClockTimeText.FontFamily, ClockTimeText.FontStyle,
-                             ClockTimeText.FontWeight, ClockTimeText.FontStretch),
-                ClockTimeText.FontSize,
-                Brushes.White,
-                VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+            double widest = ClockText.WidestCandidates(ClockIsTwelveHour, CultureInfo.CurrentCulture)
+                .Max(text => new FormattedText(
+                    text,
+                    CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface(ClockTimeText.FontFamily, ClockTimeText.FontStyle,
+                                 ClockTimeText.FontWeight, ClockTimeText.FontStretch),
+                    ClockTimeText.FontSize,
+                    Brushes.White,
+                    pixelsPerDip).Width);
 
             // Rounded up: a fractional shortfall still reflows the row, and a spare pixel costs
             // nothing but layout.
-            ClockMinWidth = Math.Ceiling(widest.Width) + 1;
+            ClockMinWidth = Math.Ceiling(widest) + 1;
         }
 
         if (!ClockMinWidth.Equals(previous)) OnPropertyChanged(nameof(ClockMinWidth));
     }
 
+    private Settings.ClockFormat _clockFormat = Settings.ClockFormat.Windows;
+
+    /// <summary>Whether the clock counts 12 hours, from the setting and Windows' own format.</summary>
+    private bool ClockIsTwelveHour => ClockText.IsTwelveHour(_clockFormat, CultureInfo.CurrentCulture);
+
+    /// <summary>
+    /// The clock's 12 or 24 hours, applied at once: the reserved width is measured again and the
+    /// time redrawn, rather than waiting for the next minute.
+    /// </summary>
+    public void ApplyClockSetting(Settings.UmbraSettings settings)
+    {
+        if (_clockFormat == settings.ClockFormat && !string.IsNullOrEmpty(ClockTime)) return;
+
+        _clockFormat = settings.ClockFormat;
+        ClockTime = string.Empty;
+        if (IsLoaded) MeasureClock();
+        OnClockTick(null, EventArgs.Empty);
+    }
+
     private void OnClockTick(object? sender, EventArgs e)
     {
         DateTime now = DateTime.Now;
-        string time = now.ToString(ShowsSeconds ? "HH:mm:ss" : "HH:mm", CultureInfo.CurrentCulture);
+        bool twelveHour = ClockIsTwelveHour;
+        string time = ClockText.Time(now, twelveHour, ShowsSeconds, IsVertical, CultureInfo.CurrentCulture);
         if (time == ClockTime) return;
 
+        ClockSpoken = ClockText.Spoken(now, twelveHour, CultureInfo.CurrentCulture);
         ClockTime = time;
         ClockDate = IsVertical
             ? now.ToString("d", CultureInfo.CurrentCulture)
