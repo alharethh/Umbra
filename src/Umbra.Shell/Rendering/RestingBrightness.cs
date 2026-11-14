@@ -19,4 +19,30 @@ internal static class RestingBrightness
     /// The factor quantised for cache keys: whole percent, which is what the setting holds.
     /// </summary>
     public static int Percent => (int)Math.Round(Factor * 100);
+
+    /// <summary>
+    /// The theme's hue for the monochrome greys, at their own luminance. Process-wide for the
+    /// same reason as <see cref="Factor"/>.
+    /// </summary>
+    public static Umbra.Core.Color.RestingTint Tint
+    {
+        get => _tint;
+        set
+        {
+            if (value == _tint) return;
+            _tint = value;
+            TintGeneration++;
+        }
+    }
+
+    private static Umbra.Core.Color.RestingTint _tint = Umbra.Core.Color.RestingTint.None;
+
+    /// <summary>
+    /// Bumped whenever <see cref="Tint"/> changes, for cache keys: a bitmap or brush cached under
+    /// one tint is the wrong colour under the next.
+    /// </summary>
+    public static int TintGeneration { get; private set; }
+
+    /// <summary>The look the caches key on: brightness and tint together.</summary>
+    public static int CacheKey => TintGeneration * 1000 + Percent;
 }

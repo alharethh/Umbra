@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using Umbra.Core.Layout;
 using Umbra.Shell.Diagnostics;
+using Umbra.Shell.Rendering.Themes;
 
 namespace Umbra.Shell.Settings;
 
@@ -224,6 +225,38 @@ internal sealed class UmbraSettings
     /// <inheritdoc cref="AppIconHoverColour"/>
     public const string DefaultAppIconHoverColour = "#1F1F1A";
 
+    /// <summary>
+    /// The hue of the bar's resting greys. A grey means none. Drawn at the greys' own luminance,
+    /// so it changes the colour and not the wear (<c>RestingTint</c>).
+    /// </summary>
+    public string BarTint { get; set; } = UmbraTheme.Default.Colours.BarTint;
+
+    /// <summary>Background of Umbra's windows and panels. The bar itself is always black.</summary>
+    public string WindowBackground { get; set; } = UmbraTheme.Default.Colours.WindowBackground;
+
+    /// <summary>Ordinary text in Umbra's windows and panels.</summary>
+    public string WindowText { get; set; } = UmbraTheme.Default.Colours.WindowText;
+
+    /// <summary>The accent in Umbra's windows: the selected page, focus rings, check marks.</summary>
+    public string WindowAccent { get; set; } = UmbraTheme.Default.Colours.WindowAccent;
+
+    /// <summary>
+    /// The theme these settings make up. There is no stored theme name: the colours are the
+    /// truth, and the settings window shows whichever preset they match (<see cref="UmbraTheme"/>).
+    /// </summary>
+    public ThemeColours Theme
+    {
+        get => new(HoverAccent, BarTint, WindowBackground, WindowText, WindowAccent);
+        set
+        {
+            HoverAccent = value.BarAccent;
+            BarTint = value.BarTint;
+            WindowBackground = value.WindowBackground;
+            WindowText = value.WindowText;
+            WindowAccent = value.WindowAccent;
+        }
+    }
+
     /// <summary>12 or 24 hours on the clock.</summary>
     /// <remarks>
     /// Follows Windows by default, as the Windows clock does. Before this setting the clock was
@@ -376,6 +409,26 @@ internal sealed class UmbraSettings
                 else Unusable(key, value);
                 break;
 
+            case "bartint":
+                if (IsColour(value)) BarTint = value;
+                else Unusable(key, value);
+                break;
+
+            case "windowbackground":
+                if (IsColour(value)) WindowBackground = value;
+                else Unusable(key, value);
+                break;
+
+            case "windowtext":
+                if (IsColour(value)) WindowText = value;
+                else Unusable(key, value);
+                break;
+
+            case "windowaccent":
+                if (IsColour(value)) WindowAccent = value;
+                else Unusable(key, value);
+                break;
+
             case "clockformat":
                 if (TryParseName(value, out ClockFormat clockFormat)) ClockFormat = clockFormat;
                 else Unusable(key, value);
@@ -516,6 +569,16 @@ internal sealed class UmbraSettings
         "# windows | twentyFourHour | twelveHour -- the clock's hours. windows follows the",
         "# short time format in Windows' own region settings.",
         $"clockFormat = {ClockFormat}",
+        "",
+        "# The rest of the theme; hoverAccent above is its bar accent. Settings -> Themes picks",
+        "# all five at once. The bar's background is black whatever these say.",
+        "# barTint: the hue of the resting icons, clock and Start, at their own brightness, so",
+        "# it changes the colour and not the wear. A grey such as #808080 means none.",
+        $"barTint = {BarTint}",
+        "# Umbra's windows and panels: background, text, and accent.",
+        $"windowBackground = {WindowBackground}",
+        $"windowText = {WindowText}",
+        $"windowAccent = {WindowAccent}",
     ];
 
     /// <summary>A copy, so a settings window can be cancelled without having mutated anything.</summary>
@@ -537,6 +600,10 @@ internal sealed class UmbraSettings
         AppIconHover = AppIconHover,
         AppIconHoverColour = AppIconHoverColour,
         ClockFormat = ClockFormat,
+        BarTint = BarTint,
+        WindowBackground = WindowBackground,
+        WindowText = WindowText,
+        WindowAccent = WindowAccent,
     };
 
     /// <summary>

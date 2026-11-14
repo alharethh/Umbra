@@ -5,27 +5,27 @@
         Title="Umbra — settings"
         Width="640" SizeToContent="Height"
         ResizeMode="NoResize"
-        Background="#FF14140F"
-        Foreground="#FFB6B6AD"
+        Background="{DynamicResource Umbra.Background}"
+        Foreground="{DynamicResource Umbra.Text}"
         TextOptions.TextRenderingMode="Grayscale"
         WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
         <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#FFB6B6AD" />
+            <Setter Property="Foreground" Value="{DynamicResource Umbra.Text}" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
         <Style x:Key="Hint" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#FF8A8A82" />
+            <Setter Property="Foreground" Value="{DynamicResource Umbra.TextHint}" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="Margin" Value="0,2,0,10" />
         </Style>
         <Style TargetType="Label">
-            <Setter Property="Foreground" Value="#FFB6B6AD" />
+            <Setter Property="Foreground" Value="{DynamicResource Umbra.Text}" />
         </Style>
         <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="#FFB6B6AD" />
+            <Setter Property="Foreground" Value="{DynamicResource Umbra.Text}" />
         </Style>
 
         <!--
@@ -36,7 +36,7 @@
             screenshotting the window rather than by assuming.
         -->
         <Style TargetType="ComboBoxItem">
-            <Setter Property="Foreground" Value="#FFE0E0D8" />
+            <Setter Property="Foreground" Value="{DynamicResource Umbra.TextItem}" />
             <Setter Property="Padding" Value="7,4" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -46,7 +46,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#FF33332B" />
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Umbra.Highlight}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -55,7 +55,7 @@
         </Style>
 
         <Style TargetType="ComboBox">
-            <Setter Property="Foreground" Value="#FFE0E0D8" />
+            <Setter Property="Foreground" Value="{DynamicResource Umbra.TextItem}" />
             <Setter Property="Height" Value="26" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -68,18 +68,18 @@
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
                                         <Border x:Name="Face"
-                                                Background="#FF23231E"
-                                                BorderBrush="#FF3A3A33"
+                                                Background="{DynamicResource Umbra.Control}"
+                                                BorderBrush="{DynamicResource Umbra.Border}"
                                                 BorderThickness="1"
                                                 CornerRadius="2">
                                             <Path HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                  Margin="0,0,9,0" Fill="#FF9A9A90"
+                                                  Margin="0,0,9,0" Fill="{DynamicResource Umbra.Glyph}"
                                                   Data="M 0 0 L 7 0 L 3.5 4.5 Z" />
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Face" Property="Background" Value="#FF2C2C25" />
-                                                <Setter TargetName="Face" Property="BorderBrush" Value="#FF4A4A42" />
+                                                <Setter TargetName="Face" Property="Background" Value="{DynamicResource Umbra.ControlHover}" />
+                                                <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource Umbra.BorderHover}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -100,8 +100,8 @@
                                    AllowsTransparency="True"
                                    PopupAnimation="None"
                                    Focusable="False">
-                                <Border Background="#FF1B1B16"
-                                        BorderBrush="#FF3A3A33"
+                                <Border Background="{DynamicResource Umbra.Surface}"
+                                        BorderBrush="{DynamicResource Umbra.Border}"
                                         BorderThickness="1"
                                         MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
                                     <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
@@ -121,7 +121,7 @@
             accent bar is the logo's cyan, on the one item that is selected.
         -->
         <Style x:Key="NavItem" TargetType="ListBoxItem">
-            <Setter Property="Foreground" Value="#FFB6B6AD" />
+            <Setter Property="Foreground" Value="{DynamicResource Umbra.Text}" />
             <Setter Property="Padding" Value="10,7" />
             <Setter Property="Margin" Value="0,0,0,2" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -134,18 +134,18 @@
                                 <ContentPresenter />
                             </Border>
                             <Border x:Name="Marker" Width="3" Height="16" CornerRadius="1.5"
-                                    HorizontalAlignment="Left" Background="#FFB0F7FB" Visibility="Hidden" />
+                                    HorizontalAlignment="Left" Background="{DynamicResource Umbra.Accent}" Visibility="Hidden" />
                             <Border x:Name="Focus" CornerRadius="4" BorderThickness="1"
-                                    BorderBrush="#FFB0F7FB" Visibility="Hidden" />
+                                    BorderBrush="{DynamicResource Umbra.Accent}" Visibility="Hidden" />
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#FF1E1E19" />
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Umbra.NavHover}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#FF26261F" />
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Umbra.NavSelected}" />
                                 <Setter TargetName="Marker" Property="Visibility" Value="Visible" />
-                                <Setter Property="Foreground" Value="#FFE8E4DA" />
+                                <Setter Property="Foreground" Value="{DynamicResource Umbra.TextStrong}" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
                                 <Setter TargetName="Focus" Property="Visibility" Value="Visible" />
@@ -166,9 +166,58 @@
         </Style>
 
         <Style x:Key="PageTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#FFE8E4DA" />
+            <Setter Property="Foreground" Value="{DynamicResource Umbra.TextStrong}" />
             <Setter Property="FontSize" Value="17" />
             <Setter Property="Margin" Value="0,0,0,14" />
+        </Style>
+
+        <!-- A colour as text, and the colour itself beside it. -->
+        <Style x:Key="HexBox" TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource Umbra.Surface}" />
+            <Setter Property="Foreground" Value="{DynamicResource Umbra.TextStrong}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Umbra.Border}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource Umbra.TextStrong}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="FontFamily" Value="Consolas" />
+        </Style>
+        <Style x:Key="Swatch" TargetType="Border">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Umbra.Border}" />
+        </Style>
+
+        <!--
+            A theme in the list: a small picture of it, built in code (SettingsWindow.ThemeTile),
+            with the selection drawn as a ring in the current window accent.
+        -->
+        <Style x:Key="ThemeTile" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="3" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Ring" BorderThickness="2" CornerRadius="8" Padding="1"
+                                BorderBrush="Transparent">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Ring" Property="BorderBrush" Value="{DynamicResource Umbra.BorderHover}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Ring" Property="BorderBrush" Value="{DynamicResource Umbra.TextStrong}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Ring" Property="BorderBrush" Value="{DynamicResource Umbra.Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- One row of a page: a label column of fixed width, then the control. -->
@@ -202,7 +251,7 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" BorderBrush="#FF2E2E28" BorderThickness="0,0,1,0">
+            <Border Grid.Column="0" BorderBrush="{DynamicResource Umbra.Divider}" BorderThickness="0,0,1,0">
                 <ListBox x:Name="Nav" Margin="8,14,8,8"
                          Background="Transparent" BorderThickness="0"
                          ItemContainerStyle="{StaticResource NavItem}"
@@ -224,6 +273,12 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource NavGlyph}" Text="&#xE823;" />
                             <TextBlock Text="Clock" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem AutomationProperties.Name="Themes">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource NavGlyph}" Text="&#xE790;" />
+                            <TextBlock Text="Themes" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
                         </StackPanel>
                     </ListBoxItem>
                     <ListBoxItem AutomationProperties.Name="Hover">
@@ -268,7 +323,7 @@
                                             <Thumb>
                                                 <Thumb.Template>
                                                     <ControlTemplate TargetType="Thumb">
-                                                        <Border Background="#FF46463E" CornerRadius="3" Margin="3,2" />
+                                                        <Border Background="{DynamicResource Umbra.Thumb}" CornerRadius="3" Margin="3,2" />
                                                     </ControlTemplate>
                                                 </Thumb.Template>
                                             </Thumb>
@@ -377,10 +432,7 @@
                             <ComboBox Grid.Column="1" x:Name="AwayBox" AutomationProperties.Name="Black when away" />
                             <StackPanel Grid.Column="2" x:Name="AwayCustom" Orientation="Horizontal"
                                         Margin="8,0,0,0" Visibility="Collapsed">
-                                <TextBox x:Name="AwaySeconds" Width="56"
-                                         Background="#FF1B1B18" Foreground="#FFE8E4DA"
-                                         BorderBrush="#FF3A3A33" BorderThickness="1"
-                                         Padding="6,3" FontFamily="Consolas" TextAlignment="Right"
+                                <TextBox x:Name="AwaySeconds" Width="56" Style="{StaticResource HexBox}" TextAlignment="Right"
                                          AutomationProperties.Name="Black when away after this many seconds" />
                                 <TextBlock Text="seconds" Margin="6,0,0,0" VerticalAlignment="Center" />
                             </StackPanel>
@@ -405,38 +457,87 @@
                                    Text="Follow Windows uses the format in Windows' region settings. On a left or right bar, a 12-hour clock leaves out AM and PM to fit." />
                     </StackPanel>
 
-                    <!-- Hover -->
-                    <StackPanel x:Name="HoverPage" Visibility="Hidden">
-                        <TextBlock Style="{StaticResource PageTitle}" Text="Hover" />
+                    <!-- Themes -->
+                    <StackPanel x:Name="ThemesPage" Visibility="Hidden">
+                        <TextBlock Style="{StaticResource PageTitle}" Text="Themes" />
 
-                        <Grid Style="{StaticResource Row}">
+                        <ListBox x:Name="ThemeList" Margin="-4,0,-4,2"
+                                 Background="Transparent" BorderThickness="0"
+                                 ItemContainerStyle="{StaticResource ThemeTile}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 AutomationProperties.Name="Themes">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                        <TextBlock x:Name="ThemeCustomNote" Style="{StaticResource Hint}" Margin="0,0,0,10"
+                                   Text="Custom: these colours are not one of the themes above." />
+
+                        <Grid Style="{StaticResource Row}" Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="140" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="34" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Accent colour" />
-                            <ComboBox Grid.Column="1" x:Name="AccentBox" AutomationProperties.Name="Accent colour" />
-                            <Border Grid.Column="2" x:Name="AccentSwatch"
-                                    Width="26" Height="18" HorizontalAlignment="Right"
-                                    CornerRadius="3" BorderThickness="1" BorderBrush="#FF3A3A33" />
+                            <TextBlock Text="Bar accent" />
+                            <TextBox Grid.Column="1" x:Name="BarAccentHex" Style="{StaticResource HexBox}"
+                                     AutomationProperties.Name="Bar accent hex value" />
+                            <Border Grid.Column="2" x:Name="BarAccentSwatch" Style="{StaticResource Swatch}" />
                         </Grid>
-
+                        <Grid Style="{StaticResource Row}" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="34" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Resting tint" />
+                            <TextBox Grid.Column="1" x:Name="BarTintHex" Style="{StaticResource HexBox}"
+                                     AutomationProperties.Name="Resting tint hex value" />
+                            <Border Grid.Column="2" x:Name="BarTintSwatch" Style="{StaticResource Swatch}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="34" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Window background" />
+                            <TextBox Grid.Column="1" x:Name="WindowBackgroundHex" Style="{StaticResource HexBox}"
+                                     AutomationProperties.Name="Window background hex value" />
+                            <Border Grid.Column="2" x:Name="WindowBackgroundSwatch" Style="{StaticResource Swatch}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="34" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Window text" />
+                            <TextBox Grid.Column="1" x:Name="WindowTextHex" Style="{StaticResource HexBox}"
+                                     AutomationProperties.Name="Window text hex value" />
+                            <Border Grid.Column="2" x:Name="WindowTextSwatch" Style="{StaticResource Swatch}" />
+                        </Grid>
                         <Grid Style="{StaticResource Row}" Margin="0,0,0,2">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="140" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="34" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Or a hex value" />
-                            <TextBox Grid.Column="1" x:Name="AccentHex"
-                                     Background="#FF1B1B18" Foreground="#FFE8E4DA"
-                                     BorderBrush="#FF3A3A33" BorderThickness="1"
-                                     Padding="6,3" FontFamily="Consolas"
-                                     AutomationProperties.Name="Accent colour hex value" />
+                            <TextBlock Text="Window accent" />
+                            <TextBox Grid.Column="1" x:Name="WindowAccentHex" Style="{StaticResource HexBox}"
+                                     AutomationProperties.Name="Window accent hex value" />
+                            <Border Grid.Column="2" x:Name="WindowAccentSwatch" Style="{StaticResource Swatch}" />
                         </Grid>
-                        <TextBlock Style="{StaticResource Hint}" Margin="140,2,0,14"
-                                   Text="For the notification area, the clock and Start. Capped to the brightest a hover may be, so this picks the hue, not the amount of light." />
+                        <TextBlock Style="{StaticResource Hint}" Margin="140,2,0,10"
+                                   Text="The bar stays black in every theme. Its accent is capped to the brightest a hover may be, and the tint keeps the resting icons at their own brightness, so no theme adds wear. A grey tint means none." />
+                    </StackPanel>
+
+                    <!-- Hover -->
+                    <StackPanel x:Name="HoverPage" Visibility="Hidden">
+                        <TextBlock Style="{StaticResource PageTitle}" Text="Hover" />
+
 
                         <Grid Style="{StaticResource Row}">
                             <Grid.ColumnDefinitions>
@@ -455,17 +556,12 @@
                                 <ColumnDefinition Width="34" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Chip colour" />
-                            <TextBox Grid.Column="1" x:Name="AppHoverHex"
-                                     Background="#FF1B1B18" Foreground="#FFE8E4DA"
-                                     BorderBrush="#FF3A3A33" BorderThickness="1"
-                                     Padding="6,3" FontFamily="Consolas"
+                            <TextBox Grid.Column="1" x:Name="AppHoverHex" Style="{StaticResource HexBox}"
                                      AutomationProperties.Name="Chip colour hex value" />
-                            <Border Grid.Column="2" x:Name="AppHoverSwatch"
-                                    Width="26" Height="18" HorizontalAlignment="Right"
-                                    CornerRadius="3" BorderThickness="1" BorderBrush="#FF3A3A33" />
+                            <Border Grid.Column="2" x:Name="AppHoverSwatch" Style="{StaticResource Swatch}" />
                         </Grid>
                         <TextBlock Style="{StaticResource Hint}" Margin="140,2,0,10"
-                                   Text="The plain chip throws far less light than the holographic pane. Both show only while you point at the bar." />
+                                   Text="The plain chip throws far less light than the holographic pane. Both show only while you point at the bar. The accent for the notification area, the clock and Start is on the Themes page." />
                     </StackPanel>
 
                     <!-- Notification area -->
@@ -482,11 +578,11 @@
             </ScrollViewer>
         </Grid>
 
-        <Border Grid.Row="1" BorderBrush="#FF2E2E28" BorderThickness="0,1,0,0">
+        <Border Grid.Row="1" BorderBrush="{DynamicResource Umbra.Divider}" BorderThickness="0,1,0,0">
             <StackPanel Margin="18,12,18,14">
                 <Grid>
                     <TextBlock x:Name="RestartNote" HorizontalAlignment="Left"
-                               FontSize="11" Foreground="#FFC8B48A" TextWrapping="Wrap" MaxWidth="360" />
+                               FontSize="11" Foreground="{DynamicResource Umbra.Warning}" TextWrapping="Wrap" MaxWidth="360" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Content="Restart Umbra" x:Name="RestartButton" Padding="12,5" Margin="0,0,8,0" Click="OnRestartClick" />
                         <Button Content="Close" x:Name="CloseButton" Padding="16,5" IsCancel="True" Click="OnCloseClick" />
@@ -501,7 +597,7 @@
                 <TextBlock Style="{StaticResource Hint}" Margin="0,12,0,0">
                     <Run Text="To go back to the Windows taskbar, right-click the bar → Exit Umbra. To remove Umbra completely, see" />
                     <Hyperlink Click="OnRemovalHelpClick"
-                               Foreground="#FFB6B6AD"><Run Text="Getting your Windows taskbar back" /></Hyperlink>
+                               Foreground="{DynamicResource Umbra.Text}"><Run Text="Getting your Windows taskbar back" /></Hyperlink>
                     <Run Text="on the front page." />
                 </TextBlock>
             </StackPanel>

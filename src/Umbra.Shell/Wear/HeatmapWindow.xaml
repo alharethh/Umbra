@@ -4,8 +4,8 @@
         x:ClassModifier="internal"
         Title="Umbra — wear heatmap"
         Width="1100" Height="460"
-        Background="#FF14140F"
-        Foreground="#FFB6B6AD"
+        Background="{DynamicResource Umbra.Background}"
+        Foreground="{DynamicResource Umbra.Text}"
         TextOptions.TextRenderingMode="Grayscale"
         WindowStartupLocation="CenterScreen">
 
@@ -27,7 +27,7 @@
             keeps a single hot pixel visible instead of averaging it into its neighbours. This is a
             diagnostic, not a photograph.
         -->
-        <Border Grid.Row="1" BorderBrush="#FF2E2E28" BorderThickness="1" Background="Black">
+        <Border Grid.Row="1" BorderBrush="{DynamicResource Umbra.Divider}" BorderThickness="1" Background="Black">
             <Image x:Name="Heatmap"
                    Stretch="Uniform"
                    RenderOptions.BitmapScalingMode="NearestNeighbor" />

@@ -340,7 +340,7 @@
 
                 It drifts with the glyph, through its own TranslateTransform fed from the content
                 offset. Its hover is the style's own, so the button no longer carries storyboards
-                of its own; what stays the button's is the press animation and the Windows blue it
+                of its own; what stays the button's is the press animation and the accent colour it
                 takes while the menu is open, which happens after this and over the top of it.
             -->
             <Control x:Name="StartChip"
@@ -1116,10 +1116,10 @@
                StaysOpen="True"
                PopupAnimation="None">
 
-            <Border Background="#F21C1C18"
+            <Border Background="{DynamicResource Umbra.MenuSurface}"
                     ToolTipService.InitialShowDelay="2400"
                     ToolTipService.BetweenShowDelay="0"
-                    BorderBrush="#FF3A3A33"
+                    BorderBrush="{DynamicResource Umbra.Border}"
                     BorderThickness="1"
                     CornerRadius="8"
                     Padding="6"

@@ -5,8 +5,8 @@
         Title="Umbra — motion speed"
         Width="560" SizeToContent="Height"
         ResizeMode="NoResize"
-        Background="#FF14140F"
-        Foreground="#FFB6B6AD"
+        Background="{DynamicResource Umbra.Background}"
+        Foreground="{DynamicResource Umbra.Text}"
         TextOptions.TextRenderingMode="Grayscale"
         WindowStartupLocation="CenterScreen">
 

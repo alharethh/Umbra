@@ -14,18 +14,16 @@
         all live inside templates that Setters cannot reach.
     -->
 
-    <SolidColorBrush x:Key="MenuSurface"    Color="#F21C1C18" />
-    <SolidColorBrush x:Key="MenuBorder"     Color="#FF3A3A33" />
-    <SolidColorBrush x:Key="MenuText"       Color="#FFE2E2DA" />
-    <SolidColorBrush x:Key="MenuTextDim"    Color="#FF6E6E66" />
-    <SolidColorBrush x:Key="MenuHighlight"  Color="#FF33332B" />
-    <SolidColorBrush x:Key="MenuSeparator"  Color="#FF34342D" />
-    <SolidColorBrush x:Key="MenuAccent"     Color="#FF4CC2FF" />
+    <!--
+        The colours are the theme's (Rendering/Themes/ThemeResources.cs), held in application
+        resources and referenced dynamically, so a theme change repaints a menu that is already
+        open. Application resources are the one place a context menu's lookup always reaches.
+    -->
 
     <Style TargetType="Separator" x:Key="MenuSeparatorStyle">
         <Setter Property="Height" Value="1" />
         <Setter Property="Margin" Value="14,6,14,6" />
-        <Setter Property="Background" Value="{StaticResource MenuSeparator}" />
+        <Setter Property="Background" Value="{DynamicResource Umbra.Divider}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Separator">
@@ -41,7 +39,7 @@
         and the width of the icon gutter, neither of which a Setter on the stock template can reach.
     -->
     <Style TargetType="MenuItem" x:Key="DarkMenuItem">
-        <Setter Property="Foreground" Value="{StaticResource MenuText}" />
+        <Setter Property="Foreground" Value="{DynamicResource Umbra.TextItem}" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Height" Value="36" />
         <Setter Property="Template">
@@ -67,7 +65,7 @@
                                   Grid.Column="0"
                                   Visibility="Collapsed"
                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                  Stroke="{StaticResource MenuAccent}"
+                                  Stroke="{DynamicResource Umbra.Accent}"
                                   StrokeThickness="1.6"
                                   StrokeStartLineCap="Round"
                                   StrokeEndLineCap="Round"
@@ -92,7 +90,7 @@
 
                             <TextBlock Grid.Column="2"
                                        Text="{TemplateBinding InputGestureText}"
-                                       Foreground="{StaticResource MenuTextDim}"
+                                       Foreground="{DynamicResource Umbra.TextDim}"
                                        VerticalAlignment="Center"
                                        Margin="0,0,12,0" />
                         </Grid>
@@ -100,13 +98,13 @@
 
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsHighlighted" Value="True">
-                            <Setter TargetName="Chrome" Property="Background" Value="{StaticResource MenuHighlight}" />
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Umbra.Highlight}" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Check" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Foreground" Value="{StaticResource MenuTextDim}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Umbra.TextDim}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -119,7 +117,7 @@
         above their groups: no hover, no hit target, nothing to click by mistake.
     -->
     <Style TargetType="MenuItem" x:Key="MenuSectionHeader">
-        <Setter Property="Foreground" Value="{StaticResource MenuTextDim}" />
+        <Setter Property="Foreground" Value="{DynamicResource Umbra.TextDim}" />
         <Setter Property="IsHitTestVisible" Value="False" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="FontSize" Value="12" />
@@ -139,7 +137,7 @@
     <Style TargetType="Separator" BasedOn="{StaticResource MenuSeparatorStyle}" />
 
     <Style TargetType="ContextMenu" x:Key="DarkContextMenu">
-        <Setter Property="Foreground" Value="{StaticResource MenuText}" />
+        <Setter Property="Foreground" Value="{DynamicResource Umbra.TextItem}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="HasDropShadow" Value="False" />
 
@@ -161,8 +159,8 @@
                             MinWidth so a menu of short items does not come up as a narrow ribbon.
                             Windows' own jump list has a floor of about this.
                         -->
-                        <Border Background="{StaticResource MenuSurface}"
-                                BorderBrush="{StaticResource MenuBorder}"
+                        <Border Background="{DynamicResource Umbra.MenuSurface}"
+                                BorderBrush="{DynamicResource Umbra.Border}"
                                 BorderThickness="1"
                                 CornerRadius="8"
                                 MinWidth="230"

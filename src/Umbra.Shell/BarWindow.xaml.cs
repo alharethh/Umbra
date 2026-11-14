@@ -723,10 +723,12 @@ internal partial class BarWindow : AppBarWindow
     public void ApplyHoverSettings(Settings.UmbraSettings settings)
     {
         AccentColor = CappedColour(settings.HoverAccent);
+        StartAccentBrush = CappedBrush(settings.HoverAccent);
         AppIconHoverBrush = CappedBrush(settings.AppIconHoverColour);
         AppIconsUseHolographicHover = settings.AppIconHover == Settings.AppIconHover.Holographic;
 
         OnPropertyChanged(nameof(AccentColor));
+        OnPropertyChanged(nameof(StartAccentBrush));
         OnPropertyChanged(nameof(AppIconHoverBrush));
         OnPropertyChanged(nameof(AppIconsUseHolographicHover));
         OnPropertyChanged(nameof(AppIconChipVisibility));
@@ -1979,6 +1981,7 @@ internal partial class BarWindow : AppBarWindow
         // Raised whether or not this call changed the factor: with a bar on every monitor the
         // first bar to apply it changes the shared value, and every other bar still has to redraw.
         RestingBrightness.Factor = settings.RestingBrightness / 100.0;
+        RestingBrightness.Tint = Rendering.Themes.UmbraTheme.TintOf(settings.Theme);
         OnPropertyChanged(nameof(DrawnTierLevel));
     }
 
@@ -2179,8 +2182,17 @@ internal partial class BarWindow : AppBarWindow
         set => SetValue(StartHighlightedProperty, value);
     }
 
-    /// <summary>The Windows logo blue, capped to the Tier 2 luminance ceiling (§3.2).</summary>
-    public System.Windows.Media.Brush StartAccentBrush { get; } = CreateStartAccent();
+    /// <summary>
+    /// The Start logo's colour while hovered or while Start is open: the theme's bar accent,
+    /// capped to the Tier 2 luminance ceiling (§3.2).
+    /// </summary>
+    /// <remarks>
+    /// It was Windows' logo blue until themes. A fixed blue beside a themed accent read as a
+    /// mistake (owner's call, 2026-11-14), so it follows the accent like the rest of the bar's
+    /// hover colour, and the default theme now draws it in Umbra's cyan.
+    /// </remarks>
+    public System.Windows.Media.Brush StartAccentBrush { get; private set; } =
+        CappedBrush(Settings.UmbraSettings.DefaultHoverAccent);
 
     /// <summary>
     /// The hover accent, as a <see cref="System.Windows.Media.Color"/> so gradients can use it.
@@ -2249,18 +2261,6 @@ internal partial class BarWindow : AppBarWindow
         System.Windows.Media.SolidColorBrush brush = new(CappedColour(hex));
         brush.Freeze();
 
-        return brush;
-    }
-
-    private static System.Windows.Media.Brush CreateStartAccent()
-    {
-        Umbra.Core.Color.Rgb capped = Umbra.Core.Color.Srgb.CapLuminance(
-            Umbra.Core.Color.Rgb.FromHex("#4CC2FF"), TierPalette.Tier2LuminanceCap);
-
-        System.Windows.Media.SolidColorBrush brush = new(
-            System.Windows.Media.Color.FromRgb(capped.R, capped.G, capped.B));
-
-        brush.Freeze();
         return brush;
     }
 
@@ -2592,7 +2592,7 @@ internal partial class BarWindow : AppBarWindow
     /// <remarks>
     /// See <see cref="StartMenuWatcher.Dismiss"/> for why this is a dismissal rather than a
     /// Z-order fight. The glyph colour is reset here because the watcher does not own it: leaving
-    /// it would hold the Start button Windows-blue with no menu behind it.
+    /// it would hold the Start button in the accent colour with no menu behind it.
     /// </remarks>
     private void DismissStartMenu()
     {
