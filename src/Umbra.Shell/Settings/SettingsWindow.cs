@@ -88,7 +88,8 @@ internal partial class SettingsWindow : Window
         // as the user changing anything.
         EdgeBox.SelectionChanged += (_, _) => Commit();
         AlignmentBox.SelectionChanged += (_, _) => Commit();
-        AwayBox.SelectionChanged += (_, _) => Commit();
+        AwayBox.SelectionChanged += (_, _) => OnAwayChosen();
+        AwaySeconds.TextChanged += (_, _) => Commit();
         ClockFormatBox.SelectionChanged += (_, _) => Commit();
         MonitorBox.SelectionChanged += (_, _) => Commit();
         StartupBox.Checked += (_, _) => Commit();
@@ -244,12 +245,83 @@ internal partial class SettingsWindow : Window
     {
         foreach (double minutes in AwayPresets)
             AwayBox.Items.Add(new Choice(AwayLabel(minutes), minutes));
+        AwayBox.Items.Add(new Choice("Custom", CustomAway));
 
-        if (IndexOf(AwayBox, _working.AwayAfterMinutes) < 0)
-            AwayBox.Items.Add(new Choice(AwayLabel(_working.AwayAfterMinutes), _working.AwayAfterMinutes));
+        int preset = IndexOf(AwayBox, _working.AwayAfterMinutes);
+        if (preset >= 0)
+        {
+            AwayBox.SelectedIndex = preset;
+        }
+        else
+        {
+            AwaySeconds.Text = SecondsText(_working.AwayAfterMinutes);
+            AwayBox.SelectedIndex = IndexOf(AwayBox, CustomAway);
+        }
 
-        AwayBox.SelectedIndex = Math.Max(0, IndexOf(AwayBox, _working.AwayAfterMinutes));
+        AwayCustom.Visibility = IsCustomAway ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    /// <summary>The value behind the "Custom" entry: the delay is in the seconds box instead.</summary>
+    private static readonly object CustomAway = new();
+
+    private bool IsCustomAway => AwayBox.SelectedItem is Choice { Value: var v } && ReferenceEquals(v, CustomAway);
+
+    /// <summary>
+    /// Shows the seconds box when "Custom" is picked, filled with the delay in force so switching
+    /// to it changes nothing until the number is edited.
+    /// </summary>
+    private void OnAwayChosen()
+    {
+        if (IsCustomAway)
+        {
+            if (AwaySecondsFrom(AwaySeconds.Text) is null && _working.AwayAfterMinutes > 0)
+                AwaySeconds.Text = SecondsText(_working.AwayAfterMinutes);
+
+            AwayCustom.Visibility = Visibility.Visible;
+            AwaySeconds.Focus();
+            AwaySeconds.SelectAll();
+        }
+        else
+        {
+            AwayCustom.Visibility = Visibility.Collapsed;
+        }
+
+        Commit();
+    }
+
+    /// <summary>
+    /// The delay the controls ask for, in minutes, or null while they ask for nothing usable yet:
+    /// "Custom" with an empty or half-typed seconds box keeps the last good delay, as the hex
+    /// fields do.
+    /// </summary>
+    internal double? ChosenAwayMinutes() =>
+        IsCustomAway ? AwaySecondsFrom(AwaySeconds.Text)
+        : AwayBox.SelectedItem is Choice { Value: double minutes } ? minutes
+        : null;
+
+    /// <summary>
+    /// Minutes from a number of seconds typed by the user, or null if it is not one.
+    /// </summary>
+    /// <remarks>
+    /// Whole or decimal, in the user's own decimal separator or a full stop. Zero is not a custom
+    /// delay (Off is its own entry), and the file's one-day ceiling applies, so nothing typed here
+    /// is a value the next launch would refuse to read back.
+    /// </remarks>
+    internal static double? AwaySecondsFrom(string text)
+    {
+        text = text.Trim();
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out double seconds)
+            && !double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out seconds))
+            return null;
+
+        if (!double.IsFinite(seconds) || seconds <= 0) return null;
+
+        double minutes = seconds / 60.0;
+        return minutes <= UmbraSettings.MaxAwayAfterMinutes ? minutes : null;
+    }
+
+    private static string SecondsText(double minutes) =>
+        (minutes * 60.0).ToString("0.##", CultureInfo.CurrentCulture);
 
     /// <summary>"Off", "After 30 seconds", "After 1 minute", "After 10 minutes".</summary>
     /// <remarks>
@@ -399,7 +471,7 @@ internal partial class SettingsWindow : Window
         _working.DormantIconSize = Math.Round(IconSize.Value);
         _working.RestingBrightness = (int)Math.Round(Brightness.Value);
         _working.Motion = MotionBox.IsChecked == true;
-        if (AwayBox.SelectedItem is Choice { Value: double away }) _working.AwayAfterMinutes = away;
+        if (ChosenAwayMinutes() is { } away) _working.AwayAfterMinutes = away;
         if (ClockFormatBox.SelectedItem is Choice { Value: ClockFormat clockFormat }) _working.ClockFormat = clockFormat;
         _working.Tray = TrayBox.IsChecked == true;
         _working.BarOnEveryMonitor = EveryMonitorBox.IsChecked == true;

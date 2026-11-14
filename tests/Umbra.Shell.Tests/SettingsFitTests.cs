@@ -131,15 +131,67 @@ public class SettingsFitTests
         Assert.Equal([0.0, 0.25, 0.5, 1.0, 5.0, 10.0, 30.0], SettingsWindow.AwayPresets);
 
     [Theory]
+    [InlineData("2", 2.0 / 60.0)]
+    [InlineData(" 45 ", 0.75)]
+    [InlineData("1.5", 1.5 / 60.0)]
+    [InlineData("86400", 24 * 60.0)]
+    public void A_Custom_Delay_Is_Read_In_Seconds(string text, double minutes) =>
+        Assert.Equal(minutes, SettingsWindow.AwaySecondsFrom(text)!.Value, 9);
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("abc")]
+    [InlineData("0")]
+    [InlineData("-5")]
+    [InlineData("86401")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    public void A_Custom_Delay_That_Is_Not_One_Yet_Changes_Nothing(string text) =>
+        Assert.Null(SettingsWindow.AwaySecondsFrom(text));
+
+    /// <summary>
+    /// A delay that is none of the presets opens on "Custom" with its seconds shown, and the
+    /// controls read it back unchanged, so opening the window and changing something else does
+    /// not move it.
+    /// </summary>
+    [Fact]
+    public void A_Delay_That_Is_No_Preset_Opens_As_Custom_Seconds() => OnSta(() =>
+    {
+        SettingsWindow window = Shown(new UmbraSettings { AwayAfterMinutes = 2.0 / 60.0 });
+        try
+        {
+            Assert.Equal("Custom", window.AwayBox.SelectedItem?.ToString());
+            Assert.Equal(Visibility.Visible, window.AwayCustom.Visibility);
+            Assert.Equal("2", window.AwaySeconds.Text);
+            // Typing into the box is not driven here: every change saves settings.txt.
+            Assert.Equal(2.0 / 60.0, window.ChosenAwayMinutes()!.Value, 9);
+        }
+        finally { window.Close(); }
+    });
+
+    [Fact]
+    public void A_Preset_Delay_Hides_The_Seconds_Box() => OnSta(() =>
+    {
+        SettingsWindow window = Shown(new UmbraSettings { AwayAfterMinutes = 0.5 });
+        try
+        {
+            Assert.Equal("After 30 seconds", window.AwayBox.SelectedItem?.ToString());
+            Assert.Equal(Visibility.Collapsed, window.AwayCustom.Visibility);
+            Assert.Equal(0.5, window.ChosenAwayMinutes());
+        }
+        finally { window.Close(); }
+    });
+
+    [Theory]
     [InlineData(1432, 144u, 954.667)] // the 2256×1504 panel at 150%, 48 DIP bar
     [InlineData(1380, 120u, 1104)]   // the 2560×1440 development panel at 125%, 48 DIP bar
     [InlineData(1040, 96u, 1040)]
     public void Work_Area_Is_Converted_At_The_Monitors_Own_Dpi(int physical, uint dpi, double dips) =>
         Assert.Equal(dips, WorkAreaFit.HeightInDips(physical, dpi), 3);
 
-    private static SettingsWindow Shown()
+    private static SettingsWindow Shown(UmbraSettings? settings = null)
     {
-        var window = new SettingsWindow(new UmbraSettings(), _ => { }, () => { })
+        var window = new SettingsWindow(settings ?? new UmbraSettings(), _ => { }, () => { })
         {
             WindowStartupLocation = WindowStartupLocation.Manual,
             Left = -30000,

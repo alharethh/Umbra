@@ -371,12 +371,22 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="140" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Black when away" />
                             <ComboBox Grid.Column="1" x:Name="AwayBox" AutomationProperties.Name="Black when away" />
+                            <StackPanel Grid.Column="2" x:Name="AwayCustom" Orientation="Horizontal"
+                                        Margin="8,0,0,0" Visibility="Collapsed">
+                                <TextBox x:Name="AwaySeconds" Width="56"
+                                         Background="#FF1B1B18" Foreground="#FFE8E4DA"
+                                         BorderBrush="#FF3A3A33" BorderThickness="1"
+                                         Padding="6,3" FontFamily="Consolas" TextAlignment="Right"
+                                         AutomationProperties.Name="Black when away after this many seconds" />
+                                <TextBlock Text="seconds" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
                         </Grid>
                         <TextBlock Style="{StaticResource Hint}" Margin="140,2,0,10"
-                                   Text="Fades to black when there's no input. Stays lit while anything plays sound." />
+                                   Text="Fades to black when there's no input. Stays lit while anything plays sound. Custom takes any number of seconds." />
                     </StackPanel>
 
                     <!-- Clock -->
