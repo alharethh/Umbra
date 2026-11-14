@@ -26,7 +26,7 @@ internal sealed class ShellHost : IDisposable
     /// Identified by the fixed GUIDs Windows gives its own indicators, not by path — every one of
     /// them is owned by <c>explorer.exe</c>, so a path would match all four and nothing else.
     /// </remarks>
-    private static readonly string[] SystemIndicators =
+    internal static readonly string[] SystemIndicators =
     [
         ManagedShell.WindowsTray.NotificationArea.VOLUME_GUID,
         ManagedShell.WindowsTray.NotificationArea.NETWORK_GUID,

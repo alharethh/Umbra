@@ -36,6 +36,12 @@ public partial class App : Application
     private UmbraSettings _launchSettings = new();
 
     /// <summary>
+    /// Which notification icons sit on the bar. One for the process, because the bar's drag, the
+    /// chevron's menu and the settings window all change it. See <see cref="Shell.TrayChoice"/>.
+    /// </summary>
+    internal TrayChoice TrayChoice { get; } = new();
+
+    /// <summary>
     /// Opens the settings window, or brings the open one to the front.
     /// </summary>
     /// <remarks>
@@ -64,6 +70,12 @@ public partial class App : Application
             Restart,
             running: _launchSettings);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+
+        // The primary bar is the one that hosts the tray. Asked each time the page is shown,
+        // because icons keep arriving after startup.
+        _settingsWindow.AttachTrayChoice(
+            TrayChoice,
+            _launchSettings.Tray ? () => _bar?.TrayIconRows() ?? [] : null);
         _settingsWindow.ShowInFront();
     }
 
@@ -200,7 +212,8 @@ public partial class App : Application
                 // icon twice and forwards every click twice.
                 // Its wear dataset is not passed in: the bar picks it from its screen and edge
                 // (WearSampler.PathFor), so the choice follows a live move.
-                hostsTray: primary)
+                hostsTray: primary,
+                trayChoice: TrayChoice)
             {
                 MotionEnabled = Settings.Motion,
 
