@@ -138,6 +138,116 @@ public class TrayChoiceTests : IDisposable
         Assert.Equal(["a", "b"], new TrayChoice(_path).OnBar);
     }
 
+    private const string TwoLineTitle = @"C:\Program Files\Certum\SimplySign Desktop\SimplySignDesktop.exe:1:SimplySign Desktop" + "\nStatus: not connected";
+
+    /// <summary>
+    /// A title of two lines was written over two lines of the file, and the second came back as an
+    /// icon of its own, which Settings listed as "Status: not connected".
+    /// </summary>
+    [Fact]
+    public void A_Two_Line_Title_Is_One_Line_In_The_File_And_Comes_Back_Whole()
+    {
+        const string guid = "6da68f06-00f1-4e6e-8158-7f1ffd4f9db9";
+        const string tool = @"C:\Apps\Tool.exe:3:Tool";
+        Seeded(guid, TwoLineTitle, tool);
+
+        Assert.Equal(4, File.ReadAllLines(_path).Length);
+        Assert.Equal([guid, TwoLineTitle, tool], new TrayChoice(_path).OnBar);
+    }
+
+    [Fact]
+    public void A_Windows_Line_Break_In_A_Title_Comes_Back_Too()
+    {
+        string id = @"C:\Apps\Sync.exe:3:Sync" + "\r\nUp to date";
+        Seeded(id);
+
+        Assert.Equal(2, File.ReadAllLines(_path).Length);
+        Assert.Equal([id], new TrayChoice(_path).OnBar);
+    }
+
+    /// <summary>A title holding a percent sign, or the very text an escape is written as, survives.</summary>
+    [Theory]
+    [InlineData(@"C:\Apps\Battery.exe:2:Battery 80%")]
+    [InlineData(@"C:\Apps\Odd.exe:2:Literally %0A and %25 and %0D")]
+    [InlineData(@"C:\Apps\Odd.exe:2:Ends in %")]
+    [InlineData(@"C:\Apps\Odd.exe:2:%2")]
+    public void Percent_Signs_In_A_Title_Survive(string id)
+    {
+        Seeded(id);
+        Assert.Equal([id], new TrayChoice(_path).OnBar);
+    }
+
+    /// <summary>
+    /// A file written before entries were escaped (the owner's, 15 Nov) holds each second line on
+    /// a line of its own. It is joined back onto the entry above, so nothing is lost and nothing
+    /// phantom is listed.
+    /// </summary>
+    [Fact]
+    public void An_Old_File_With_Split_Titles_Is_Read_Back_Whole()
+    {
+        File.WriteAllLines(_path,
+        [
+            "showAll = false",
+            "6da68f06-00f1-4e6e-8158-7f1ffd4f9db9",
+            @"C:\Program Files\Certum\SimplySign Desktop\SimplySignDesktop.exe:1:SimplySign Desktop",
+            "Status: not connected",
+            "ba82e2dc-f405-47ad-b032-cf0faa0e3933",
+            @"C:\Users\Dev\AppData\Local\Microsoft\OneDrive\OneDrive.exe:501:OneDrive - Personal",
+            "Not signed in",
+        ]);
+
+        TrayChoice choice = new(_path);
+
+        Assert.Equal(
+        [
+            "6da68f06-00f1-4e6e-8158-7f1ffd4f9db9",
+            TwoLineTitle,
+            "ba82e2dc-f405-47ad-b032-cf0faa0e3933",
+            @"C:\Users\Dev\AppData\Local\Microsoft\OneDrive\OneDrive.exe:501:OneDrive - Personal" + "\nNot signed in",
+        ], choice.OnBar);
+        Assert.Equal(4, TrayIconRow.For(choice, []).Count);
+    }
+
+    /// <summary>Only a line that cannot stand alone is joined; a GUID or an identifier never is.</summary>
+    [Theory]
+    [InlineData("6da68f06-00f1-4e6e-8158-7f1ffd4f9db9", true)]
+    [InlineData(@"C:\Apps\Tool.exe:3:Tool", true)]
+    [InlineData(@":7:An icon with no path", true)]
+    [InlineData("Status: not connected", false)]
+    [InlineData("Not signed in", false)]
+    public void Only_A_Line_That_Cannot_Stand_Alone_Is_A_Second_Line(string line, bool standsAlone) =>
+        Assert.Equal(standsAlone, TrayChoice.CouldBeIdentifier(line));
+
+    /// <summary>A GUID entry has no title, so the line after it is never its second line.</summary>
+    [Fact]
+    public void A_Line_After_A_Guid_Entry_Is_Never_Joined_To_It()
+    {
+        File.WriteAllLines(_path, ["6da68f06-00f1-4e6e-8158-7f1ffd4f9db9", "Status: stray"]);
+
+        Assert.Equal(["6da68f06-00f1-4e6e-8158-7f1ffd4f9db9", "Status: stray"], new TrayChoice(_path).OnBar);
+    }
+
+    /// <summary>A hand-edited file may have the setting line between entries; it ends a title.</summary>
+    [Fact]
+    public void A_Line_After_The_Setting_Line_Is_Never_Joined_To_It()
+    {
+        File.WriteAllLines(_path, [@"C:\Apps\Tool.exe:3:Tool", "showAll = true", "Status: stray"]);
+
+        Assert.Equal([@"C:\Apps\Tool.exe:3:Tool", "Status: stray"], new TrayChoice(_path).OnBar);
+    }
+
+    /// <summary>A file written before escaping holds percent signs as they are, even one at the very end.</summary>
+    [Theory]
+    [InlineData(@"C:\Apps\Odd.exe:2:Old %2")]
+    [InlineData(@"C:\Apps\Odd.exe:2:Old %")]
+    [InlineData(@"C:\Apps\Battery.exe:2:Battery 80% left")]
+    public void An_Old_File_Reads_Percent_Signs_As_Written(string id)
+    {
+        File.WriteAllLines(_path, [id]);
+
+        Assert.Equal([id], new TrayChoice(_path).OnBar);
+    }
+
     [Fact]
     public void Changed_Is_Raised_Only_When_Something_Changed()
     {

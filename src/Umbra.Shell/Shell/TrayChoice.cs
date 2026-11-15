@@ -3,6 +3,9 @@ using Umbra.Shell.Diagnostics;
 
 namespace Umbra.Shell.Shell;
 
+/// <summary>An icon as the bar draws it: its identifier, and how to recognise it in the list.</summary>
+internal readonly record struct TrayEntry(string Identifier, Func<string, bool> Matches);
+
 /// <summary>
 /// Which notification icons the user has taken out of the overflow and put on the bar, in the
 /// order they sit there, and whether every icon is shown on the bar regardless.
@@ -27,10 +30,14 @@ namespace Umbra.Shell.Shell;
 /// The four system indicators are not in this list. They are always on the bar
 /// (<see cref="ShellHost.SystemIndicators"/>) and <see cref="PinnedFor"/> puts them first.
 /// </para>
+/// <para>
+/// <b>One entry per line, always.</b> A title can have several lines (SimplySign's is
+/// "SimplySign Desktop" and then "Status: not connected"), and so can the identifier built from
+/// it. Written as it is, the second line came back as an entry of its own, listed in Settings as
+/// an icon called "Status: not connected". Line breaks are written as <c>%0A</c> and <c>%0D</c>,
+/// and <c>%</c> itself as <c>%25</c>; see <see cref="Escape"/>.
+/// </para>
 /// </remarks>
-/// <summary>An icon as the bar draws it: its identifier, and how to recognise it in the list.</summary>
-internal readonly record struct TrayEntry(string Identifier, Func<string, bool> Matches);
-
 internal sealed class TrayChoice
 {
     private const string ShowAllKey = "showAll";
@@ -91,7 +98,7 @@ internal sealed class TrayChoice
     {
         if (!Move(identifier, matches, ref index)) return false;
 
-        Commit($"tray on bar: placed {identifier} at {index}");
+        Commit($"tray on bar: placed {Escape(identifier)} at {index}");
         return true;
     }
 
@@ -113,7 +120,7 @@ internal sealed class TrayChoice
         bool moved = Move(identifier, matches, ref index);
         if (!adopted && !moved) return false;
 
-        Commit($"tray on bar: placed {identifier} at {index}");
+        Commit($"tray on bar: placed {Escape(identifier)} at {index}");
         return true;
     }
 
@@ -261,19 +268,87 @@ internal sealed class TrayChoice
             return;
         }
 
+        List<string> entries = [];
+        bool lastWasEntry = false;
+
         foreach (string raw in lines)
         {
             string line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith('#')) continue;
+            if (line.Length == 0 || line.StartsWith('#'))
+            {
+                lastWasEntry = false;
+                continue;
+            }
 
             if (TryReadShowAll(line, out bool showAll))
             {
                 ShowAll = showAll;
+                lastWasEntry = false;
                 continue;
             }
 
-            if (!_onBar.Contains(line, StringComparer.OrdinalIgnoreCase)) _onBar.Add(line);
+            string entry = Unescape(line);
+
+            // A file written before entries were escaped holds a multi-line title over several
+            // lines. A line that cannot be an identifier on its own is the rest of the one above,
+            // when the one above has a title to continue: a GUID entry has none.
+            if (lastWasEntry && HasTitle(entries[^1]) && !CouldBeIdentifier(entry))
+            {
+                entries[^1] += "\n" + entry;
+                BringUpLog.Write("tray on bar: joined a title's second line back onto its entry");
+                continue;
+            }
+
+            entries.Add(entry);
+            lastWasEntry = true;
         }
+
+        // After joining, so that two copies of a multi-line entry are recognised as copies.
+        foreach (string entry in entries)
+            if (!_onBar.Contains(entry, StringComparer.OrdinalIgnoreCase)) _onBar.Add(entry);
+    }
+
+    /// <summary>
+    /// Whether a line could be an identifier by itself: a GUID, or <c>path:uid:title</c>, which has
+    /// a run of digits between two colons. A title's second line ("Status: not connected", "Not
+    /// signed in") is neither.
+    /// </summary>
+    internal static bool CouldBeIdentifier(string line) => Guid.TryParse(line, out _) || HasTitle(line);
+
+    /// <summary>Whether an entry is <c>path:uid:title</c>, the only kind that carries a title.</summary>
+    private static bool HasTitle(string entry) => System.Text.RegularExpressions.Regex.IsMatch(entry, @":\d+:");
+
+    /// <summary>An entry as one line: <c>%</c>, CR and LF written as <c>%25</c>, <c>%0D</c>, <c>%0A</c>.</summary>
+    internal static string Escape(string entry) =>
+        entry.Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A");
+
+    /// <summary>
+    /// <see cref="Escape"/> undone, in one pass, so <c>%250A</c> reads as the text <c>%0A</c>.
+    /// Any other <c>%</c> is left as it is, which is what a file written before escaping holds.
+    /// </summary>
+    internal static string Unescape(string line)
+    {
+        if (!line.Contains('%')) return line;
+
+        var text = new System.Text.StringBuilder(line.Length);
+        for (int i = 0; i < line.Length; i++)
+        {
+            if (line[i] == '%' && i + 2 < line.Length)
+            {
+                string code = line.Substring(i + 1, 2);
+                string? decoded = code switch { "25" => "%", "0D" => "\r", "0A" => "\n", _ => null };
+                if (decoded is not null)
+                {
+                    text.Append(decoded);
+                    i += 2;
+                    continue;
+                }
+            }
+
+            text.Append(line[i]);
+        }
+
+        return text.ToString();
     }
 
     /// <summary>
@@ -298,7 +373,7 @@ internal sealed class TrayChoice
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             File.WriteAllLines(
                 _path,
-                [$"{ShowAllKey} = {ShowAll.ToString().ToLowerInvariant()}", .. _onBar],
+                [$"{ShowAllKey} = {ShowAll.ToString().ToLowerInvariant()}", .. _onBar.Select(Escape)],
                 TextEncoding.Utf8);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
