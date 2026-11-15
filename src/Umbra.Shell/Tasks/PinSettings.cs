@@ -152,6 +152,23 @@ internal sealed class PinSettings
         return true;
     }
 
+    /// <summary>Gives a pin a new display name. Writes only when it changed.</summary>
+    /// <returns>True when the name changed.</returns>
+    public bool Rename(string? key, string? name)
+    {
+        if (key is null || string.IsNullOrWhiteSpace(name)) return false;
+
+        int index = _pins.FindIndex(p => AppIdentity.Same(p.Key, key));
+        if (index < 0 || _pins[index].Name == name.Trim()) return false;
+
+        string old = _pins[index].Name;
+        _pins[index] = _pins[index] with { Name = name.Trim() };
+        Write();
+
+        BringUpLog.Write($"pin renamed: {old} -> {_pins[index].Name}");
+        return true;
+    }
+
     /// <summary>
     /// Pins an executable that was dropped on the bar, with no window to read it from.
     /// </summary>

@@ -150,6 +150,15 @@ internal static class AppIdentity
         return $"{match.Groups["name"].Value}_{rest[(rest.LastIndexOf('_') + 1)..]}";
     }
 
+    /// <summary>The version in a folder named for a package full name; null when it is not one.</summary>
+    internal static Version? VersionOf(string? folderName)
+    {
+        if (string.IsNullOrEmpty(folderName)) return null;
+
+        Match match = PackageFullName.Match(folderName);
+        return match.Success && Version.TryParse(match.Groups["version"].Value, out Version? version) ? version : null;
+    }
+
     /// <summary>
     /// Whether two executables are the same file in two versions of one package.
     /// </summary>
