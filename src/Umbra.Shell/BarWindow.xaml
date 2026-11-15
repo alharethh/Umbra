@@ -259,7 +259,6 @@
                   MouseEnter="OnTrayIconMouseEnter"
                   MouseLeave="OnTrayIconMouseLeave"
                   MouseMove="OnTrayIconMouseMove"
-                  Loaded="OnTrayIconLoaded"
                   Width="{Binding TrayOverflowCellWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                   Height="{Binding TrayOverflowCellHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
@@ -303,7 +302,6 @@
                   MouseEnter="OnTrayIconMouseEnter"
                   MouseLeave="OnTrayIconMouseLeave"
                   MouseMove="OnTrayIconMouseMove"
-                  Loaded="OnTrayIconLoaded"
                   Width="{Binding TraySlotWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                   Height="{Binding TraySlotHeight, RelativeSource={RelativeSource AncestorType=Window}}">
 
@@ -841,6 +839,17 @@
                                         Y="{Binding TrayOffset.Y, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </Control.RenderTransform>
             </Control>
+
+            <!-- Fills while a dragged icon is held over the closed chevron; it opens when full. -->
+            <Ellipse x:Name="TrayChevronRing"
+                     Width="22" Height="22" StrokeThickness="1.5"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     IsHitTestVisible="False" Visibility="Collapsed"
+                     RenderTransformOrigin="0.5,0.5">
+                <Ellipse.RenderTransform>
+                    <RotateTransform Angle="-90" />
+                </Ellipse.RenderTransform>
+            </Ellipse>
 
             <Grid RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform>

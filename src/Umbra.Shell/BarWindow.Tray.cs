@@ -7,6 +7,8 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 using ManagedShell.WindowsTray;
 using Umbra.Shell.Diagnostics;
 using Umbra.Shell.Rendering;
@@ -218,27 +220,24 @@ internal partial class BarWindow
     {
         _trayDrag = press;
         _trayPress = null;
+        _trayTarget = TrayDropTarget.None;
+        _trayChevronShift = 0;
 
         // Mouse capture rather than OLE drag and drop: the drag never leaves the process, and
         // capture follows the pointer from the flyout's popup window into the bar's.
         press.Element.CaptureMouse();
         press.Element.LostMouseCapture += OnTrayDragLostCapture;
 
-        // Lifted out: what stays in the slot is a faint placeholder.
-        Fade(press.Element, TrayDragPlaceholderOpacity, TrayAnimationShort);
+        // Lifted out. From the bar its slot is drawn as the open gap (the marker), so the icon
+        // itself goes; from the menu a faint copy stays where it was.
+        Fade(press.Element, press.FromFlyout ? TrayDragPlaceholderOpacity : 0, TrayAnimationShort);
 
         _trayGhost = new Popup
         {
             AllowsTransparency = true,
             IsHitTestVisible = false,
             Placement = PlacementMode.AbsolutePoint,
-            Child = new Image
-            {
-                Source = press.Icon.Icon,
-                Width = TrayIconExtent,
-                Height = TrayIconExtent,
-                Opacity = 0.85,
-            },
+            Child = GhostCard(press.Icon),
         };
 
         _trayCaret = new Popup
@@ -246,11 +245,7 @@ internal partial class BarWindow
             AllowsTransparency = true,
             IsHitTestVisible = false,
             Placement = PlacementMode.AbsolutePoint,
-            Child = new Border
-            {
-                Background = (Brush)FindResource("Umbra.Text"),
-                CornerRadius = new CornerRadius(1),
-            },
+            Child = GapMarker(),
         };
 
         // The press already reached the application, and some open their menu on it (Bluetooth).
@@ -261,7 +256,7 @@ internal partial class BarWindow
 
     private void UpdateTrayDrag(TrayPress drag)
     {
-        if (_trayGhost is null || _trayCaret is null) return;
+        if (_trayGhost is null || _trayCaret is null || _trayLanding) return;
 
         // The press's menu can open a beat after the drag began; it goes as soon as it does.
         TrayMenuWatcher.CancelMenuOf(drag.Icon.HWnd);
@@ -269,35 +264,18 @@ internal partial class BarWindow
         double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
         Point cursor = CursorScreen();
 
-        // AbsolutePoint offsets are device-independent; the cursor is physical. The ghost rides a
-        // little inboard of the pointer rather than under it, so the chevron or the gap the
-        // pointer is over stays visible.
-        Vector lift = TrayDrop.GhostLift(Metrics.Edge, TrayIconExtent);
-        _trayGhost.HorizontalOffset = cursor.X / dpi - TrayIconExtent / 2 + lift.X;
-        _trayGhost.VerticalOffset = cursor.Y / dpi - TrayIconExtent / 2 + lift.Y;
+        // Right under the pointer: the row makes room for it, so nothing it is over needs to stay
+        // visible beside it. AbsolutePoint offsets are device-independent; the cursor is physical.
+        _trayGhost.HorizontalOffset = cursor.X / dpi - GhostSize / 2 + DropAlignmentFix(GhostSize);
+        _trayGhost.VerticalOffset = cursor.Y / dpi - GhostSize / 2;
         _trayGhost.IsOpen = true;
 
-        TrayDropTarget target = TrayDropAt(cursor);
+        TrayDropTarget target = TrayDropAt(cursor, drag);
+        _trayTarget = target;
 
         SetChevronDropLit(target.Kind == TrayDrop.Kind.Overflow);
-
-        if (target.Kind == TrayDrop.Kind.Bar && target.Caret is { } caret)
-        {
-            double thickness = 2;
-            double length = TrayIconExtent;
-
-            Border line = (Border)_trayCaret.Child;
-            line.Width = IsVertical ? length : thickness;
-            line.Height = IsVertical ? thickness : length;
-
-            _trayCaret.HorizontalOffset = caret.X / dpi - line.Width / 2;
-            _trayCaret.VerticalOffset = caret.Y / dpi - line.Height / 2;
-            _trayCaret.IsOpen = true;
-        }
-        else
-        {
-            _trayCaret.IsOpen = false;
-        }
+        UpdateSpringOpen(target);
+        ApplyRoom(drag, target);
     }
 
     /// <summary>
@@ -312,49 +290,77 @@ internal partial class BarWindow
         if (_trayDrag is not { } drag) return false;
 
         _trayDrag = null;
-        TrayDropTarget target = drop ? TrayDropAt(CursorScreen()) : TrayDropTarget.None;
+        TrayDropTarget target = drop ? TrayDropAt(CursorScreen(), drag) : TrayDropTarget.None;
 
+        StopSpringOpen();
         SetChevronDropLit(false);
-
-        bool intoChevron = target.Kind == TrayDrop.Kind.Overflow && !TrayOverflowPopup.IsOpen;
-        if (_trayGhost is { } ghost)
-        {
-            // Into a closed chevron the icon is seen going in; anywhere else it simply goes, and
-            // the icon itself arrives in its new place (OnTrayIconLoaded).
-            if (intoChevron) FlyGhostInto(ghost, TrayChevron);
-            else FadeOutGhost(ghost);
-        }
-
-        if (_trayCaret is not null) _trayCaret.IsOpen = false;
-        _trayGhost = null;
-        _trayCaret = null;
 
         drag.Element.LostMouseCapture -= OnTrayDragLostCapture;
         if (drag.Element.IsMouseCaptured) drag.Element.ReleaseMouseCapture();
-
-        // Back to full if it stayed where it was. If it moved, this element is about to be
-        // replaced and the arrival animation shows it in the new place.
-        Fade(drag.Element, 1, TrayAnimationShort);
-
         TrayMenuWatcher.CancelMenuOf(drag.Icon.HWnd);
-        _trayArriving = target.Kind == TrayDrop.Kind.None || intoChevron ? null : drag.Icon;
-        ApplyTrayDrop(drag.Icon, target);
+
+        Popup? ghost = _trayGhost;
+        Popup? marker = _trayCaret;
+        _trayGhost = null;
+        _trayCaret = null;
+
+        // The row as it will be drawn while the icon lands: the gap where it goes, or back home.
+        RoomShown room = ApplyRoom(drag, target);
+        bool changes = WouldChange(drag, target);
+
+        // Where the icon lands, and whether it shrinks into the chevron to get there.
+        (Point to, bool shrink, TimeSpan time) = Landing(drag, target, room, changes);
+
+        BringUpLog.Write($"tray drag: '{drag.Icon.Title}' landing {(changes ? "in its new place" : "back home")} ({target.Kind})");
+
+        _trayLanding = true;
+        if (ghost is null)
+        {
+            Landed();
+            return true;
+        }
+
+        FlyGhost(ghost, to, shrink, time, Landed);
         return true;
+
+        void Landed()
+        {
+            _trayLanding = false;
+            if (shrink) PlayPress(TrayChevronScale);
+            SettleTray(drag, ghost, marker, () =>
+            {
+                if (changes) ApplyTrayDrop(drag.Icon, target);
+                else BringUpLog.Write($"tray drag: '{drag.Icon.Title}' dropped where nothing changes");
+            });
+        }
     }
 
     // ---------------------------------------------------------------- drag animations
     //
-    // Short and plain: a fade, a scale, one small overshoot on arrival. Every one of them is
-    // skipped when Windows' animation effects are off. Easing is fine here for the reason the
-    // icon row's slide gives: these are one-off transitions, not drift, so they put no residence
-    // time anywhere (§6.1 is about turnarounds that repeat for hours).
+    // Every one of them is skipped when Windows' animation effects are off. Easing is fine here
+    // for the reason the icon row's slide gives: these are one-off transitions, not drift, so
+    // they put no residence time anywhere (§6.1 is about turnarounds that repeat for hours).
+    // Nothing is offset at rest: every slide ends at zero, so P5 holds whenever no drag is on.
 
     private static readonly TimeSpan TrayAnimationShort = TimeSpan.FromMilliseconds(150);
-    private static readonly TimeSpan TrayAnimationArrive = TimeSpan.FromMilliseconds(220);
+    private static readonly TimeSpan TraySlide = TimeSpan.FromMilliseconds(180);
+    private static readonly TimeSpan TrayGlide = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan TraySnapBack = TimeSpan.FromMilliseconds(240);
+    private static readonly TimeSpan TrayShrinkIn = TimeSpan.FromMilliseconds(260);
+    private static readonly TimeSpan TraySpringDelay = TimeSpan.FromMilliseconds(500);
     private const double TrayDragPlaceholderOpacity = 0.3;
 
-    /// <summary>The icon just dropped, so its new container can animate in when it is built.</summary>
-    private NotifyIcon? _trayArriving;
+    /// <summary>Where a drop at the pointer would go, as of the last move.</summary>
+    private TrayDropTarget _trayTarget = TrayDropTarget.None;
+
+    /// <summary>The slots the chevron is drawn from its own place, as of the last move.</summary>
+    private int _trayChevronShift;
+
+    /// <summary>True while the dragged icon is flying to where it lands; presses wait for it.</summary>
+    private bool _trayLanding;
+
+    /// <summary>Where each element is being slid to along the bar, so a move does not restart a slide.</summary>
+    private readonly Dictionary<UIElement, double> _traySlideTargets = [];
 
     private static Duration Animated(TimeSpan time) =>
         new(SystemParameters.ClientAreaAnimation ? time : TimeSpan.Zero);
@@ -367,58 +373,311 @@ internal partial class BarWindow
     }
 
     /// <summary>
-    /// A tray icon's container has been built. If it is the icon just dropped, it arrives: a
-    /// quick scale up from 60% with a touch of overshoot, fading in.
+    /// What to add to an absolutely placed popup's horizontal offset so its left edge lands on it.
     /// </summary>
     /// <remarks>
-    /// Containers are rebuilt when the views refresh after a change, so the arriving icon's
-    /// container is new and this is where it first exists. The scale sits on the container, not
-    /// on the image, whose transform is the drift offset.
+    /// With Windows' handedness set to right-handed (Tablet PC settings, "menus appear to the left
+    /// of your hand", the default on a touch laptop), WPF opens every popup with its right edge at
+    /// the point, AbsolutePoint included. Measured on the 150% laptop: the floating icon sat its
+    /// own width left of the pointer and the gap marker a marker's width left of its slot. The old
+    /// caret, 2 px wide, hid it.
     /// </remarks>
-    private void OnTrayIconLoaded(object sender, RoutedEventArgs e)
+    private static double DropAlignmentFix(double width) => SystemParameters.MenuDropAlignment ? width : 0;
+
+    /// <summary>The floating icon: lifted on a small card, a touch larger than the icon at rest.</summary>
+    private double GhostSize => TrayIconExtent + 12;
+
+    private Border GhostCard(NotifyIcon icon)
     {
-        if (sender is not FrameworkElement { DataContext: NotifyIcon icon } element) return;
-        if (_trayArriving is null || !ReferenceEquals(icon, _trayArriving)) return;
-
-        _trayArriving = null;
-        if (!SystemParameters.ClientAreaAnimation) return;
-
-        ScaleTransform scale = new(0.6, 0.6);
-        element.RenderTransformOrigin = new Point(0.5, 0.5);
-        element.RenderTransform = scale;
-
-        DoubleAnimation grow = new(0.6, 1, Animated(TrayAnimationArrive))
+        Color accent = AccentColor;
+        Border card = new()
         {
-            EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.4 },
+            Width = GhostSize,
+            Height = GhostSize,
+            CornerRadius = new CornerRadius(7),
+            Background = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x5A, accent.R, accent.G, accent.B)),
+            BorderThickness = new Thickness(1),
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(1, 1),
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Direction = 270, Opacity = 0.65, Color = Colors.Black },
+            Child = new Image
+            {
+                Source = icon.Icon,
+                Width = TrayIconExtent,
+                Height = TrayIconExtent,
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = new ScaleTransform(1.12, 1.12),
+            },
         };
-        scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
-        scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
-
-        element.Opacity = 0;
-        Fade(element, 1, TrayAnimationShort);
+        return card;
     }
 
-    /// <summary>The floating icon shrinks into the chevron and is gone; the chevron bounces as it lands.</summary>
-    private void FlyGhostInto(Popup ghost, FrameworkElement target)
+    /// <summary>The open slot: a dashed outline in the bar's capped accent, faintly filled.</summary>
+    private Rectangle GapMarker()
     {
-        if (!SystemParameters.ClientAreaAnimation || ghost.Child is not FrameworkElement image)
+        Color accent = AccentColor;
+        return new Rectangle
         {
-            ghost.IsOpen = false;
-            PlayPress(TrayChevronScale);
+            RadiusX = 5,
+            RadiusY = 5,
+            StrokeThickness = 1,
+            StrokeDashArray = [3, 2],
+            Stroke = new SolidColorBrush(Color.FromArgb(0x90, accent.R, accent.G, accent.B)),
+            Fill = new SolidColorBrush(Color.FromArgb(0x14, accent.R, accent.G, accent.B)),
+        };
+    }
+
+    /// <summary>The bar's row of chosen icons, measured where layout put them (no slides).</summary>
+    private sealed record TrayRow(
+        List<NotifyIcon> Icons, List<FrameworkElement> Containers,
+        double FirstSlotStart, double Pitch, double PitchDip, double CrossCentre);
+
+    private TrayRow MeasureTrayRow()
+    {
+        double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
+        List<NotifyIcon> icons = [];
+        List<FrameworkElement> containers = [];
+
+        if (BarTrayIcons is not null)
+        {
+            foreach (NotifyIcon icon in BarTrayIcons.Cast<NotifyIcon>())
+            {
+                if (TrayBarHost.ItemContainerGenerator.ContainerFromItem(icon) is FrameworkElement { IsVisible: true } container)
+                {
+                    icons.Add(icon);
+                    containers.Add(container);
+                }
+            }
+        }
+
+        double pitchDip = TraySlotMetrics.Pitch;
+        double first;
+        if (containers.Count > 0)
+        {
+            Rect slot = LayoutScreenRect(containers[0]);
+            first = IsVertical ? slot.Top : slot.Left;
+        }
+        else
+        {
+            // An empty row has no size, but layout still puts it between the chevron and the
+            // cluster; its first slot would start there.
+            Rect host = LayoutScreenRect(TrayBarHost);
+            first = IsVertical ? host.Top : host.Left;
+        }
+
+        double cross = IsVertical ? (Left + ActualWidth / 2) * dpi : (Top + ActualHeight / 2) * dpi;
+        return new TrayRow(icons, containers, first, pitchDip * dpi, pitchDip, cross);
+    }
+
+    /// <summary>The middle of a slot of the row, in physical pixels; -1 is the slot before the first.</summary>
+    private Point SlotCentre(TrayRow row, int slot)
+    {
+        double along = row.FirstSlotStart + (slot + 0.5) * row.Pitch;
+        return IsVertical ? new Point(row.CrossCentre, along) : new Point(along, row.CrossCentre);
+    }
+
+    /// <summary>What <see cref="ApplyRoom"/> drew: the row it measured and the room it made.</summary>
+    private readonly record struct RoomShown(TrayRow Row, TrayDrop.RoomLayout Room, int? From);
+
+    /// <summary>
+    /// Slides the row's icons and the chevron to make room for the drag, and puts the marker on
+    /// the open slot. See <see cref="TrayDrop.Room"/> for the rule, and why the chevron holds still.
+    /// </summary>
+    private RoomShown ApplyRoom(TrayPress drag, TrayDropTarget target)
+    {
+        TrayRow row = MeasureTrayRow();
+        int index = drag.FromFlyout ? -1 : row.Icons.IndexOf(drag.Icon);
+        int? from = index >= 0 ? index : null;
+        int? gap = target.Kind == TrayDrop.Kind.Bar ? target.Gap : null;
+
+        // An icon from the menu that never reached the row leaves the row alone.
+        TrayDrop.RoomLayout room = TrayDrop.Room(row.Icons.Count, from, gap);
+
+        for (int j = 0; j < row.Containers.Count; j++)
+        {
+            if (j == from) continue;
+            SlideTo(row.Containers[j], room.Offsets[j] * row.PitchDip);
+        }
+
+        _trayChevronShift = room.ChevronOffset;
+        SlideTo(TrayChevron, room.ChevronOffset * row.PitchDip);
+
+        if (_trayCaret?.Child is Rectangle mark && room.GapSlot is int slot)
+        {
+            double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
+            double along = row.PitchDip - 4;
+            double across = TrayIconExtent + 8;
+            mark.Width = IsVertical ? across : along;
+            mark.Height = IsVertical ? along : across;
+
+            Point centre = SlotCentre(row, slot);
+            _trayCaret.HorizontalOffset = centre.X / dpi - mark.Width / 2 + DropAlignmentFix(mark.Width);
+            _trayCaret.VerticalOffset = centre.Y / dpi - mark.Height / 2;
+            _trayCaret.IsOpen = true;
+        }
+        else if (_trayCaret is not null)
+        {
+            _trayCaret.IsOpen = false;
+        }
+
+        return new RoomShown(row, room, from);
+    }
+
+    /// <summary>Slides an element along the bar to an offset, from wherever it is drawn now.</summary>
+    private void SlideTo(FrameworkElement element, double along)
+    {
+        if (_traySlideTargets.TryGetValue(element, out double current) && current == along) return;
+        if (along == 0 && !_traySlideTargets.ContainsKey(element)) return;
+        _traySlideTargets[element] = along;
+
+        TranslateTransform shift = SlideTransform(element);
+        DoubleAnimation slide = new(along, Animated(TraySlide))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        };
+        shift.BeginAnimation(IsVertical ? TranslateTransform.YProperty : TranslateTransform.XProperty, slide, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private static TranslateTransform SlideTransform(FrameworkElement element)
+    {
+        if (element.RenderTransform is TranslateTransform existing && !existing.IsFrozen) return existing;
+
+        TranslateTransform shift = new();
+        element.RenderTransform = shift;
+        return shift;
+    }
+
+    /// <summary>Where an element is drawn along the bar right now, slide included, in physical pixels.</summary>
+    private double DrawnAlong(FrameworkElement element)
+    {
+        double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
+        Rect laid = LayoutScreenRect(element);
+        double slid = element.RenderTransform is TranslateTransform t ? (IsVertical ? t.Y : t.X) : 0;
+        return (IsVertical ? laid.Top : laid.Left) + slid * dpi;
+    }
+
+    /// <summary>Takes every slide off at once, leaving each element where layout puts it.</summary>
+    private void ClearSlides()
+    {
+        foreach (UIElement element in _traySlideTargets.Keys)
+        {
+            if (element is FrameworkElement { RenderTransform: TranslateTransform shift })
+            {
+                shift.BeginAnimation(TranslateTransform.XProperty, null);
+                shift.BeginAnimation(TranslateTransform.YProperty, null);
+                shift.X = 0;
+                shift.Y = 0;
+            }
+        }
+        _traySlideTargets.Clear();
+    }
+
+    /// <summary>Whether this drop changes anything at all.</summary>
+    /// <remarks>Along the bar, the gap is counted among the other icons, so the icon's own place is its own index.</remarks>
+    private bool WouldChange(TrayPress drag, TrayDropTarget target) => target.Kind switch
+    {
+        TrayDrop.Kind.Overflow => !drag.FromFlyout,
+        TrayDrop.Kind.Bar when drag.FromFlyout => true,
+        TrayDrop.Kind.Bar => target.Gap != MeasureTrayRow().Icons.IndexOf(drag.Icon),
+        _ => false,
+    };
+
+    /// <summary>Where the dragged icon flies to when it is let go, in physical pixels.</summary>
+    private (Point To, bool Shrink, TimeSpan Time) Landing(TrayPress drag, TrayDropTarget target, RoomShown shown, bool changes)
+    {
+        Rect chevron = LayoutScreenRect(TrayChevron);
+        Point intoChevron = new(chevron.Left + chevron.Width / 2, chevron.Top + chevron.Height / 2);
+
+        if (target.Kind == TrayDrop.Kind.Bar && shown.Room.GapSlot is int slot)
+            return (SlotCentre(shown.Row, slot), false, TrayGlide);
+
+        if (target.Kind == TrayDrop.Kind.Overflow && changes)
+        {
+            if (TrayOverflowPopup.IsOpen && FutureOverflowCell(drag.Icon) is { } cell)
+            {
+                // The menu is centred on the chevron, and once the row has closed up behind the
+                // icon the chevron is a slot further in; the cell goes with it.
+                if (!drag.FromFlyout) cell += IsVertical ? new Vector(0, shown.Row.Pitch) : new Vector(shown.Row.Pitch, 0);
+                return (cell, false, TrayGlide);
+            }
+
+            return (intoChevron, true, TrayShrinkIn);
+        }
+
+        // Nothing changes: home. From the bar that is its own slot, held open the whole time.
+        if (!drag.FromFlyout && shown.Room.GapSlot is int home)
+            return (SlotCentre(shown.Row, home), false, TraySnapBack);
+
+        if (drag.FromFlyout && TrayOverflowPopup.IsOpen && drag.Element.IsVisible)
+        {
+            Rect at = ScreenRect(drag.Element);
+            return (new Point(at.Left + at.Width / 2, at.Top + at.Height / 2), false, TraySnapBack);
+        }
+
+        return (intoChevron, true, TrayShrinkIn);
+    }
+
+    /// <summary>
+    /// The menu cell an icon put back will appear in. The menu lists icons in the order they
+    /// arrived, so this is not simply the end.
+    /// </summary>
+    private Point? FutureOverflowCell(NotifyIcon icon)
+    {
+        if (OverflowTrayIcons is null || _notificationArea is null) return null;
+
+        IList source = _notificationArea.TrayIcons;
+        int place = source.IndexOf(icon);
+        List<FrameworkElement> cells = [];
+        int index = 0;
+        foreach (NotifyIcon other in OverflowTrayIcons.Cast<NotifyIcon>())
+        {
+            if (TrayOverflowHost.ItemContainerGenerator.ContainerFromItem(other) is not FrameworkElement { IsVisible: true } cell) continue;
+            if (source.IndexOf(other) < place) index++;
+            cells.Add(cell);
+        }
+
+        if (cells.Count == 0) return null;
+
+        Rect target;
+        if (index < cells.Count)
+        {
+            target = ScreenRect(cells[index]);
+        }
+        else
+        {
+            Rect last = ScreenRect(cells[^1]);
+            int columns = Math.Max(1, TrayOverflowColumns);
+            target = cells.Count % columns != 0
+                ? new Rect(last.Right, last.Top, last.Width, last.Height)
+                : new Rect(ScreenRect(cells[cells.Count - columns]).Left, last.Bottom, last.Width, last.Height);
+        }
+
+        return new Point(target.Left + target.Width / 2, target.Top + target.Height / 2);
+    }
+
+    /// <summary>
+    /// Flies the floating icon to a point, then calls <paramref name="landed"/>. Shrinking, it
+    /// fades into the chevron as it goes.
+    /// </summary>
+    private void FlyGhost(Popup ghost, Point toCentre, bool shrink, TimeSpan time, Action landed)
+    {
+        double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
+        double toX = toCentre.X / dpi - GhostSize / 2 + DropAlignmentFix(GhostSize);
+        double toY = toCentre.Y / dpi - GhostSize / 2;
+
+        if (!SystemParameters.ClientAreaAnimation || ghost.Child is not FrameworkElement card)
+        {
+            ghost.HorizontalOffset = toX;
+            ghost.VerticalOffset = toY;
+            if (shrink) ghost.IsOpen = false;
+            landed();
             return;
         }
 
-        double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
-        Rect into = ScreenRect(target);
-        double toX = (into.Left + into.Width / 2) / dpi - TrayIconExtent / 2;
-        double toY = (into.Top + into.Height / 2) / dpi - TrayIconExtent / 2;
-
-        Duration time = Animated(TrayAnimationShort);
-        QuadraticEase ease = new() { EasingMode = EasingMode.EaseIn };
-
-        ScaleTransform shrink = new(1, 1);
-        image.RenderTransformOrigin = new Point(0.5, 0.5);
-        image.RenderTransform = shrink;
+        IEasingFunction ease = shrink
+            ? new QuadraticEase { EasingMode = EasingMode.EaseIn }
+            : new CubicEase { EasingMode = EasingMode.EaseOut };
 
         // The move is set frame by frame. Animating a popup's offsets does not move its window
         // (measured: the icon shrank where it stood); setting them does, which is how the drag
@@ -429,7 +688,7 @@ internal partial class BarWindow
 
         void Step(object? sender, EventArgs e)
         {
-            double t = Math.Min(1, clock.Elapsed.TotalMilliseconds / TrayAnimationShort.TotalMilliseconds);
+            double t = Math.Min(1, clock.Elapsed.TotalMilliseconds / time.TotalMilliseconds);
             double eased = ease.Ease(t);
             ghost.HorizontalOffset = fromX + (toX - fromX) * eased;
             ghost.VerticalOffset = fromY + (toY - fromY) * eased;
@@ -437,27 +696,169 @@ internal partial class BarWindow
             if (t < 1) return;
 
             CompositionTarget.Rendering -= Step;
-            ghost.IsOpen = false;
-            PlayPress(TrayChevronScale);
+            if (shrink) ghost.IsOpen = false;
+            landed();
         }
 
         CompositionTarget.Rendering += Step;
-        shrink.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.3, time) { EasingFunction = ease });
-        shrink.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.3, time) { EasingFunction = ease });
-        image.BeginAnimation(OpacityProperty, new DoubleAnimation(0, time));
+
+        if (shrink && card.RenderTransform is ScaleTransform scale)
+        {
+            Duration duration = Animated(time);
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.3, duration) { EasingFunction = ease });
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.3, duration) { EasingFunction = ease });
+            card.BeginAnimation(OpacityProperty, new DoubleAnimation(0, duration));
+        }
     }
 
-    private static void FadeOutGhost(Popup ghost)
+    /// <summary>
+    /// Commits the drop and lets the row settle: everything that moved slides from where it was
+    /// drawn to where layout now puts it, the chevron included.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is how the row closes up only after an icon has gone into the chevron, and why a drop
+    /// never jumps: where each icon and the chevron were drawn is read before the commit, the
+    /// slides come off, the commit rebuilds the row, and once it is laid out each element slides
+    /// in from its old drawn place. Where the drawing already matched the new layout (a drop on
+    /// the bar) nothing moves at all.
+    /// </para>
+    /// <para>
+    /// The floating icon closes in the same pass the new row first draws in, so the dropped icon
+    /// is never missing for a frame.
+    /// </para>
+    /// </remarks>
+    private void SettleTray(TrayPress drag, Popup? ghost, Popup? marker, Action commit)
     {
-        if (!SystemParameters.ClientAreaAnimation || ghost.Child is not UIElement image)
+        TrayRow row = MeasureTrayRow();
+        Dictionary<NotifyIcon, double> drawn = [];
+        for (int j = 0; j < row.Icons.Count; j++)
         {
-            ghost.IsOpen = false;
+            if (ReferenceEquals(row.Icons[j], drag.Icon)) continue;
+            drawn[row.Icons[j]] = DrawnAlong(row.Containers[j]);
+        }
+        double chevronDrawn = DrawnAlong(TrayChevron);
+
+        ClearSlides();
+        _trayChevronShift = 0;
+        _trayTarget = TrayDropTarget.None;
+
+        drag.Element.BeginAnimation(OpacityProperty, null);
+        drag.Element.Opacity = 1;
+
+        commit();
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            if (marker is not null) marker.IsOpen = false;
+            if (ghost is not null) ghost.IsOpen = false;
+
+            if (!SystemParameters.ClientAreaAnimation) return;
+            double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
+
+            TrayRow after = MeasureTrayRow();
+            for (int j = 0; j < after.Icons.Count; j++)
+            {
+                if (drawn.TryGetValue(after.Icons[j], out double was))
+                    SlideFrom(after.Containers[j], (was - DrawnAlong(after.Containers[j])) / dpi);
+            }
+
+            if (TrayChevron.IsVisible) SlideFrom(TrayChevron, (chevronDrawn - DrawnAlong(TrayChevron)) / dpi);
+        });
+    }
+
+    /// <summary>Draws an element offset along the bar and slides it home to zero.</summary>
+    private void SlideFrom(FrameworkElement element, double offset)
+    {
+        if (Math.Abs(offset) < 0.5) return;
+
+        TranslateTransform shift = SlideTransform(element);
+        DoubleAnimation slide = new(offset, 0, Animated(TraySlide))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            FillBehavior = FillBehavior.Stop,
+        };
+        shift.BeginAnimation(IsVertical ? TranslateTransform.YProperty : TranslateTransform.XProperty, slide);
+    }
+
+    // ---------------------------------------------------------------- the chevron opens on hover
+
+    private DispatcherTimer? _traySpringTimer;
+
+    /// <summary>
+    /// Holding a dragged icon over the closed chevron opens its menu after half a second, so it
+    /// can be dropped among the hidden icons; a ring fills around the chevron meanwhile.
+    /// </summary>
+    private void UpdateSpringOpen(TrayDropTarget target)
+    {
+        bool arm = target.Kind == TrayDrop.Kind.Overflow
+            && !TrayOverflowPopup.IsOpen
+            && OverflowTrayIcons?.Cast<object>().Any() == true;
+
+        if (!arm)
+        {
+            StopSpringOpen();
             return;
         }
 
-        DoubleAnimation fade = new(0, Animated(TimeSpan.FromMilliseconds(110)));
-        fade.Completed += (_, _) => ghost.IsOpen = false;
-        image.BeginAnimation(OpacityProperty, fade);
+        if (_traySpringTimer?.IsEnabled == true) return;
+
+        _traySpringTimer ??= new DispatcherTimer(DispatcherPriority.Input, Dispatcher) { Interval = TraySpringDelay };
+        _traySpringTimer.Tick -= OnSpringOpen;
+        _traySpringTimer.Tick += OnSpringOpen;
+        _traySpringTimer.Start();
+        ShowSpringRing(true);
+    }
+
+    private void OnSpringOpen(object? sender, EventArgs e)
+    {
+        StopSpringOpen();
+        if (_trayDrag is null || TrayOverflowPopup.IsOpen) return;
+
+        ClearPanelsFor(BarPanel.TrayOverflow);
+        DismissWindowsSurfaces();
+        SetTrayOverflowOpen(true);
+
+        // A popup opened later draws over one opened earlier, so the menu now covers the floating
+        // icon, which would fly into it unseen. Reopening puts it back on top.
+        foreach (Popup? above in new[] { _trayCaret, _trayGhost })
+        {
+            if (above is not { IsOpen: true }) continue;
+            above.IsOpen = false;
+            above.IsOpen = true;
+        }
+
+        BringUpLog.Write("tray drag: held over the chevron, menu opened");
+    }
+
+    private void StopSpringOpen()
+    {
+        _traySpringTimer?.Stop();
+        ShowSpringRing(false);
+    }
+
+    private void ShowSpringRing(bool show)
+    {
+        if (!show)
+        {
+            TrayChevronRing.BeginAnimation(Shape.StrokeDashOffsetProperty, null);
+            TrayChevronRing.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // Dash lengths are in multiples of the stroke's thickness.
+        double circumference = Math.PI * (TrayChevronRing.Width - TrayChevronRing.StrokeThickness) / TrayChevronRing.StrokeThickness;
+        TrayChevronRing.Stroke = new SolidColorBrush(AccentColor);
+        TrayChevronRing.StrokeDashArray = [circumference, circumference];
+        TrayChevronRing.Visibility = Visibility.Visible;
+
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            TrayChevronRing.StrokeDashOffset = 0;
+            return;
+        }
+
+        TrayChevronRing.BeginAnimation(Shape.StrokeDashOffsetProperty, new DoubleAnimation(circumference, 0, new Duration(TraySpringDelay)));
     }
 
     private bool _chevronDropLit;
@@ -468,8 +869,7 @@ internal partial class BarWindow
     /// </summary>
     /// <remarks>
     /// Done from here because the chip's own trigger is the pointer being over the chevron, and
-    /// that never fires during a drag: the dragged icon holds the mouse capture. The bar gets its
-    /// caret for the same reason; without this the chevron gave no sign it would take the drop.
+    /// that never fires during a drag: the dragged icon holds the mouse capture.
     /// </remarks>
     private void SetChevronDropLit(bool lit)
     {
@@ -493,7 +893,7 @@ internal partial class BarWindow
             TrayChevronScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, duration));
         }
 
-        if (_trayGhost?.Child is UIElement ghost) ghost.Opacity = lit ? 0.45 : 0.85;
+        if (_trayGhost?.Child is UIElement ghost) ghost.Opacity = lit ? 0.7 : 1;
     }
 
     private void OnTrayDragLostCapture(object sender, MouseEventArgs e) => EndTrayDrag(drop: false);
@@ -522,7 +922,7 @@ internal partial class BarWindow
     }
 
     /// <summary>Where a drop at this point would go.</summary>
-    private readonly record struct TrayDropTarget(TrayDrop.Kind Kind, NotifyIcon? Before, Point? Caret)
+    private readonly record struct TrayDropTarget(TrayDrop.Kind Kind, NotifyIcon? Before, int? Gap)
     {
         public static TrayDropTarget None => new(TrayDrop.Kind.None, null, null);
     }
@@ -531,51 +931,57 @@ internal partial class BarWindow
     /// The menu while it is open (or the chevron, which stands for it), else the bar, else nowhere.
     /// All in physical pixels, as <see cref="PointerIsOverTrayOverflow"/> reads them.
     /// </summary>
-    private TrayDropTarget TrayDropAt(Point cursor)
+    /// <remarks>
+    /// The chevron is looked for where it is drawn. From the menu it is drawn a slot further out
+    /// while the row has made room, so while the pointer is on it both places count, or reaching
+    /// it would put it back and take it away again on alternate moves.
+    /// </remarks>
+    private TrayDropTarget TrayDropAt(Point cursor, TrayPress drag)
     {
+        bool showAll = _trayChoice?.ShowAll == true;
+
         // With every icon on the bar the menu holds nothing, so there is nothing to drop into.
-        if (_trayChoice?.ShowAll != true && TrayOverflowPopup.IsOpen && PointerIsOverTrayOverflow())
+        if (!showAll && TrayOverflowPopup.IsOpen && PointerIsOverTrayOverflow())
             return new TrayDropTarget(TrayDrop.Kind.Overflow, null, null);
 
-        if (_trayChoice?.ShowAll != true && TrayChevron.IsVisible && ScreenRect(TrayChevron).Contains(cursor))
-            return new TrayDropTarget(TrayDrop.Kind.Overflow, null, null);
+        TrayRow row = MeasureTrayRow();
+
+        if (!showAll && TrayChevron.IsVisible)
+        {
+            Rect laid = LayoutScreenRect(TrayChevron);
+            Rect shifted = laid;
+            shifted.Offset(IsVertical ? new Vector(0, -row.Pitch) : new Vector(-row.Pitch, 0));
+
+            Rect drawnAt = _trayChevronShift != 0 ? shifted : laid;
+            bool onChevron = drawnAt.Contains(cursor)
+                || (drag.FromFlyout && _trayTarget.Kind == TrayDrop.Kind.Overflow && (laid.Contains(cursor) || shifted.Contains(cursor)));
+
+            if (onChevron) return new TrayDropTarget(TrayDrop.Kind.Overflow, null, null);
+        }
 
         double dpi = DpiScale <= 0 ? 1.0 : DpiScale;
         Rect bar = new(Left * dpi, Top * dpi, ActualWidth * dpi, ActualHeight * dpi);
         if (!bar.Contains(cursor)) return TrayDropTarget.None;
 
-        List<(NotifyIcon Icon, Rect Slot)> slots = [];
-        if (BarTrayIcons is not null)
-        {
-            foreach (NotifyIcon icon in BarTrayIcons.Cast<NotifyIcon>())
-            {
-                if (TrayBarHost.ItemContainerGenerator.ContainerFromItem(icon) is FrameworkElement { IsVisible: true } container)
-                    slots.Add((icon, ScreenRect(container)));
-            }
-        }
-
+        bool fromBar = !drag.FromFlyout && row.Icons.Contains(drag.Icon);
         double along = IsVertical ? cursor.Y : cursor.X;
-        int gap = TrayDrop.GapIndex([.. slots.Select(s => IsVertical ? (s.Slot.Top, s.Slot.Bottom) : (s.Slot.Left, s.Slot.Right))], along);
+        int gap = TrayDrop.RoomGapIndex(row.Icons.Count, fromBar, row.FirstSlotStart, row.Pitch, along);
 
-        Point caretAt;
-        if (slots.Count == 0)
-        {
-            // An empty row has no size; its place is the start of the system cluster.
-            Rect cluster = ScreenRect(SystemCluster);
-            caretAt = IsVertical ? new Point(cluster.Left + cluster.Width / 2, cluster.Top)
-                                 : new Point(cluster.Left, cluster.Top + cluster.Height / 2);
-        }
-        else
-        {
-            Rect slot = gap < slots.Count ? slots[gap].Slot : slots[^1].Slot;
-            bool leading = gap < slots.Count;
-            caretAt = IsVertical
-                ? new Point(slot.Left + slot.Width / 2, leading ? slot.Top : slot.Bottom)
-                : new Point(leading ? slot.Left : slot.Right, slot.Top + slot.Height / 2);
-        }
+        List<NotifyIcon> others = fromBar ? [.. row.Icons.Where(i => !ReferenceEquals(i, drag.Icon))] : row.Icons;
+        NotifyIcon? before = gap < others.Count ? others[gap] : null;
+        return new TrayDropTarget(TrayDrop.Kind.Bar, before, gap);
+    }
 
-        NotifyIcon? before = gap < slots.Count ? slots[gap].Icon : null;
-        return new TrayDropTarget(TrayDrop.Kind.Bar, before, caretAt);
+    /// <summary>
+    /// Where layout put an element, on screen, leaving out any slide drawn on it: its layout slot
+    /// in its parent, which a render transform does not move.
+    /// </summary>
+    private static Rect LayoutScreenRect(FrameworkElement element)
+    {
+        if (VisualTreeHelper.GetParent(element) is not UIElement parent) return ScreenRect(element);
+
+        Rect slot = LayoutInformation.GetLayoutSlot(element);
+        return new Rect(parent.PointToScreen(slot.TopLeft), parent.PointToScreen(slot.BottomRight));
     }
 
     private static Rect ScreenRect(FrameworkElement element)

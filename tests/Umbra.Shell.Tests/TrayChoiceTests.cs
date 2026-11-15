@@ -202,40 +202,12 @@ public class TrayChoiceTests : IDisposable
     // ------------------------------------------------------------------ drop geometry
 
     [Theory]
-    [InlineData(0.0, 0)]
-    [InlineData(9.9, 0)]
-    [InlineData(10.0, 1)]
-    [InlineData(29.9, 1)]
-    [InlineData(30.0, 2)]
-    [InlineData(500.0, 2)]
-    public void The_Gap_Is_Decided_By_Each_Icons_Middle(double along, int gap) =>
-        Assert.Equal(gap, TrayDrop.GapIndex([(0, 20), (20, 40)], along));
-
-    [Fact]
-    public void An_Empty_Row_Has_One_Gap() => Assert.Equal(0, TrayDrop.GapIndex([], 123));
-
-    [Theory]
     [InlineData(3, 0, false)]
     [InlineData(4, 0, true)]
     [InlineData(0, -4, true)]
     [InlineData(-3, 3, false)]
     public void A_Drag_Starts_Past_The_Threshold_On_Either_Axis(double dx, double dy, bool drag) =>
         Assert.Equal(drag, TrayDrop.IsDrag(new Point(100, 100), new Point(100 + dx, 100 + dy), 4, 4));
-
-    /// <summary>Off the bar and towards the screen, whichever edge the bar is on.</summary>
-    [Theory]
-    [InlineData(Umbra.Core.Layout.BarEdge.Bottom, 0, -1)]
-    [InlineData(Umbra.Core.Layout.BarEdge.Top, 0, 1)]
-    [InlineData(Umbra.Core.Layout.BarEdge.Left, 1, 0)]
-    [InlineData(Umbra.Core.Layout.BarEdge.Right, -1, 0)]
-    public void The_Ghost_Rides_Inboard_Of_The_Pointer(Umbra.Core.Layout.BarEdge edge, int x, int y)
-    {
-        Vector lift = TrayDrop.GhostLift(edge, 18);
-
-        Assert.Equal(Math.Sign(x), Math.Sign(lift.X));
-        Assert.Equal(Math.Sign(y), Math.Sign(lift.Y));
-        Assert.True(lift.Length >= 18, "the ghost would still overlap the pointer's target");
-    }
 
     [Fact]
     public void The_Chevron_Menu_Offers_The_Switch_Not_Taken()
