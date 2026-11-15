@@ -415,7 +415,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         appId ??= PackagedExecutable.AppIdFor(executable);
         if (appId is not null) candidates.Add(ShellIconSource.ForAppId(appId));
 
-        // The executable a live window is actually running from, first: it beats a shortcut of the
+        // Then the executable a live window is actually running from: it beats a shortcut of the
         // same name that happens to point somewhere else.
         if (UsableIconSource(executable)) candidates.Add(new IconCandidate(executable!));
 
