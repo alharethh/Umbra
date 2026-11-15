@@ -80,6 +80,12 @@ internal sealed class ShortcutResolver
         return null;
     }
 
+    /// <summary>Whether the Start Menu has been read yet, so that <see cref="Resolve"/> will not read it.</summary>
+    public bool IsIndexed => _shortcuts is not null;
+
+    /// <summary>Reads the Start Menu on a worker, for a caller on the UI thread that must not.</summary>
+    public void IndexInBackground() => Task.Run(Shortcuts);
+
     /// <summary>The names a shortcut for this application might be filed under.</summary>
     internal static IEnumerable<string?> Names(string? displayName, string? executablePath)
     {

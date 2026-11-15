@@ -31,15 +31,26 @@ internal sealed class TaskbarModel : IDisposable
     private readonly AppIconResolver _icons = new();
     private readonly PackagedAppNames _packagedNames;
     private readonly PackagedExecutable _packages;
+    private readonly PinPresence _presence;
+    private readonly DeadPinWatch _deadPins = new();
+    private readonly Func<long> _clock;
     private readonly System.Windows.Threading.Dispatcher _dispatcher;
+    private System.Windows.Threading.DispatcherTimer? _recheck;
 
     public TaskbarModel(
-        ICollectionView windows, PinSettings pins, PackagedAppNames? packagedNames = null, PackagedExecutable? packages = null)
+        ICollectionView windows,
+        PinSettings pins,
+        PackagedAppNames? packagedNames = null,
+        PackagedExecutable? packages = null,
+        PinPresence? presence = null,
+        Func<long>? clock = null)
     {
         _windows = windows;
         _pins = pins;
         _packagedNames = packagedNames ?? PackagedAppNames.Shared;
         _packages = packages ?? PackagedExecutable.Shared;
+        _presence = presence ?? new PinPresence(_packages, _shortcuts);
+        _clock = clock ?? (() => Environment.TickCount64);
         _dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
 
         if (_windows is INotifyCollectionChanged observable)
@@ -108,6 +119,7 @@ internal sealed class TaskbarModel : IDisposable
             observable.CollectionChanged -= OnWindowsChanged;
 
         _pins.Changed -= OnPinsChanged;
+        _recheck?.Stop();
 
         foreach (TaskbarSlot slot in Slots) slot.Detach();
         Slots.Clear();
@@ -126,6 +138,7 @@ internal sealed class TaskbarModel : IDisposable
         RelocatePackagedPins();
         AdoptMovedApplications(running.Keys);
         AdoptRunningIdentities(running);
+        RemoveUninstalledPins(running);
         NamePackagedPins();
 
         _order.Reconcile([.. _pins.Pins.Select(p => p.Key)], running.Keys);
@@ -230,6 +243,89 @@ internal sealed class TaskbarModel : IDisposable
                 Diagnostics.BringUpLog.Write($"pin moved to the installed version: {pin.Name} {pin.Path} -> {installed.Executable}");
         }
     }
+
+    /// <summary>
+    /// Removes the pins of applications that have been uninstalled, as Windows does, once
+    /// <see cref="DeadPinWatch"/> has seen them gone twice a minute apart.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// After the three repairs above, so a pin that can be moved to where its application lives
+    /// now is moved rather than judged. A running application is never looked at: its windows are
+    /// the proof.
+    /// </para>
+    /// <para>
+    /// <b>A look that is owed must not wait for a window event.</b> On an idle desktop nothing
+    /// rebuilds the row, so a one-shot timer is set for the earliest owed look: a suspected pin's
+    /// second one, or one a rebuild asked for inside the 30 s interval. It exists only while one
+    /// is owed. A healthy pin is otherwise looked at only when the row rebuilds, so an application
+    /// uninstalled with no window opening or closing at all is noticed at the next one.
+    /// </para>
+    /// </remarks>
+    private void RemoveUninstalledPins(Dictionary<string, List<ApplicationWindow>> running)
+    {
+        long now = _clock();
+        _deadPins.Keep(_pins.Pins.Select(p => p.Key));
+
+        foreach (PinnedApp pin in _pins.Pins.ToList())
+        {
+            if (Lookup(running, pin.Key).Count > 0)
+            {
+                _deadPins.Running(pin.Key, now);
+                continue;
+            }
+
+            if (!_deadPins.Look(pin.Key, now, () => _presence.Of(pin))) continue;
+
+            if (_pins.RemoveUninstalled(pin.Key))
+                Diagnostics.BringUpLog.Write($"pin removed: {pin.Name} is no longer installed ({pin.Path})");
+        }
+
+        // A look that waited for the Start Menu index (at startup) comes back once it is read.
+        long? due = _deadPins.NextLookIn(now);
+        if (_presence.TakeWaitedForIndex())
+            due = Math.Min(due ?? long.MaxValue, (long)DeadPinWatch.Interval.TotalMilliseconds);
+
+        ScheduleRecheck(due);
+    }
+
+    private void ScheduleRecheck(long? dueInMilliseconds)
+    {
+        if (dueInMilliseconds is not { } due)
+        {
+            _recheck?.Stop();
+            return;
+        }
+
+        if (_recheck is null)
+        {
+            _recheck = new System.Windows.Threading.DispatcherTimer(
+                System.Windows.Threading.DispatcherPriority.Background, _dispatcher);
+            _recheck.Tick += (_, _) =>
+            {
+                _recheck!.Stop();
+                Rebuild();
+            };
+        }
+
+        // A margin past the due time: the tick can land a clock tick early, and a look found not
+        // yet due would wait for the next window event. Measured live: a pin due at +30 s was
+        // looked at again only at about +65 s.
+        _recheck.Stop();
+        _recheck.Interval = TimeSpan.FromMilliseconds(due + RecheckMargin);
+        _recheck.Start();
+    }
+
+    private const long RecheckMargin = 500;
+
+    /// <summary>Whether a confirmation look is scheduled. For tests.</summary>
+    internal bool RecheckScheduled => _recheck?.IsEnabled == true;
+
+    /// <summary>When the scheduled look will come, if one is scheduled. For tests.</summary>
+    internal TimeSpan? RecheckInterval => RecheckScheduled ? _recheck!.Interval : null;
+
+    /// <summary>Rebuilds the row now, as the recheck timer would. For tests, which drive the clock.</summary>
+    internal void Recheck() => Rebuild();
 
     /// <summary>
     /// Re-points pins whose application has updated into a new directory.

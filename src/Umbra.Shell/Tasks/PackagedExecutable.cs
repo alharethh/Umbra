@@ -69,6 +69,28 @@ internal sealed class PackagedExecutable
     public string? AppIdFor(string? executable) => Locate(executable)?.AppId;
 
     /// <summary>
+    /// Whether anything of a package family is installed, asked fresh: true, false, or null when
+    /// that cannot be told.
+    /// </summary>
+    /// <remarks>
+    /// Never cached, unlike <see cref="Locate"/>'s misses, because a false here is what removes a
+    /// pin. The family, not a version's folder, because a family stays installed all through an
+    /// update: the old version is registered until the new one is.
+    /// </remarks>
+    public bool? AnyInstalled(string family)
+    {
+        try
+        {
+            return _folders.AnyInstalled(family);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            BringUpLog.Write(e, $"packages: could not ask whether {family} is installed");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Where this packaged executable is installed now, or null when it is not a packaged
     /// executable or its package is not installed.
     /// </summary>
@@ -238,6 +260,27 @@ internal sealed class PackagedExecutable
 internal interface IPackageFolders
 {
     IEnumerable<string> FoldersOf(string familyName);
+
+    /// <summary>
+    /// Whether anything of this family is installed for the user: true, false, or null when that
+    /// cannot be told. Only a definite false may ever be acted on as "uninstalled".
+    /// </summary>
+    /// <remarks>
+    /// The default reads <see cref="FoldersOf"/>, for test stand-ins whose lists are exact.
+    /// <see cref="InstalledPackages"/> answers from the API's own result instead, because its
+    /// <see cref="FoldersOf"/> lists nothing on an error too.
+    /// </remarks>
+    bool? AnyInstalled(string familyName)
+    {
+        try
+        {
+            return FoldersOf(familyName).Any();
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            return null;
+        }
+    }
 }
 
 /// <summary>
@@ -263,6 +306,26 @@ internal sealed class InstalledPackages : IPackageFolders
         }
 
         return folders;
+    }
+
+    /// <remarks>
+    /// Measured on the laptop, 2026-11-15: an installed family answers
+    /// <c>ERROR_INSUFFICIENT_BUFFER</c> with a count, one that is not installed answers
+    /// <c>ERROR_SUCCESS</c> with a count of 0, and a malformed name <c>ERROR_INVALID_PARAMETER</c>.
+    /// Only the second is "not installed"; everything else that is not the first is unknown.
+    /// </remarks>
+    public bool? AnyInstalled(string familyName)
+    {
+        uint count = 0;
+        uint bufferLength = 0;
+
+        int result = GetPackagesByPackageFamily(familyName, ref count, IntPtr.Zero, ref bufferLength, IntPtr.Zero);
+        return result switch
+        {
+            ErrorInsufficientBuffer when count > 0 => true,
+            ErrorSuccess when count == 0 => false,
+            _ => null,
+        };
     }
 
     private static List<string> FullNamesOf(string familyName)
