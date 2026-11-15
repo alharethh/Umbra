@@ -181,13 +181,31 @@
             <Setter Property="Padding" Value="6,3" />
             <Setter Property="FontFamily" Value="Consolas" />
         </Style>
-        <Style x:Key="Swatch" TargetType="Border">
+        <!-- The swatch is a button: it opens the colour picker (SettingsWindow.OpenPicker). -->
+        <Style x:Key="Swatch" TargetType="Button">
             <Setter Property="Width" Value="26" />
             <Setter Property="Height" Value="18" />
             <Setter Property="HorizontalAlignment" Value="Right" />
-            <Setter Property="CornerRadius" Value="3" />
-            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="BorderBrush" Value="{DynamicResource Umbra.Border}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Face" CornerRadius="3" BorderThickness="1"
+                                Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource Umbra.Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource Umbra.Accent}" />
+                                <Setter TargetName="Face" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!--
@@ -484,7 +502,7 @@
                             <TextBlock Text="Bar accent" />
                             <TextBox Grid.Column="1" x:Name="BarAccentHex" Style="{StaticResource HexBox}"
                                      AutomationProperties.Name="Bar accent hex value" />
-                            <Border Grid.Column="2" x:Name="BarAccentSwatch" Style="{StaticResource Swatch}" />
+                            <Button Grid.Column="2" x:Name="BarAccentSwatch" Style="{StaticResource Swatch}" ToolTip="Pick a colour" />
                         </Grid>
                         <Grid Style="{StaticResource Row}" Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
@@ -495,7 +513,7 @@
                             <TextBlock Text="Resting tint" />
                             <TextBox Grid.Column="1" x:Name="BarTintHex" Style="{StaticResource HexBox}"
                                      AutomationProperties.Name="Resting tint hex value" />
-                            <Border Grid.Column="2" x:Name="BarTintSwatch" Style="{StaticResource Swatch}" />
+                            <Button Grid.Column="2" x:Name="BarTintSwatch" Style="{StaticResource Swatch}" ToolTip="Pick a colour" />
                         </Grid>
                         <Grid Style="{StaticResource Row}" Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
@@ -506,7 +524,7 @@
                             <TextBlock Text="Window background" />
                             <TextBox Grid.Column="1" x:Name="WindowBackgroundHex" Style="{StaticResource HexBox}"
                                      AutomationProperties.Name="Window background hex value" />
-                            <Border Grid.Column="2" x:Name="WindowBackgroundSwatch" Style="{StaticResource Swatch}" />
+                            <Button Grid.Column="2" x:Name="WindowBackgroundSwatch" Style="{StaticResource Swatch}" ToolTip="Pick a colour" />
                         </Grid>
                         <Grid Style="{StaticResource Row}" Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
@@ -517,7 +535,7 @@
                             <TextBlock Text="Window text" />
                             <TextBox Grid.Column="1" x:Name="WindowTextHex" Style="{StaticResource HexBox}"
                                      AutomationProperties.Name="Window text hex value" />
-                            <Border Grid.Column="2" x:Name="WindowTextSwatch" Style="{StaticResource Swatch}" />
+                            <Button Grid.Column="2" x:Name="WindowTextSwatch" Style="{StaticResource Swatch}" ToolTip="Pick a colour" />
                         </Grid>
                         <Grid Style="{StaticResource Row}" Margin="0,0,0,2">
                             <Grid.ColumnDefinitions>
@@ -528,7 +546,7 @@
                             <TextBlock Text="Window accent" />
                             <TextBox Grid.Column="1" x:Name="WindowAccentHex" Style="{StaticResource HexBox}"
                                      AutomationProperties.Name="Window accent hex value" />
-                            <Border Grid.Column="2" x:Name="WindowAccentSwatch" Style="{StaticResource Swatch}" />
+                            <Button Grid.Column="2" x:Name="WindowAccentSwatch" Style="{StaticResource Swatch}" ToolTip="Pick a colour" />
                         </Grid>
                         <TextBlock Style="{StaticResource Hint}" Margin="140,2,0,10"
                                    Text="The bar stays black in every theme. Its accent is capped to the brightest a hover may be, and the tint keeps the resting icons at their own brightness, so no theme adds wear. A grey tint means none." />
@@ -558,7 +576,7 @@
                             <TextBlock Text="Chip colour" />
                             <TextBox Grid.Column="1" x:Name="AppHoverHex" Style="{StaticResource HexBox}"
                                      AutomationProperties.Name="Chip colour hex value" />
-                            <Border Grid.Column="2" x:Name="AppHoverSwatch" Style="{StaticResource Swatch}" />
+                            <Button Grid.Column="2" x:Name="AppHoverSwatch" Style="{StaticResource Swatch}" ToolTip="Pick a colour" />
                         </Grid>
                         <TextBlock Style="{StaticResource Hint}" Margin="140,2,0,10"
                                    Text="The plain chip throws far less light than the holographic pane. Both show only while you point at the bar. The accent for the notification area, the clock and Start is on the Themes page." />
