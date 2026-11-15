@@ -31,19 +31,41 @@ internal sealed class SettingsRequest : IDisposable
     public const string DefaultEventName = @"Local\Umbra.OpenSettings";
 
     private readonly EventWaitHandle _event;
-    private readonly RegisteredWaitHandle _wait;
+    private readonly ManualResetEvent _stop = new(initialState: false);
+    private readonly Thread _listener;
 
-    /// <summary>Listens for requests. <paramref name="requested"/> runs on a thread-pool thread.</summary>
+    /// <summary>Listens for requests. <paramref name="requested"/> runs on a background thread.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A thread of our own, not <c>ThreadPool.RegisterWaitForSingleObject</c>.</b> The pool's
+    /// wait thread holds its own reference to a registered event and drops it on its own
+    /// schedule, after it has signalled any handle passed to <c>Unregister</c>, so nothing public
+    /// says when it has let go. Until it does, disposing ours does not close the event, and a
+    /// launch in that moment opens it, sets it and believes a bar is listening. Measured at about
+    /// 1 in 2,000 disposals under load: the flake in
+    /// <c>SettingsRequestTests.A_Disposed_Listener_Hears_Nothing</c>. Waiting on the unregister
+    /// handle measured no better, for that reason.
+    /// </para>
+    /// <para>
+    /// With a thread we own, <see cref="Dispose"/> joins it, and only then closes the event, so
+    /// on return nothing else holds it and it is gone. One idle thread in a kernel wait.
+    /// </para>
+    /// </remarks>
     public SettingsRequest(Action requested, string? name = null)
     {
         _event = new EventWaitHandle(initialState: false, EventResetMode.AutoReset, name ?? DefaultEventName);
 
-        _wait = ThreadPool.RegisterWaitForSingleObject(
-            _event,
-            (_, _) => requested(),
-            state: null,
-            Timeout.Infinite,
-            executeOnlyOnce: false);
+        _listener = new Thread(() =>
+        {
+            WaitHandle[] handles = [_event, _stop];
+            while (WaitHandle.WaitAny(handles) == 0)
+                requested();
+        })
+        {
+            IsBackground = true,
+            Name = "Umbra settings request",
+        };
+        _listener.Start();
     }
 
     /// <summary>
@@ -66,11 +88,27 @@ internal sealed class SettingsRequest : IDisposable
         }
     }
 
+    /// <summary>Stops listening. On return no launch can find the event.</summary>
+    /// <remarks>
+    /// The join is bounded so a request handler that never returns cannot hold up the bar's exit.
+    /// The bar's handler only queues work on the dispatcher, so that should never happen; if it
+    /// does, the handles are left open rather than closed under a thread still waiting on them,
+    /// and the process is on its way out anyway.
+    /// </remarks>
     public void Dispose()
     {
-        _wait.Unregister(null);
+        _stop.Set();
+        if (!_listener.Join(StopTimeout))
+        {
+            BringUpLog.Write("settings request: the listener did not stop; leaving its handles open");
+            return;
+        }
+
         _event.Dispose();
+        _stop.Dispose();
     }
+
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(2);
 
     private const int AsfwAny = -1;
 

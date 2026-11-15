@@ -55,6 +55,28 @@ public class SettingsRequestTests
     }
 
     [Fact]
+    public void A_Disposed_Listener_Is_Gone_Every_Time()
+    {
+        // The flake in the test above, made reliable by repetition. Listening through the thread
+        // pool left the event alive for a moment after Dispose, held by the pool's wait thread,
+        // so a launch could still find it and set it. One disposal in several hundred: this loop
+        // found 1 to 22 of 3,000 on eight runs out of eight with the pool listener, and the
+        // full test run's load made it more likely, which is why it only ever failed there.
+        int found = 0;
+        for (int i = 0; i < Disposals; i++)
+        {
+            string name = UniqueName();
+            new SettingsRequest(() => { }, name).Dispose();
+            if (SettingsRequest.Signal(name))
+                found++;
+        }
+
+        Assert.Equal(0, found);
+    }
+
+    private const int Disposals = 5_000;
+
+    [Fact]
     public void Only_An_Ordinary_Launch_Signals_Never_A_Restart()
     {
         Assert.True(SettingsRequest.ShouldSignal(restarting: false));
