@@ -136,6 +136,21 @@ internal static class AppIdentity
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>
+    /// A package's family name, <c>Name_PublisherId</c>, from a folder named for its full name;
+    /// null when the folder is not one.
+    /// </summary>
+    internal static string? FamilyNameOf(string? folderName)
+    {
+        if (string.IsNullOrEmpty(folderName)) return null;
+
+        Match match = PackageFullName.Match(folderName);
+        if (!match.Success) return null;
+
+        string rest = match.Groups["rest"].Value;
+        return $"{match.Groups["name"].Value}_{rest[(rest.LastIndexOf('_') + 1)..]}";
+    }
+
+    /// <summary>
     /// Whether two executables are the same file in two versions of one package.
     /// </summary>
     /// <remarks>

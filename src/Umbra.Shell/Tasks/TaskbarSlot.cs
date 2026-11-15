@@ -389,16 +389,33 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     {
         string? executable = ExecutablePath;
         string? name = Pin?.Name ?? DisplayName;
+        string? appId = KnownAppId;
 
-        _icons.Request(Key, () => Candidates(executable, name), OnApplicationIconResolved);
+        _icons.Request(Key, () => Candidates(executable, name, appId), OnApplicationIconResolved);
     }
 
+    /// <summary>
+    /// The app ID this slot already knows without reading a file: its running process's, or its
+    /// key when that is a packaged ID (a UWP application, or a pin of one).
+    /// </summary>
+    private string? KnownAppId => PackagedProcessId ?? (IsPackagedAppId(Key) ? Key : null);
+
+    /// <summary>A packaged application's ID has the shape <c>Family!App</c>; an unpackaged one's need not.</summary>
+    internal static bool IsPackagedAppId(string? id) => !string.IsNullOrWhiteSpace(id) && id.Contains('!');
+
     /// <summary>Where this application's icon might be, best first. Runs on a worker.</summary>
-    private IReadOnlyList<IconCandidate> Candidates(string? executable, string? name)
+    private IReadOnlyList<IconCandidate> Candidates(string? executable, string? name, string? appId)
     {
         List<IconCandidate> candidates = [];
 
-        // The executable a live window is actually running from, first: it beats a shortcut of the
+        // A packaged application's own logo first, as Windows' taskbar draws it. Its executable
+        // can carry no icon at all (WhatsApp.Root.exe has none), and the shell then hands back
+        // the generic program icon as if it had found one. For a pin whose application is closed,
+        // the ID comes from the package's manifest. See PackagedExecutable.
+        appId ??= PackagedExecutable.AppIdFor(executable);
+        if (appId is not null) candidates.Add(ShellIconSource.ForAppId(appId));
+
+        // Then the executable a live window is actually running from: it beats a shortcut of the
         // same name that happens to point somewhere else.
         if (UsableIconSource(executable)) candidates.Add(new IconCandidate(executable!));
 

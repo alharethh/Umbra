@@ -34,8 +34,19 @@ internal sealed class ShellIconSource : IIconSource
     /// </summary>
     public const int Extent = 48;
 
+    /// <summary>
+    /// The prefix of a candidate that names a packaged application by app ID rather than a file.
+    /// </summary>
+    public const string AppsFolderPrefix = @"shell:AppsFolder\";
+
+    /// <summary>A candidate for a packaged application's own logo. See <see cref="PackagedExecutable"/>.</summary>
+    public static IconCandidate ForAppId(string appId) => new(AppsFolderPrefix + appId);
+
     public ImageSource? Extract(IconCandidate candidate)
     {
+        if (candidate.Path?.StartsWith(AppsFolderPrefix, StringComparison.OrdinalIgnoreCase) == true)
+            return FromAppsFolder(candidate.Path);
+
         string path = Expand(candidate.Path);
         if (path.Length == 0) return null;
 
@@ -97,6 +108,125 @@ internal sealed class ShellIconSource : IIconSource
             DestroyIcon(handles[0]);
         }
     }
+
+    /// <summary>
+    /// A packaged application's logo, as the Start menu and Windows' taskbar draw it: the shell's
+    /// image for its Apps folder item.
+    /// </summary>
+    /// <remarks>
+    /// <c>SIIGBF_ICONONLY</c>, so it is the icon and never a thumbnail. The bitmap comes back with
+    /// premultiplied alpha, which <c>CreateBitmapSourceFromHBitmap</c> would flatten onto black,
+    /// so its pixels are copied out as they are.
+    /// </remarks>
+    private static ImageSource? FromAppsFolder(string parsingName)
+    {
+        Guid factoryId = typeof(IShellItemImageFactory).GUID;
+        if (SHCreateItemFromParsingName(parsingName, IntPtr.Zero, ref factoryId, out IShellItemImageFactory? factory) != 0
+            || factory is null)
+            return null;
+
+        IntPtr bitmap = IntPtr.Zero;
+        try
+        {
+            if (factory.GetImage(new NativeSize { Width = Extent, Height = Extent }, SiigbfIconOnly, out bitmap) != 0
+                || bitmap == IntPtr.Zero)
+                return null;
+
+            return FromPremultipliedBitmap(bitmap);
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        finally
+        {
+            if (bitmap != IntPtr.Zero) DeleteObject(bitmap);
+            Marshal.ReleaseComObject(factory);
+        }
+    }
+
+    private static ImageSource? FromPremultipliedBitmap(IntPtr bitmap)
+    {
+        if (GetObjectW(bitmap, Marshal.SizeOf<NativeBitmap>(), out NativeBitmap info) == 0) return null;
+        if (info.Width <= 0 || info.Height <= 0 || info.BitsPixel != 32) return null;
+
+        int width = info.Width;
+        int height = info.Height;
+        byte[] pixels = new byte[width * height * 4];
+
+        BitmapInfoHeader header = new()
+        {
+            Size = (uint)Marshal.SizeOf<BitmapInfoHeader>(),
+            Width = width,
+            Height = -height, // top-down
+            Planes = 1,
+            BitCount = 32,
+        };
+
+        IntPtr screen = GetDC(IntPtr.Zero);
+        try
+        {
+            if (GetDIBits(screen, bitmap, 0, (uint)height, pixels, ref header, 0) == 0) return null;
+        }
+        finally
+        {
+            ReleaseDC(IntPtr.Zero, screen);
+        }
+
+        BitmapSource image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Pbgra32, null, pixels, width * 4);
+        image.Freeze();
+        return image;
+    }
+
+    private const uint SiigbfIconOnly = 0x4;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeSize { public int Width; public int Height; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeBitmap
+    {
+        public int Type, Width, Height, WidthBytes;
+        public ushort Planes, BitsPixel;
+        public IntPtr Bits;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfoHeader
+    {
+        public uint Size;
+        public int Width, Height;
+        public ushort Planes, BitCount;
+        public uint Compression, SizeImage;
+        public int XPelsPerMeter, YPelsPerMeter;
+        public uint ClrUsed, ClrImportant;
+    }
+
+    [ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItemImageFactory
+    {
+        [PreserveSig]
+        int GetImage(NativeSize size, uint flags, out IntPtr bitmap);
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+    private static extern int SHCreateItemFromParsingName(
+        string path, IntPtr bindContext, ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory? item);
+
+    [DllImport("gdi32.dll", EntryPoint = "GetObjectW")]
+    private static extern int GetObjectW(IntPtr handle, int size, out NativeBitmap bitmap);
+
+    [DllImport("gdi32.dll")]
+    private static extern int GetDIBits(IntPtr dc, IntPtr bitmap, uint start, uint lines, byte[] bits, ref BitmapInfoHeader info, uint usage);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr handle);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr window, IntPtr dc);
 
     private static ImageSource? FromShellFileInfo(string path)
     {
