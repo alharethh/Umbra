@@ -30,13 +30,16 @@ internal sealed class TaskbarModel : IDisposable
     private readonly ShortcutResolver _shortcuts = new();
     private readonly AppIconResolver _icons = new();
     private readonly PackagedAppNames _packagedNames;
+    private readonly PackagedExecutable _packages;
     private readonly System.Windows.Threading.Dispatcher _dispatcher;
 
-    public TaskbarModel(ICollectionView windows, PinSettings pins, PackagedAppNames? packagedNames = null)
+    public TaskbarModel(
+        ICollectionView windows, PinSettings pins, PackagedAppNames? packagedNames = null, PackagedExecutable? packages = null)
     {
         _windows = windows;
         _pins = pins;
         _packagedNames = packagedNames ?? PackagedAppNames.Shared;
+        _packages = packages ?? PackagedExecutable.Shared;
         _dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
 
         if (_windows is INotifyCollectionChanged observable)
@@ -120,6 +123,7 @@ internal sealed class TaskbarModel : IDisposable
     {
         Dictionary<string, List<ApplicationWindow>> running = GroupRunningWindows();
 
+        RelocatePackagedPins();
         AdoptMovedApplications(running.Keys);
         AdoptRunningIdentities(running);
         NamePackagedPins();
@@ -138,7 +142,7 @@ internal sealed class TaskbarModel : IDisposable
 
             if (existing is null)
             {
-                TaskbarSlot slot = new(key, pin, _shortcuts, _icons);
+                TaskbarSlot slot = new(key, pin, _shortcuts, _icons, _packagedNames, _packages);
                 slot.SetWindows(windows);
                 Slots.Insert(Math.Min(index, Slots.Count), slot);
                 continue;
@@ -175,6 +179,56 @@ internal sealed class TaskbarModel : IDisposable
         // that is the one thing the file can carry across a restart about where the user put them.
         // Written only when it actually changed, because this runs on every window event.
         if (_pins.Reorder(_order.PinnedIn(_pins.IsPinned)) && persist) _pins.Persist();
+    }
+
+    /// <summary>
+    /// Moves pins of packaged applications whose recorded version has gone to the version that is
+    /// installed now, without waiting for the application to run.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The case <see cref="AdoptMovedApplications"/> cannot reach.</b> That adopts a pin's new
+    /// identity from a running window, so a packaged application that updated while closed kept a
+    /// pin naming a deleted folder until it was next started some other way. Measured on master
+    /// with a WhatsApp pin under 2.2600.50.0 and 2.2644.101.0 installed: an empty slot, and a click
+    /// that started nothing. Windows knows where a package family is installed, so the pin can be
+    /// moved now.
+    /// </para>
+    /// <para>
+    /// <b>Moved whole: identity, path and place in the row.</b> A path-keyed pin's identity is its
+    /// path, so rewriting the path alone would leave the identity naming the old folder, and when
+    /// the application next ran its window would get a second slot beside the pin, the duplicate
+    /// <see cref="AdoptMovedApplications"/> exists to prevent. The same <c>Rekey</c> and
+    /// <c>Rename</c>, so nothing else about the pin changes. A pin keyed by an app ID (one made by
+    /// dropping the executable) keeps its key, which carries no version, and only its file moves.
+    /// </para>
+    /// <para>
+    /// Only pins whose recorded executable is missing are looked at, so a working pin is never
+    /// touched; and an uninstalled application is left as it is, since nothing is installed to move
+    /// it to.
+    /// </para>
+    /// </remarks>
+    private void RelocatePackagedPins()
+    {
+        foreach (PinnedApp pin in _pins.Pins.ToList())
+        {
+            if (pin.IsPackaged || PathStillExists(pin.Path)) continue;
+            if (_packages.Locate(pin.Path) is not { } installed) continue;
+
+            bool moved;
+            if (AppIdentity.Same(pin.Key, pin.Path))
+            {
+                moved = _pins.Rekey(pin.Key, installed.Executable);
+                if (moved) _order.Rename(pin.Key, installed.Executable);
+            }
+            else
+            {
+                moved = _pins.UpdatePath(pin.Key, installed.Executable);
+            }
+
+            if (moved)
+                Diagnostics.BringUpLog.Write($"pin moved to the installed version: {pin.Name} {pin.Path} -> {installed.Executable}");
+        }
     }
 
     /// <summary>
@@ -245,10 +299,20 @@ internal sealed class TaskbarModel : IDisposable
     {
         foreach (PinnedApp pin in _pins.Pins.ToList())
         {
-            if (!pin.IsPackaged) continue;
+            if (pin.IsPackaged)
+            {
+                if (_packagedNames.Lookup(pin.Key) is { } name) _pins.UpdatePackaged(pin.Key, name);
+                else _packagedNames.Request(pin.Key, OnPackagedNameResolved);
+                continue;
+            }
 
-            if (_packagedNames.Lookup(pin.Key) is { } name) _pins.UpdatePackaged(pin.Key, name);
-            else _packagedNames.Request(pin.Key, OnPackagedNameResolved);
+            // A packaged desktop application pinned by its executable (WhatsApp, Terminal, Claude)
+            // is named as the Apps folder names it too. Pins made before that was done carry the
+            // file's name: "WhatsApp.Root".
+            if (_packages.AppIdFor(pin.Path) is not { } appId) continue;
+
+            if (_packagedNames.Lookup(appId) is { } appName) _pins.Rename(pin.Key, appName);
+            else _packagedNames.Request(appId, OnPackagedNameResolved);
         }
     }
 

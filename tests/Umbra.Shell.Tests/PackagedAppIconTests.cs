@@ -90,12 +90,12 @@ public sealed class PackagedAppIconTests : IDisposable
     {
         string exe = Executable(@"app\Chat.Root.exe", Manifest(("App", @"app\Chat.Root.exe")));
 
-        Assert.Equal($"{Family}!App", PackagedExecutable.AppIdFor(exe));
+        Assert.Equal($"{Family}!App", new PackagedExecutable(new NoPackagesListed()).AppIdFor(exe));
     }
 
     [Fact]
     public void An_Ordinary_Executable_Has_No_App_Id() =>
-        Assert.Null(PackagedExecutable.AppIdFor(Path.Combine(Environment.SystemDirectory, "notepad.exe")));
+        Assert.Null(new PackagedExecutable(new NoPackagesListed()).AppIdFor(Path.Combine(Environment.SystemDirectory, "notepad.exe")));
 
     [Theory]
     [InlineData("5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App", true)]
@@ -116,7 +116,7 @@ public sealed class PackagedAppIconTests : IDisposable
     {
         string exe = Executable("Chat.Root.exe", Manifest(("App", "Chat.Root.exe")));
         RecordingSource source = new();
-        TaskbarSlot slot = new(exe, new PinnedApp(exe, exe, "Chat"), new ShortcutResolver(_root), new AppIconResolver(source));
+        TaskbarSlot slot = new(exe, new PinnedApp(exe, exe, "Chat"), new ShortcutResolver(_root), new AppIconResolver(source), packages: new PackagedExecutable(new NoPackagesListed()));
 
         _ = slot.Icon;
 
@@ -129,7 +129,7 @@ public sealed class PackagedAppIconTests : IDisposable
     {
         string exe = Path.Combine(Environment.SystemDirectory, "notepad.exe");
         RecordingSource source = new();
-        TaskbarSlot slot = new(exe, new PinnedApp(exe, exe, "Notepad"), new ShortcutResolver(_root), new AppIconResolver(source));
+        TaskbarSlot slot = new(exe, new PinnedApp(exe, exe, "Notepad"), new ShortcutResolver(_root), new AppIconResolver(source), packages: new PackagedExecutable(new NoPackagesListed()));
 
         _ = slot.Icon;
 
@@ -188,6 +188,12 @@ public sealed class PackagedAppIconTests : IDisposable
             Thread.Sleep(10);
         }
         return condition();
+    }
+
+    /// <summary>Windows listing no installed versions: only the folder a path names counts.</summary>
+    private sealed class NoPackagesListed : IPackageFolders
+    {
+        public IEnumerable<string> FoldersOf(string familyName) => [];
     }
 
     private sealed class RecordingSource : IIconSource

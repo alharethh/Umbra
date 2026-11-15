@@ -28,6 +28,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     private string? _processId;
     private bool _processIdChecked;
     private readonly AttentionLatch _attention = new();
+    private readonly PackagedExecutable _packages;
     private DispatcherTimer? _wakeTimer;
 
     /// <summary>The attention latch's clock, in seconds. Replaceable so a test can step it.</summary>
@@ -41,13 +42,15 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         PinnedApp? pin,
         ShortcutResolver? shortcuts = null,
         AppIconResolver? icons = null,
-        PackagedAppNames? packagedNames = null)
+        PackagedAppNames? packagedNames = null,
+        PackagedExecutable? packages = null)
     {
         Key = key;
         Pin = pin;
         _shortcuts = shortcuts ?? new ShortcutResolver();
         _icons = icons ?? new AppIconResolver();
         _packagedNames = packagedNames ?? PackagedAppNames.Shared;
+        _packages = packages ?? PackagedExecutable.Shared;
 
         // Captured here rather than reached for later: the resolver calls back from a worker, and
         // Dispatcher.CurrentDispatcher on that worker would create a second one that nothing pumps.
@@ -246,7 +249,18 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
     /// What to hand <c>ActivateApplication</c> when there is no file to run: the slot's key, unless
     /// that is the executable path of a packaged process, which cannot be activated.
     /// </summary>
-    public string ActivationId => ActivationIdFor(Key, PackagedProcessId);
+    /// <remarks>
+    /// For a pin of a packaged desktop application whose recorded folder has gone (it updated
+    /// while closed), the app ID its package resolves to: the key is that old path, which Windows
+    /// cannot activate. Measured on master: the click went nowhere. The model normally moves such
+    /// a pin to the installed version before it is ever clicked; this is the backstop for when
+    /// starting the executable fails anyway.
+    /// </remarks>
+    public string ActivationId => ActivationIdFor(Key, PackagedProcessId ?? PinnedPackageAppId);
+
+    /// <summary>The app ID of a path-recorded pin's package, or null when it is not one.</summary>
+    private string? PinnedPackageAppId =>
+        Pin is { IsPackaged: false } pin ? _packages.AppIdFor(pin.Path) : null;
 
     /// <summary>Pure, so it can be tested without a process. See <see cref="ActivationId"/>.</summary>
     internal static string ActivationIdFor(string key, string? processAppId) =>
@@ -412,7 +426,7 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
         // can carry no icon at all (WhatsApp.Root.exe has none), and the shell then hands back
         // the generic program icon as if it had found one. For a pin whose application is closed,
         // the ID comes from the package's manifest. See PackagedExecutable.
-        appId ??= PackagedExecutable.AppIdFor(executable);
+        appId ??= _packages.AppIdFor(executable);
         if (appId is not null) candidates.Add(ShellIconSource.ForAppId(appId));
 
         // Then the executable a live window is actually running from: it beats a shortcut of the
@@ -465,6 +479,14 @@ internal sealed class TaskbarSlot : INotifyPropertyChanged
             if (Pin is null && PackagedProcessId is not null) return null;
 
             if (PathIsUsable(Pin?.Path)) return (Pin!.Path, string.Empty);
+
+            // A packaged application that updated while closed: the same executable in the
+            // installed version. Packaged applications have no Start Menu shortcut to fall back
+            // on, so without this the click went nowhere. Starting the executable directly is
+            // measured to work (WhatsApp, 2026-11-15); if it ever fails, the caller activates
+            // ActivationId, which is the package's app ID.
+            if (Pin is not null && _packages.Locate(Pin.Path) is { } installed)
+                return (installed.Executable, string.Empty);
 
             return Shortcut() is { } shortcut ? (shortcut.Target, shortcut.Arguments) : null;
         }
