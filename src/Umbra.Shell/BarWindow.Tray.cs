@@ -905,13 +905,16 @@ internal partial class BarWindow
         switch (target.Kind)
         {
             case TrayDrop.Kind.Bar:
-                int index = choice.IndexBefore(target.Before is { } before ? before.IsEqualByIdentifier : null);
-                bool placed = choice.Place(icon.Identifier, icon.IsEqualByIdentifier, index);
-                BringUpLog.Write($"tray drag: '{icon.Title}' dropped on the bar at {index}, changed={placed}");
+                bool placed = choice.PlaceOnBar(
+                    icon.Identifier,
+                    icon.IsEqualByIdentifier,
+                    target.Before is { } before ? before.IsEqualByIdentifier : null,
+                    DrawnTrayRow());
+                BringUpLog.Write($"tray drag: '{icon.Title}' dropped on the bar before '{target.Before?.Title}', changed={placed}");
                 break;
 
             case TrayDrop.Kind.Overflow:
-                bool removed = choice.Remove(icon.IsEqualByIdentifier);
+                bool removed = choice.PutBehindChevron(icon.IsEqualByIdentifier, DrawnTrayRow());
                 BringUpLog.Write($"tray drag: '{icon.Title}' dropped in the menu, changed={removed}");
                 break;
 
@@ -920,6 +923,12 @@ internal partial class BarWindow
                 break;
         }
     }
+
+    /// <summary>The chosen row as the bar draws it, system indicators left out.</summary>
+    private List<TrayEntry> DrawnTrayRow() =>
+        BarTrayIcons is null
+            ? []
+            : [.. BarTrayIcons.Cast<NotifyIcon>().Select(i => new TrayEntry(i.Identifier, i.IsEqualByIdentifier))];
 
     /// <summary>Where a drop at this point would go.</summary>
     private readonly record struct TrayDropTarget(TrayDrop.Kind Kind, NotifyIcon? Before, int? Gap)
@@ -938,15 +947,13 @@ internal partial class BarWindow
     /// </remarks>
     private TrayDropTarget TrayDropAt(Point cursor, TrayPress drag)
     {
-        bool showAll = _trayChoice?.ShowAll == true;
-
-        // With every icon on the bar the menu holds nothing, so there is nothing to drop into.
-        if (!showAll && TrayOverflowPopup.IsOpen && PointerIsOverTrayOverflow())
+        // Also with "show all" on: a drop here then ends it (TrayChoice.PutBehindChevron).
+        if (TrayOverflowPopup.IsOpen && PointerIsOverTrayOverflow())
             return new TrayDropTarget(TrayDrop.Kind.Overflow, null, null);
 
         TrayRow row = MeasureTrayRow();
 
-        if (!showAll && TrayChevron.IsVisible)
+        if (TrayChevron.IsVisible)
         {
             Rect laid = LayoutScreenRect(TrayChevron);
             Rect shifted = laid;

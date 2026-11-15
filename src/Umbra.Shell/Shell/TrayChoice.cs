@@ -28,6 +28,9 @@ namespace Umbra.Shell.Shell;
 /// (<see cref="ShellHost.SystemIndicators"/>) and <see cref="PinnedFor"/> puts them first.
 /// </para>
 /// </remarks>
+/// <summary>An icon as the bar draws it: its identifier, and how to recognise it in the list.</summary>
+internal readonly record struct TrayEntry(string Identifier, Func<string, bool> Matches);
+
 internal sealed class TrayChoice
 {
     private const string ShowAllKey = "showAll";
@@ -80,6 +83,72 @@ internal sealed class TrayChoice
     /// <returns>True when the list changed.</returns>
     public bool Place(string identifier, Func<string, bool> matches, int index)
     {
+        if (!Move(identifier, matches, ref index)) return false;
+
+        Commit($"tray on bar: placed {identifier} at {index}");
+        return true;
+    }
+
+    /// <summary>
+    /// A drop on the bar in front of <paramref name="before"/> (null: the end of the row).
+    /// </summary>
+    /// <param name="drawn">The bar's row as drawn, in order.</param>
+    /// <remarks>
+    /// With "show all" on, the row is the chosen icons and then the rest in arrival order, and only
+    /// the chosen ones have a place in the list. A drop among the rest would land wherever the list
+    /// happened to put it (dropped at the end, an icon stayed put), so the row as drawn is written
+    /// into the list first and the drop then moves within that.
+    /// </remarks>
+    /// <returns>True when the list changed.</returns>
+    public bool PlaceOnBar(string identifier, Func<string, bool> matches, Func<string, bool>? before, IEnumerable<TrayEntry> drawn)
+    {
+        bool adopted = ShowAll && AdoptDrawn(drawn);
+        int index = IndexBefore(before);
+        bool moved = Move(identifier, matches, ref index);
+        if (!adopted && !moved) return false;
+
+        Commit($"tray on bar: placed {identifier} at {index}");
+        return true;
+    }
+
+    /// <summary>
+    /// A drop on the chevron or into its menu: the icon goes behind the chevron.
+    /// </summary>
+    /// <param name="drawn">The bar's row as drawn, in order.</param>
+    /// <remarks>
+    /// With "show all" on, a drop here used to be refused without a word: the switch overrides the
+    /// list, so there was no way to say "all but this one". Now the drop ends "show all" and turns
+    /// what was on the bar into the list, less this icon, so nothing else moves. Turning "show all"
+    /// on again shows every icon as before.
+    /// </remarks>
+    /// <returns>True when the list changed.</returns>
+    public bool PutBehindChevron(Func<string, bool> matches, IEnumerable<TrayEntry> drawn)
+    {
+        if (!ShowAll) return Remove(matches);
+
+        AdoptDrawn(drawn);
+        _onBar.RemoveAll(entry => matches(entry));
+        ShowAll = false;
+        Commit("tray on bar: an icon dropped in the menu ended show all; the rest stay on the bar");
+        return true;
+    }
+
+    /// <summary>Adds every drawn icon not yet in the list to its end, in drawn order.</summary>
+    private bool AdoptDrawn(IEnumerable<TrayEntry> drawn)
+    {
+        bool changed = false;
+        foreach (TrayEntry entry in drawn)
+        {
+            if (IndexOf(entry.Matches) >= 0) continue;
+            _onBar.Add(entry.Identifier);
+            changed = true;
+        }
+        return changed;
+    }
+
+    /// <summary><see cref="Place"/> without saving. <paramref name="index"/> comes back as inserted.</summary>
+    private bool Move(string identifier, Func<string, bool> matches, ref int index)
+    {
         int old = IndexOf(matches);
         index = Math.Clamp(index, 0, _onBar.Count);
 
@@ -93,7 +162,6 @@ internal sealed class TrayChoice
         }
 
         _onBar.Insert(index, identifier);
-        Commit($"tray on bar: placed {identifier} at {index}");
         return true;
     }
 

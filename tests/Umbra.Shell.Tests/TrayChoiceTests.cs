@@ -199,6 +199,85 @@ public class TrayChoiceTests : IDisposable
         Assert.Empty(new TrayChoice(_path).OnBar);
     }
 
+    // ------------------------------------------------------------------ dropping while "show all" is on
+
+    private static TrayEntry[] Row(params string[] ids) => [.. ids.Select(id => new TrayEntry(id, Is(id)))];
+
+    /// <summary>
+    /// The owner's report, 15 Nov: with every icon on the bar, an icon dropped on the chevron did
+    /// nothing and said nothing. It now goes behind the chevron and "show all" ends, with every
+    /// other icon kept on the bar in the order it was drawn.
+    /// </summary>
+    [Fact]
+    public void A_Drop_In_The_Menu_Under_Show_All_Takes_That_Icon_Off_And_Keeps_The_Rest()
+    {
+        TrayChoice choice = Seeded("b");
+        choice.SetShowAll(true);
+        int changes = 0;
+        choice.Changed += () => changes++;
+
+        // Drawn: the chosen "b", then the rest in arrival order.
+        Assert.True(choice.PutBehindChevron(Is("c"), Row("b", "a", "c", "d")));
+
+        Assert.False(choice.ShowAll);
+        Assert.Equal(["b", "a", "d"], choice.OnBar);
+        Assert.False(choice.ShowsOnBar(Is("c")));
+        Assert.Equal(1, changes);
+
+        TrayChoice reread = new(_path);
+        Assert.False(reread.ShowAll);
+        Assert.Equal(["b", "a", "d"], reread.OnBar);
+    }
+
+    /// <summary>A chosen icon that is not running keeps its place for when it comes back.</summary>
+    [Fact]
+    public void Ending_Show_All_Keeps_A_Chosen_Icon_That_Is_Not_Running()
+    {
+        TrayChoice choice = Seeded("asleep", "b");
+        choice.SetShowAll(true);
+
+        choice.PutBehindChevron(Is("b"), Row("a"));
+
+        Assert.Equal(["asleep", "a"], choice.OnBar);
+    }
+
+    [Fact]
+    public void Without_Show_All_A_Drop_In_The_Menu_Only_Removes()
+    {
+        TrayChoice choice = Seeded("a", "b");
+
+        Assert.True(choice.PutBehindChevron(Is("a"), Row("a", "b", "extra")));
+
+        Assert.Equal(["b"], choice.OnBar);
+        Assert.False(choice.ShowAll);
+    }
+
+    /// <summary>
+    /// Under "show all", dragging an unchosen icon to the end of the row left it where it was: the
+    /// end of the chosen list is still in front of the unchosen ones.
+    /// </summary>
+    [Fact]
+    public void Under_Show_All_A_Drop_At_The_End_Moves_An_Unchosen_Icon_There()
+    {
+        TrayChoice choice = Seeded("a");
+        choice.SetShowAll(true);
+
+        Assert.True(choice.PlaceOnBar("b", Is("b"), before: null, Row("a", "b", "c")));
+
+        Assert.Equal(["a", "c", "b"], choice.OnBar);
+        Assert.True(choice.ShowAll);
+    }
+
+    [Fact]
+    public void Without_Show_All_A_Bar_Drop_Leaves_Unchosen_Icons_Alone()
+    {
+        TrayChoice choice = Seeded("a", "b");
+
+        Assert.True(choice.PlaceOnBar("b", Is("b"), Is("a"), Row("a", "b")));
+
+        Assert.Equal(["b", "a"], choice.OnBar);
+    }
+
     // ------------------------------------------------------------------ drop geometry
 
     [Theory]
