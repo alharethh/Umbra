@@ -301,6 +301,21 @@ internal sealed class PinSettings
     }
 
     /// <summary>
+    /// Removes a pin whose application was uninstalled, and writes the file. Does not raise
+    /// <see cref="Changed"/>: it is called from inside the model's rebuild, which lays the row
+    /// out without the pin anyway.
+    /// </summary>
+    /// <returns>True when a pin was removed.</returns>
+    public bool RemoveUninstalled(string? key)
+    {
+        if (key is null) return false;
+        if (_pins.RemoveAll(p => AppIdentity.Same(p.Key, key)) == 0) return false;
+
+        Write();
+        return true;
+    }
+
+    /// <summary>
     /// Reorders the pins to match the row, in memory only.
     /// </summary>
     /// <param name="keys">
