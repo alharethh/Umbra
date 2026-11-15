@@ -9,7 +9,7 @@ namespace Umbra.Shell.Shell;
 /// <param name="Identifier">ManagedShell's identifier, as <see cref="TrayChoice"/> stores it.</param>
 /// <param name="Name">What the user sees.</param>
 /// <param name="IsRunning">False for an icon chosen earlier whose application is not running now.</param>
-/// <param name="OnBar">Whether it is chosen for the bar.</param>
+/// <param name="OnBar">Whether it is on the bar: chosen, or shown by "show all".</param>
 /// <param name="Matches">Compares a stored entry with this icon.</param>
 /// <param name="Icon">Its picture, when it is running.</param>
 internal sealed record TrayIconRow(
@@ -62,8 +62,9 @@ internal sealed record TrayIconRow(
             }
         }
 
+        // With "show all" these are on the bar too, and the box says so: it is what the user sees.
         foreach (Running icon in running.Where(r => !listed.Contains(r)).OrderBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase))
-            rows.Add(new TrayIconRow(icon.Identifier, icon.Name, true, false, icon.Matches, icon.Icon));
+            rows.Add(new TrayIconRow(icon.Identifier, icon.Name, true, choice.ShowAll, icon.Matches, icon.Icon));
 
         return rows;
     }

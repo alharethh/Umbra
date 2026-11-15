@@ -112,7 +112,30 @@ internal static class TrayDrop
 /// <summary>The chevron's right-click menu.</summary>
 internal static class TrayChevronMenu
 {
-    /// <summary>The one item: the switch the user is not on.</summary>
-    public static string ToggleLabel(bool showAll) =>
-        showAll ? "Put icons back in the menu" : "Show all icons on the bar";
+    public enum Item { ShowAll, PutAllBack }
+
+    public const string ShowAllLabel = "Show all icons on the bar";
+    public const string PutAllBackLabel = "Put icons back in the menu";
+
+    public static string LabelOf(Item item) => item == Item.ShowAll ? ShowAllLabel : PutAllBackLabel;
+
+    /// <summary>
+    /// What the menu offers, decided by where the icons are rather than by the "show all" switch.
+    /// </summary>
+    /// <param name="showAll">Whether "show all" is on.</param>
+    /// <param name="onBar">Icons drawn on the bar, the system indicators left out.</param>
+    /// <param name="inMenu">Icons behind the chevron.</param>
+    /// <remarks>
+    /// Decided by the switch, the menu offered only "Show all icons on the bar" after a drop on the
+    /// chevron had ended "show all" with every other icon still on the bar, so there was no way to
+    /// put them back from here. "Put icons back" is offered whenever an icon is on the bar, and
+    /// while "show all" is on with none yet, so that it can still be left.
+    /// </remarks>
+    public static IReadOnlyList<Item> Offers(bool showAll, int onBar, int inMenu)
+    {
+        List<Item> items = [];
+        if (inMenu > 0) items.Add(Item.ShowAll);
+        if (onBar > 0 || showAll) items.Add(Item.PutAllBack);
+        return items;
+    }
 }

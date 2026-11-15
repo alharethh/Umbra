@@ -24,22 +24,35 @@ internal partial class SettingsWindow
 {
     private TrayChoice? _trayChoice;
     private Func<IReadOnlyList<TrayIconRow>>? _trayRows;
+    private Func<IReadOnlyList<TrayEntry>>? _trayDrawn;
 
     /// <summary>True while this page is the one changing the choice, so it does not rebuild itself.</summary>
     private bool _changingTray;
 
     /// <summary>
+    /// True while this page sets a box itself to match the choice. Unticking "show every icon"
+    /// puts every icon back, so a box set to match must never be read as the user's click: a drop
+    /// on the chevron that ends "show all" would otherwise empty the bar a moment later.
+    /// </summary>
+    private bool _syncingTray;
+
+    /// <summary>
     /// Hands the page the shared choice and a way to list the icons the bar holds.
     /// </summary>
     /// <param name="rows">Null when the notification area is not hosted: there is nothing to list.</param>
-    internal void AttachTrayChoice(TrayChoice choice, Func<IReadOnlyList<TrayIconRow>>? rows)
+    /// <param name="drawn">The bar's row as drawn, which unticking an icon under "show all" keeps.</param>
+    internal void AttachTrayChoice(
+        TrayChoice choice,
+        Func<IReadOnlyList<TrayIconRow>>? rows,
+        Func<IReadOnlyList<TrayEntry>>? drawn = null)
     {
         _trayChoice = choice;
         _trayRows = rows;
+        _trayDrawn = drawn;
 
-        ShowAllTrayBox.IsChecked = choice.ShowAll;
-        ShowAllTrayBox.Checked += (_, _) => SetShowAll(true);
-        ShowAllTrayBox.Unchecked += (_, _) => SetShowAll(false);
+        SyncShowAllBox();
+        ShowAllTrayBox.Checked += (_, _) => OnShowAllBox(true);
+        ShowAllTrayBox.Unchecked += (_, _) => OnShowAllBox(false);
 
         choice.Changed += OnTrayChoiceChanged;
         Closed += (_, _) => choice.Changed -= OnTrayChoiceChanged;
@@ -54,22 +67,39 @@ internal partial class SettingsWindow
         RebuildTrayList();
     }
 
-    private void SetShowAll(bool showAll)
+    /// <summary>
+    /// The user ticked or unticked "show every icon": the same two actions as the chevron's menu.
+    /// Every box in the list changes with it, so the list is built again.
+    /// </summary>
+    private void OnShowAllBox(bool showAll)
+    {
+        if (_syncingTray || _trayChoice is null) return;
+
+        _changingTray = true;
+        try
+        {
+            if (showAll) _trayChoice.ShowAllOnBar();
+            else _trayChoice.PutAllBack();
+        }
+        finally { _changingTray = false; }
+
+        RebuildTrayList();
+    }
+
+    private void SyncShowAllBox()
     {
         if (_trayChoice is null) return;
 
-        _changingTray = true;
-        try { _trayChoice.SetShowAll(showAll); }
-        finally { _changingTray = false; }
-
-        UpdateTrayListEnabled();
+        _syncingTray = true;
+        try { ShowAllTrayBox.IsChecked = _trayChoice.ShowAll; }
+        finally { _syncingTray = false; }
     }
 
     private void OnTrayChoiceChanged()
     {
         if (_changingTray || _trayChoice is null) return;
 
-        ShowAllTrayBox.IsChecked = _trayChoice.ShowAll;
+        SyncShowAllBox();
         RebuildTrayList();
     }
 
@@ -96,12 +126,7 @@ internal partial class SettingsWindow
         }
 
         foreach (TrayIconRow row in rows) TrayIconList.Children.Add(RowFor(row));
-
-        UpdateTrayListEnabled();
     }
-
-    /// <summary>The boxes still say what the user chose while "show every icon" overrides them.</summary>
-    private void UpdateTrayListEnabled() => TrayIconList.IsEnabled = _trayChoice?.ShowAll != true;
 
     private CheckBox RowFor(TrayIconRow row)
     {
@@ -151,9 +176,15 @@ internal partial class SettingsWindow
         _changingTray = true;
         try
         {
+            // Unticking under "show all" is a drop on the chevron: that icon goes, "show all" ends,
+            // the rest stay where they are drawn.
             if (onBar) _trayChoice.Add(row.Identifier, row.Matches);
-            else _trayChoice.Remove(row.Matches);
+            else _trayChoice.PutBehindChevron(row.Matches, _trayDrawn?.Invoke() ?? []);
         }
         finally { _changingTray = false; }
+
+        // The list is not rebuilt, so the box just clicked keeps its focus; the switch above it
+        // may have just ended, and says so.
+        SyncShowAllBox();
     }
 }

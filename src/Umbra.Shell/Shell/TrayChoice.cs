@@ -56,9 +56,15 @@ internal sealed class TrayChoice
     public IReadOnlyList<string> OnBar => _onBar;
 
     /// <summary>
-    /// Every icon on the bar and none behind the chevron. The chosen list is kept as it is, so
-    /// turning this off puts back exactly what the user had chosen.
+    /// Every icon on the bar and none behind the chevron, including icons that arrive later.
     /// </summary>
+    /// <remarks>
+    /// It is never simply switched off, because the list under it is invisible while it is on and
+    /// drags along the bar add to that list. Switched off alone, it left on the bar whatever icons
+    /// had been touched, under a menu item that said "Put icons back in the menu" (the owner's
+    /// report, 15 Nov). It ends one of two ways: <see cref="PutAllBack"/>, which empties the bar, or
+    /// <see cref="PutBehindChevron"/>, which keeps everything but one icon on it.
+    /// </remarks>
     public bool ShowAll { get; private set; }
 
     /// <summary>Whether the icon is one the user put on the bar.</summary>
@@ -185,12 +191,30 @@ internal sealed class TrayChoice
     public bool RemoveEntry(string identifier) =>
         Remove(entry => string.Equals(entry, identifier, StringComparison.OrdinalIgnoreCase));
 
-    public void SetShowAll(bool showAll)
+    /// <summary>"Show all icons on the bar".</summary>
+    /// <returns>True when it was not on already.</returns>
+    public bool ShowAllOnBar()
     {
-        if (ShowAll == showAll) return;
+        if (ShowAll) return false;
 
-        ShowAll = showAll;
-        Commit($"tray on bar: show all = {showAll}");
+        ShowAll = true;
+        Commit("tray on bar: show all = True");
+        return true;
+    }
+
+    /// <summary>
+    /// "Put icons back in the menu": every icon goes behind the chevron, including chosen icons
+    /// whose application is not running, which would otherwise come back to the bar when it starts.
+    /// </summary>
+    /// <returns>True when anything changed.</returns>
+    public bool PutAllBack()
+    {
+        if (!ShowAll && _onBar.Count == 0) return false;
+
+        ShowAll = false;
+        _onBar.Clear();
+        Commit("tray on bar: every icon put back in the menu");
+        return true;
     }
 
     /// <summary>

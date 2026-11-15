@@ -154,15 +154,27 @@ internal partial class BarWindow
             Placement = PlacementMode.MousePoint,
         };
 
-        bool showAll = choice.ShowAll;
-        AddItem(
-            menu,
-            TrayChevronMenu.ToggleLabel(showAll),
-            icon: null,
-            (_, _) => choice.SetShowAll(!showAll));
+        int onBar = BarTrayIcons?.Cast<object>().Count() ?? 0;
+        int inMenu = OverflowTrayIcons?.Cast<object>().Count() ?? 0;
+        IReadOnlyList<TrayChevronMenu.Item> offers = TrayChevronMenu.Offers(choice.ShowAll, onBar, inMenu);
+
+        BringUpLog.Write($"tray chevron menu: show all = {choice.ShowAll}, {onBar} on the bar, {inMenu} in the menu, offers {string.Join(" + ", offers)}");
+        if (offers.Count == 0) return;
+
+        foreach (TrayChevronMenu.Item item in offers)
+        {
+            AddItem(
+                menu,
+                TrayChevronMenu.LabelOf(item),
+                icon: null,
+                (_, _) =>
+                {
+                    if (item == TrayChevronMenu.Item.ShowAll) choice.ShowAllOnBar();
+                    else choice.PutAllBack();
+                });
+        }
 
         menu.IsOpen = true;
-        BringUpLog.Write($"tray chevron menu opened, show all = {showAll}");
     }
 
     // ---------------------------------------------------------------- dragging
@@ -924,8 +936,8 @@ internal partial class BarWindow
         }
     }
 
-    /// <summary>The chosen row as the bar draws it, system indicators left out.</summary>
-    private List<TrayEntry> DrawnTrayRow() =>
+    /// <summary>The row as the bar draws it, system indicators left out.</summary>
+    internal List<TrayEntry> DrawnTrayRow() =>
         BarTrayIcons is null
             ? []
             : [.. BarTrayIcons.Cast<NotifyIcon>().Select(i => new TrayEntry(i.Identifier, i.IsEqualByIdentifier))];
