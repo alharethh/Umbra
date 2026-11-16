@@ -124,12 +124,6 @@ internal partial class BarWindow
         OnTrayIconsChanged();
     }
 
-    /// <summary>
-    /// The chevron stays while every icon is on the bar, empty as its panel is: it is where the
-    /// user turns that off again.
-    /// </summary>
-    private bool KeepsChevronForShowAll => _trayChoice?.ShowAll == true;
-
     // ---------------------------------------------------------------- the chevron's menu
 
     /// <summary>Right-clicking the chevron: the one switch between all on the bar and the menu.</summary>
@@ -180,7 +174,11 @@ internal partial class BarWindow
     // ---------------------------------------------------------------- dragging
 
     /// <summary>A left press on a tray icon that may yet turn into a drag.</summary>
-    private sealed record TrayPress(NotifyIcon Icon, FrameworkElement Element, Point StartScreen, bool FromFlyout);
+    private sealed record TrayPress(
+        NotifyIcon Icon, FrameworkElement Element, Point StartScreen, bool FromFlyout, IntPtr ForegroundBefore);
+
+    /// <summary>How many times the current drag has taken its capture back. See <see cref="TrayDragFocus"/>.</summary>
+    private int _trayRecaptures;
 
     private TrayPress? _trayPress;
 
@@ -200,7 +198,8 @@ internal partial class BarWindow
             && TrayOverflowPopup.Child is Visual flyout
             && flyout.IsAncestorOf(element);
 
-        _trayPress = new TrayPress(icon, element, CursorScreen(), fromFlyout);
+        // Read after the press's foreground borrow has handed it back, so this is the user's window.
+        _trayPress = new TrayPress(icon, element, CursorScreen(), fromFlyout, GetForegroundWindow());
     }
 
     private void OnTrayIconMouseMove(object sender, MouseEventArgs e)
@@ -234,6 +233,7 @@ internal partial class BarWindow
         _trayPress = null;
         _trayTarget = TrayDropTarget.None;
         _trayChevronShift = 0;
+        _trayRecaptures = 0;
 
         // Mouse capture rather than OLE drag and drop: the drag never leaves the process, and
         // capture follows the pointer from the flyout's popup window into the bar's.
@@ -310,6 +310,7 @@ internal partial class BarWindow
         drag.Element.LostMouseCapture -= OnTrayDragLostCapture;
         if (drag.Element.IsMouseCaptured) drag.Element.ReleaseMouseCapture();
         TrayMenuWatcher.CancelMenuOf(drag.Icon.HWnd);
+        RestoreForegroundAfterDrag(drag);
 
         Popup? ghost = _trayGhost;
         Popup? marker = _trayCaret;
@@ -908,7 +909,56 @@ internal partial class BarWindow
         if (_trayGhost?.Child is UIElement ghost) ghost.Opacity = lit ? 0.7 : 1;
     }
 
-    private void OnTrayDragLostCapture(object sender, MouseEventArgs e) => EndTrayDrag(drop: false);
+    private void OnTrayDragLostCapture(object sender, MouseEventArgs e)
+    {
+        bool held = (GetAsyncKeyState(VkLeftButton) & 0x8000) != 0;
+
+        if (_trayDrag is not { } drag || !TrayDragFocus.KeepsDragAfterLostCapture(held, _trayRecaptures))
+        {
+            EndTrayDrag(drop: false);
+            return;
+        }
+
+        // A menu the press opened took the capture. It goes, and the capture comes back once it
+        // has: deferred, because taking it back inside this notification hands it straight to the
+        // menu again, and the menu needs its WM_CANCELMODE first.
+        _trayRecaptures++;
+        TrayMenuWatcher.CancelMenuOf(drag.Icon.HWnd);
+        BringUpLog.Write($"tray drag: capture lost with the button held, taking it back ({_trayRecaptures})");
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            if (!ReferenceEquals(_trayDrag, drag) || drag.Element.IsMouseCaptured) return;
+
+            if ((GetAsyncKeyState(VkLeftButton) & 0x8000) == 0 || !drag.Element.CaptureMouse())
+                EndTrayDrag(drop: false);
+        });
+    }
+
+    /// <summary>
+    /// Gives the foreground back to the window the user had in front at the press, when the drag
+    /// left it on the icon's owner (a menu the press opened). See <see cref="TrayDragFocus"/>.
+    /// </summary>
+    private void RestoreForegroundAfterDrag(TrayPress drag)
+    {
+        // A moment later: the cancelled menu is still closing, and closing is when it lets go.
+        DispatcherTimer timer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+
+            IntPtr now = GetForegroundWindow();
+            TrayNative.GetWindowThreadProcessId(now, out uint nowPid);
+            TrayNative.GetWindowThreadProcessId(drag.ForegroundBefore, out uint beforePid);
+            uint ownerPid = 0;
+            if (drag.Icon.HWnd != IntPtr.Zero) TrayNative.GetWindowThreadProcessId(drag.Icon.HWnd, out ownerPid);
+            if (!TrayDragFocus.RestoresForeground(drag.ForegroundBefore, beforePid, nowPid, ownerPid)) return;
+
+            bool ok = WindowOrder.ForceForeground(drag.ForegroundBefore);
+            BringUpLog.Write($"tray drag: foreground handed back to 0x{drag.ForegroundBefore.ToInt64():X} from 0x{now.ToInt64():X}, ok={ok}");
+        };
+        timer.Start();
+    }
 
     private void ApplyTrayDrop(NotifyIcon icon, TrayDropTarget target)
     {

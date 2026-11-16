@@ -138,4 +138,59 @@ internal static class TrayChevronMenu
         if (onBar > 0 || showAll) items.Add(Item.PutAllBack);
         return items;
     }
+
+    /// <summary>
+    /// Whether the chevron is drawn: whenever its menu has something to offer.
+    /// </summary>
+    /// <remarks>
+    /// Kept only for "show all" with an empty panel, it vanished once every icon had been put on
+    /// the bar one at a time with "show all" off. The chevron is the only place a dragged icon can
+    /// be dropped back into the menu and the only way to its right-click menu, so the user was left
+    /// with Settings as the one way back. An empty panel the user chose is no lie, whichever way
+    /// they chose it; with no icon to move at all there is nothing to offer and it still goes.
+    /// </remarks>
+    public static bool KeepsChevron(bool showAll, int onBar, int inMenu) =>
+        Offers(showAll, onBar, inMenu).Count > 0;
+}
+
+/// <summary>
+/// What a tray drag does about other applications' menus and the foreground, kept free of
+/// windows so it can be tested.
+/// </summary>
+internal static class TrayDragFocus
+{
+    /// <summary>How many times one drag takes its capture back from a menu before giving up.</summary>
+    public const int MaxRecaptures = 3;
+
+    /// <summary>
+    /// Whether a drag that lost its mouse capture carries on, taking it back.
+    /// </summary>
+    /// <remarks>
+    /// The press reaches the application at once, and some open a menu on it (Bluetooth). That
+    /// menu takes the capture a few hundred milliseconds into the drag, and ending the drag on
+    /// every lost capture let it win: measured 3 in 3 with Settings in front. While the button is
+    /// still held the user is still dragging, so the menu goes and the capture comes back. Bounded,
+    /// so something that keeps taking it cannot hold the drag open forever.
+    /// </remarks>
+    public static bool KeepsDragAfterLostCapture(bool leftButtonDown, int recapturesSoFar) =>
+        leftButtonDown && recapturesSoFar < MaxRecaptures;
+
+    /// <summary>
+    /// Whether the window that had the foreground at the press gets it back when the drag ends.
+    /// </summary>
+    /// <param name="before">The foreground window at the press.</param>
+    /// <param name="beforePid">Its process.</param>
+    /// <param name="nowPid">The process of the foreground window when the drag ends.</param>
+    /// <param name="ownerPid">The dragged icon's owner's process.</param>
+    /// <remarks>
+    /// A menu opened by the press takes the foreground for the icon's owner, and cancelling it
+    /// leaves the foreground there: on a hidden window, so the user's next keystrokes went nowhere
+    /// (measured with Notepad in front, after dragging Bluetooth). Only that is undone: anything
+    /// else that took the foreground during the drag did so for its own reasons.
+    /// </remarks>
+    public static bool RestoresForeground(IntPtr before, uint beforePid, uint nowPid, uint ownerPid) =>
+        before != IntPtr.Zero
+        && ownerPid != 0
+        && beforePid != ownerPid
+        && nowPid == ownerPid;
 }
