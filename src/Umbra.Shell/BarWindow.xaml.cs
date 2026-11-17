@@ -1037,11 +1037,15 @@ internal partial class BarWindow : AppBarWindow
     /// opens an empty panel is both a lie and, on this bar, a fixed lit pixel for nothing.
     /// </remarks>
     /// <remarks>
-    /// The exception is "show all icons on the bar": the panel is empty then by the user's own
-    /// choice, and the chevron's menu is where they turn it off again.
+    /// The exception is an empty panel the user chose, by "show all" or by putting every icon on
+    /// the bar: the chevron is where they drop one back and where its menu is.
+    /// See <see cref="TrayChevronMenu.KeepsChevron"/>.
     /// </remarks>
     public Visibility TrayOverflowVisibility =>
-        OverflowTrayIcons is not null && (KeepsChevronForShowAll || OverflowTrayIcons.Cast<object>().Any())
+        OverflowTrayIcons is not null && TrayChevronMenu.KeepsChevron(
+            _trayChoice?.ShowAll == true,
+            BarTrayIcons?.Cast<object>().Count() ?? 0,
+            OverflowTrayIcons.Cast<object>().Count())
             ? Visibility.Visible
             : Visibility.Collapsed;
 

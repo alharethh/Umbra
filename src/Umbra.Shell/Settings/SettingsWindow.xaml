@@ -598,7 +598,7 @@
                             shares. Each icon on the bar is lit area, dimmed as it is.
                         -->
                         <CheckBox x:Name="ShowAllTrayBox" Content="Show every icon on the bar" Margin="0,6,0,2"
-                                  ToolTip="Nothing is kept behind the ^ menu. Right-click the ^ to switch back." />
+                                  ToolTip="Nothing is kept behind the ^ menu. Untick, or right-click the ^, to put every icon back in it." />
                         <TextBlock x:Name="TrayChoiceHint" Style="{StaticResource Hint}"
                                    Text="Or choose them one by one. You can also drag an icon between the ^ menu and the bar. Every icon on the bar is lit, dimmed like the rest." />
                         <ScrollViewer x:Name="TrayIconScroller" MaxHeight="200"

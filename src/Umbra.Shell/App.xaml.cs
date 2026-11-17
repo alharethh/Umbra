@@ -75,7 +75,8 @@ public partial class App : Application
         // because icons keep arriving after startup.
         _settingsWindow.AttachTrayChoice(
             TrayChoice,
-            _launchSettings.Tray ? () => _bar?.TrayIconRows() ?? [] : null);
+            _launchSettings.Tray ? () => _bar?.TrayIconRows() ?? [] : null,
+            () => _bar?.DrawnTrayRow() ?? []);
         _settingsWindow.ShowInFront();
     }
 

@@ -47,7 +47,7 @@ public class TrayChoiceTests : IDisposable
     public void The_Choice_And_Show_All_Survive_A_Restart()
     {
         TrayChoice first = Seeded("a", "b");
-        first.SetShowAll(true);
+        first.ShowAllOnBar();
 
         TrayChoice second = new(_path);
 
@@ -55,17 +55,59 @@ public class TrayChoiceTests : IDisposable
         Assert.True(second.ShowAll);
     }
 
+    /// <summary>
+    /// "Put icons back in the menu" means every icon, including a chosen one whose application is
+    /// not running, which would otherwise come back to the bar when it starts.
+    /// </summary>
     [Fact]
-    public void Show_All_Keeps_The_Choice_So_Turning_It_Off_Puts_It_Back()
+    public void Putting_Icons_Back_Empties_The_Bar()
     {
-        TrayChoice choice = Seeded("a");
-
-        choice.SetShowAll(true);
+        TrayChoice choice = Seeded("a", "asleep");
+        choice.ShowAllOnBar();
         Assert.True(choice.ShowsOnBar(Is("b")));
 
-        choice.SetShowAll(false);
-        Assert.True(choice.ShowsOnBar(Is("a")));
+        Assert.True(choice.PutAllBack());
+
+        Assert.False(choice.ShowAll);
+        Assert.Empty(choice.OnBar);
+        Assert.False(choice.ShowsOnBar(Is("a")));
+        Assert.False(choice.ShowsOnBar(Is("asleep")));
+
+        TrayChoice reread = new(_path);
+        Assert.False(reread.ShowAll);
+        Assert.Empty(reread.OnBar);
+    }
+
+    /// <summary>Without "show all" too: icons dragged onto the bar one by one all go back.</summary>
+    [Fact]
+    public void Putting_Icons_Back_Without_Show_All_Takes_The_Chosen_Ones_Too()
+    {
+        TrayChoice choice = Seeded("a", "b");
+
+        Assert.True(choice.PutAllBack());
+        Assert.Empty(choice.OnBar);
+    }
+
+    /// <summary>
+    /// The owner's report, 15 Nov: icons dragged along the bar under "show all" were silently
+    /// chosen, and "Put icons back in the menu" then left them on the bar.
+    /// </summary>
+    [Fact]
+    public void Icons_Moved_Under_Show_All_Still_All_Go_Back()
+    {
+        TrayChoice choice = new(_path);
+        choice.ShowAllOnBar();
+
+        choice.PlaceOnBar("c", Is("c"), Is("a"), Row("a", "b", "c"));
+        choice.PlaceOnBar("b", Is("b"), before: null, Row("c", "a", "b"));
+        Assert.NotEmpty(choice.OnBar);
+
+        choice.PutAllBack();
+
+        Assert.Empty(choice.OnBar);
+        Assert.False(choice.ShowsOnBar(Is("a")));
         Assert.False(choice.ShowsOnBar(Is("b")));
+        Assert.False(choice.ShowsOnBar(Is("c")));
     }
 
     /// <summary>
@@ -96,22 +138,141 @@ public class TrayChoiceTests : IDisposable
         Assert.Equal(["a", "b"], new TrayChoice(_path).OnBar);
     }
 
+    private const string TwoLineTitle = @"C:\Program Files\Certum\SimplySign Desktop\SimplySignDesktop.exe:1:SimplySign Desktop" + "\nStatus: not connected";
+
+    /// <summary>
+    /// A title of two lines was written over two lines of the file, and the second came back as an
+    /// icon of its own, which Settings listed as "Status: not connected".
+    /// </summary>
+    [Fact]
+    public void A_Two_Line_Title_Is_One_Line_In_The_File_And_Comes_Back_Whole()
+    {
+        const string guid = "6da68f06-00f1-4e6e-8158-7f1ffd4f9db9";
+        const string tool = @"C:\Apps\Tool.exe:3:Tool";
+        Seeded(guid, TwoLineTitle, tool);
+
+        Assert.Equal(4, File.ReadAllLines(_path).Length);
+        Assert.Equal([guid, TwoLineTitle, tool], new TrayChoice(_path).OnBar);
+    }
+
+    [Fact]
+    public void A_Windows_Line_Break_In_A_Title_Comes_Back_Too()
+    {
+        string id = @"C:\Apps\Sync.exe:3:Sync" + "\r\nUp to date";
+        Seeded(id);
+
+        Assert.Equal(2, File.ReadAllLines(_path).Length);
+        Assert.Equal([id], new TrayChoice(_path).OnBar);
+    }
+
+    /// <summary>A title holding a percent sign, or the very text an escape is written as, survives.</summary>
+    [Theory]
+    [InlineData(@"C:\Apps\Battery.exe:2:Battery 80%")]
+    [InlineData(@"C:\Apps\Odd.exe:2:Literally %0A and %25 and %0D")]
+    [InlineData(@"C:\Apps\Odd.exe:2:Ends in %")]
+    [InlineData(@"C:\Apps\Odd.exe:2:%2")]
+    public void Percent_Signs_In_A_Title_Survive(string id)
+    {
+        Seeded(id);
+        Assert.Equal([id], new TrayChoice(_path).OnBar);
+    }
+
+    /// <summary>
+    /// A file written before entries were escaped (the owner's, 15 Nov) holds each second line on
+    /// a line of its own. It is joined back onto the entry above, so nothing is lost and nothing
+    /// phantom is listed.
+    /// </summary>
+    [Fact]
+    public void An_Old_File_With_Split_Titles_Is_Read_Back_Whole()
+    {
+        File.WriteAllLines(_path,
+        [
+            "showAll = false",
+            "6da68f06-00f1-4e6e-8158-7f1ffd4f9db9",
+            @"C:\Program Files\Certum\SimplySign Desktop\SimplySignDesktop.exe:1:SimplySign Desktop",
+            "Status: not connected",
+            "ba82e2dc-f405-47ad-b032-cf0faa0e3933",
+            @"C:\Users\Dev\AppData\Local\Microsoft\OneDrive\OneDrive.exe:501:OneDrive - Personal",
+            "Not signed in",
+        ]);
+
+        TrayChoice choice = new(_path);
+
+        Assert.Equal(
+        [
+            "6da68f06-00f1-4e6e-8158-7f1ffd4f9db9",
+            TwoLineTitle,
+            "ba82e2dc-f405-47ad-b032-cf0faa0e3933",
+            @"C:\Users\Dev\AppData\Local\Microsoft\OneDrive\OneDrive.exe:501:OneDrive - Personal" + "\nNot signed in",
+        ], choice.OnBar);
+        Assert.Equal(4, TrayIconRow.For(choice, []).Count);
+    }
+
+    /// <summary>Only a line that cannot stand alone is joined; a GUID or an identifier never is.</summary>
+    [Theory]
+    [InlineData("6da68f06-00f1-4e6e-8158-7f1ffd4f9db9", true)]
+    [InlineData(@"C:\Apps\Tool.exe:3:Tool", true)]
+    [InlineData(@":7:An icon with no path", true)]
+    [InlineData("Status: not connected", false)]
+    [InlineData("Not signed in", false)]
+    public void Only_A_Line_That_Cannot_Stand_Alone_Is_A_Second_Line(string line, bool standsAlone) =>
+        Assert.Equal(standsAlone, TrayChoice.CouldBeIdentifier(line));
+
+    /// <summary>A GUID entry has no title, so the line after it is never its second line.</summary>
+    [Fact]
+    public void A_Line_After_A_Guid_Entry_Is_Never_Joined_To_It()
+    {
+        File.WriteAllLines(_path, ["6da68f06-00f1-4e6e-8158-7f1ffd4f9db9", "Status: stray"]);
+
+        Assert.Equal(["6da68f06-00f1-4e6e-8158-7f1ffd4f9db9", "Status: stray"], new TrayChoice(_path).OnBar);
+    }
+
+    /// <summary>A hand-edited file may have the setting line between entries; it ends a title.</summary>
+    [Fact]
+    public void A_Line_After_The_Setting_Line_Is_Never_Joined_To_It()
+    {
+        File.WriteAllLines(_path, [@"C:\Apps\Tool.exe:3:Tool", "showAll = true", "Status: stray"]);
+
+        Assert.Equal([@"C:\Apps\Tool.exe:3:Tool", "Status: stray"], new TrayChoice(_path).OnBar);
+    }
+
+    /// <summary>A file written before escaping holds percent signs as they are, even one at the very end.</summary>
+    [Theory]
+    [InlineData(@"C:\Apps\Odd.exe:2:Old %2")]
+    [InlineData(@"C:\Apps\Odd.exe:2:Old %")]
+    [InlineData(@"C:\Apps\Battery.exe:2:Battery 80% left")]
+    public void An_Old_File_Reads_Percent_Signs_As_Written(string id)
+    {
+        File.WriteAllLines(_path, [id]);
+
+        Assert.Equal([id], new TrayChoice(_path).OnBar);
+    }
+
     [Fact]
     public void Changed_Is_Raised_Only_When_Something_Changed()
     {
+        TrayChoice empty = new(_path);
+        int emptyRaised = 0;
+        empty.Changed += () => emptyRaised++;
+        Assert.False(empty.PutAllBack());
+        Assert.Equal(0, emptyRaised);
+
         TrayChoice choice = Seeded("a");
         int raised = 0;
         choice.Changed += () => raised++;
 
         choice.Add("a", Is("a"));
         choice.Remove(Is("missing"));
-        choice.SetShowAll(false);
         Assert.Equal(0, raised);
 
         choice.Add("b", Is("b"));
         choice.Remove(Is("a"));
-        choice.SetShowAll(true);
+        Assert.True(choice.ShowAllOnBar());
+        Assert.False(choice.ShowAllOnBar());
         Assert.Equal(3, raised);
+
+        Assert.True(choice.PutAllBack());
+        Assert.Equal(4, raised);
     }
 
     [Fact]
@@ -199,20 +360,86 @@ public class TrayChoiceTests : IDisposable
         Assert.Empty(new TrayChoice(_path).OnBar);
     }
 
-    // ------------------------------------------------------------------ drop geometry
+    // ------------------------------------------------------------------ dropping while "show all" is on
 
-    [Theory]
-    [InlineData(0.0, 0)]
-    [InlineData(9.9, 0)]
-    [InlineData(10.0, 1)]
-    [InlineData(29.9, 1)]
-    [InlineData(30.0, 2)]
-    [InlineData(500.0, 2)]
-    public void The_Gap_Is_Decided_By_Each_Icons_Middle(double along, int gap) =>
-        Assert.Equal(gap, TrayDrop.GapIndex([(0, 20), (20, 40)], along));
+    private static TrayEntry[] Row(params string[] ids) => [.. ids.Select(id => new TrayEntry(id, Is(id)))];
+
+    /// <summary>
+    /// The owner's report, 15 Nov: with every icon on the bar, an icon dropped on the chevron did
+    /// nothing and said nothing. It now goes behind the chevron and "show all" ends, with every
+    /// other icon kept on the bar in the order it was drawn.
+    /// </summary>
+    [Fact]
+    public void A_Drop_In_The_Menu_Under_Show_All_Takes_That_Icon_Off_And_Keeps_The_Rest()
+    {
+        TrayChoice choice = Seeded("b");
+        choice.ShowAllOnBar();
+        int changes = 0;
+        choice.Changed += () => changes++;
+
+        // Drawn: the chosen "b", then the rest in arrival order.
+        Assert.True(choice.PutBehindChevron(Is("c"), Row("b", "a", "c", "d")));
+
+        Assert.False(choice.ShowAll);
+        Assert.Equal(["b", "a", "d"], choice.OnBar);
+        Assert.False(choice.ShowsOnBar(Is("c")));
+        Assert.Equal(1, changes);
+
+        TrayChoice reread = new(_path);
+        Assert.False(reread.ShowAll);
+        Assert.Equal(["b", "a", "d"], reread.OnBar);
+    }
+
+    /// <summary>A chosen icon that is not running keeps its place for when it comes back.</summary>
+    [Fact]
+    public void Ending_Show_All_Keeps_A_Chosen_Icon_That_Is_Not_Running()
+    {
+        TrayChoice choice = Seeded("asleep", "b");
+        choice.ShowAllOnBar();
+
+        choice.PutBehindChevron(Is("b"), Row("a"));
+
+        Assert.Equal(["asleep", "a"], choice.OnBar);
+    }
 
     [Fact]
-    public void An_Empty_Row_Has_One_Gap() => Assert.Equal(0, TrayDrop.GapIndex([], 123));
+    public void Without_Show_All_A_Drop_In_The_Menu_Only_Removes()
+    {
+        TrayChoice choice = Seeded("a", "b");
+
+        Assert.True(choice.PutBehindChevron(Is("a"), Row("a", "b", "extra")));
+
+        Assert.Equal(["b"], choice.OnBar);
+        Assert.False(choice.ShowAll);
+    }
+
+    /// <summary>
+    /// Under "show all", dragging an unchosen icon to the end of the row left it where it was: the
+    /// end of the chosen list is still in front of the unchosen ones.
+    /// </summary>
+    [Fact]
+    public void Under_Show_All_A_Drop_At_The_End_Moves_An_Unchosen_Icon_There()
+    {
+        TrayChoice choice = Seeded("a");
+        choice.ShowAllOnBar();
+
+        Assert.True(choice.PlaceOnBar("b", Is("b"), before: null, Row("a", "b", "c")));
+
+        Assert.Equal(["a", "c", "b"], choice.OnBar);
+        Assert.True(choice.ShowAll);
+    }
+
+    [Fact]
+    public void Without_Show_All_A_Bar_Drop_Leaves_Unchosen_Icons_Alone()
+    {
+        TrayChoice choice = Seeded("a", "b");
+
+        Assert.True(choice.PlaceOnBar("b", Is("b"), Is("a"), Row("a", "b")));
+
+        Assert.Equal(["b", "a"], choice.OnBar);
+    }
+
+    // ------------------------------------------------------------------ drop geometry
 
     [Theory]
     [InlineData(3, 0, false)]
@@ -222,26 +449,25 @@ public class TrayChoiceTests : IDisposable
     public void A_Drag_Starts_Past_The_Threshold_On_Either_Axis(double dx, double dy, bool drag) =>
         Assert.Equal(drag, TrayDrop.IsDrag(new Point(100, 100), new Point(100 + dx, 100 + dy), 4, 4));
 
-    /// <summary>Off the bar and towards the screen, whichever edge the bar is on.</summary>
+    /// <summary>
+    /// The menu follows where the icons are, not the switch. The case that went wrong: after a drop
+    /// on the chevron ended "show all", icons sat in both places and only "Show all" was offered.
+    /// </summary>
     [Theory]
-    [InlineData(Umbra.Core.Layout.BarEdge.Bottom, 0, -1)]
-    [InlineData(Umbra.Core.Layout.BarEdge.Top, 0, 1)]
-    [InlineData(Umbra.Core.Layout.BarEdge.Left, 1, 0)]
-    [InlineData(Umbra.Core.Layout.BarEdge.Right, -1, 0)]
-    public void The_Ghost_Rides_Inboard_Of_The_Pointer(Umbra.Core.Layout.BarEdge edge, int x, int y)
-    {
-        Vector lift = TrayDrop.GhostLift(edge, 18);
-
-        Assert.Equal(Math.Sign(x), Math.Sign(lift.X));
-        Assert.Equal(Math.Sign(y), Math.Sign(lift.Y));
-        Assert.True(lift.Length >= 18, "the ghost would still overlap the pointer's target");
-    }
+    [InlineData(false, 0, 3, "ShowAll")]
+    [InlineData(true, 5, 0, "PutAllBack")]
+    [InlineData(true, 0, 0, "PutAllBack")]
+    [InlineData(false, 4, 1, "ShowAll,PutAllBack")]
+    [InlineData(false, 2, 0, "PutAllBack")]
+    [InlineData(false, 0, 0, "")]
+    public void The_Chevron_Menu_Offers_What_Fits_Where_The_Icons_Are(bool showAll, int onBar, int inMenu, string expected) =>
+        Assert.Equal(expected, string.Join(",", TrayChevronMenu.Offers(showAll, onBar, inMenu)));
 
     [Fact]
-    public void The_Chevron_Menu_Offers_The_Switch_Not_Taken()
+    public void The_Chevron_Menu_Says_What_Each_Item_Does()
     {
-        Assert.Equal("Show all icons on the bar", TrayChevronMenu.ToggleLabel(showAll: false));
-        Assert.Equal("Put icons back in the menu", TrayChevronMenu.ToggleLabel(showAll: true));
+        Assert.Equal("Show all icons on the bar", TrayChevronMenu.LabelOf(TrayChevronMenu.Item.ShowAll));
+        Assert.Equal("Put icons back in the menu", TrayChevronMenu.LabelOf(TrayChevronMenu.Item.PutAllBack));
     }
 
     // ------------------------------------------------------------------ the settings list
@@ -310,12 +536,99 @@ public class TrayChoiceTests : IDisposable
         try
         {
             choice.Add("a", Is("a"));
-            choice.SetShowAll(true);
+            choice.ShowAllOnBar();
 
             CheckBox box = Assert.IsType<CheckBox>(Assert.Single(window.TrayIconList.Children));
             Assert.True(box.IsChecked);
             Assert.True(window.ShowAllTrayBox.IsChecked);
-            Assert.False(window.TrayIconList.IsEnabled);
+            Assert.True(window.TrayIconList.IsEnabled);
+        }
+        finally { window.Close(); }
+    });
+
+    [Fact]
+    public void Under_Show_All_Every_Running_Icon_Is_Listed_As_On_The_Bar()
+    {
+        TrayChoice choice = Seeded("a");
+        choice.ShowAllOnBar();
+
+        IReadOnlyList<TrayIconRow> rows = TrayIconRow.For(choice, [Running("a", "Alpha"), Running("b", "Bravo")]);
+
+        Assert.All(rows, row => Assert.True(row.OnBar));
+    }
+
+    /// <summary>
+    /// Under "show all" the list used to be greyed out, so no single icon could be taken off.
+    /// Unticking one now does what a drop on the chevron does.
+    /// </summary>
+    [Fact]
+    public void Under_Show_All_Unticking_An_Icon_Takes_Only_That_One_Off() => OnSta(() =>
+    {
+        TrayChoice choice = new(_path);
+        choice.ShowAllOnBar();
+        TrayIconRow.Running[] running = [Running("a", "Alpha"), Running("b", "Bravo"), Running("c", "Charlie")];
+        SettingsWindow window = Shown(choice, () => TrayIconRow.For(choice, running), () => Row("c", "a", "b"));
+        try
+        {
+            Assert.True(window.TrayIconList.IsEnabled);
+            CheckBox[] boxes = [.. window.TrayIconList.Children.Cast<CheckBox>()];
+            Assert.All(boxes, box => Assert.True(box.IsChecked));
+
+            // Alpha, Bravo, Charlie by name; Bravo is the second.
+            boxes[1].IsChecked = false;
+
+            Assert.False(choice.ShowAll);
+            Assert.Equal(["c", "a"], choice.OnBar);
+            Assert.False(window.ShowAllTrayBox.IsChecked);
+            Assert.Same(boxes[1], window.TrayIconList.Children[1]);
+        }
+        finally { window.Close(); }
+    });
+
+    [Fact]
+    public void Unticking_Show_Every_Icon_Puts_Every_Icon_Back() => OnSta(() =>
+    {
+        TrayChoice choice = new(_path);
+        choice.ShowAllOnBar();
+        choice.PlaceOnBar("b", Is("b"), Is("a"), Row("a", "b"));
+        SettingsWindow window = Shown(choice, () => TrayIconRow.For(choice, [Running("a", "Alpha"), Running("b", "Bravo")]));
+        try
+        {
+            window.ShowAllTrayBox.IsChecked = false;
+
+            Assert.False(choice.ShowAll);
+            Assert.Empty(choice.OnBar);
+            Assert.All(window.TrayIconList.Children.Cast<CheckBox>(), box => Assert.False(box.IsChecked));
+
+            window.ShowAllTrayBox.IsChecked = true;
+
+            Assert.True(choice.ShowAll);
+            Assert.All(window.TrayIconList.Children.Cast<CheckBox>(), box => Assert.True(box.IsChecked));
+        }
+        finally { window.Close(); }
+    });
+
+    /// <summary>
+    /// The open window follows a change made on the bar by setting its own "show every icon" box.
+    /// Unticking that box puts every icon back, so the window must not take its own setting for a
+    /// click: a drop on the chevron that ends "show all" would then empty the bar a moment later.
+    /// </summary>
+    [Fact]
+    public void A_Drop_That_Ends_Show_All_Is_Not_Undone_By_An_Open_Window() => OnSta(() =>
+    {
+        TrayChoice choice = new(_path);
+        choice.ShowAllOnBar();
+        SettingsWindow window = Shown(choice, () => TrayIconRow.For(choice, [Running("a", "Alpha"), Running("b", "Bravo")]));
+        try
+        {
+            Assert.True(window.ShowAllTrayBox.IsChecked);
+
+            // As the bar does on a drop on the chevron.
+            choice.PutBehindChevron(Is("a"), Row("a", "b"));
+
+            Assert.False(window.ShowAllTrayBox.IsChecked);
+            Assert.Equal(["b"], choice.OnBar);
+            Assert.Equal(["b"], new TrayChoice(_path).OnBar);
         }
         finally { window.Close(); }
     });
@@ -350,7 +663,10 @@ public class TrayChoiceTests : IDisposable
         }
     });
 
-    private static SettingsWindow Shown(TrayChoice choice, Func<IReadOnlyList<TrayIconRow>> rows)
+    private static SettingsWindow Shown(
+        TrayChoice choice,
+        Func<IReadOnlyList<TrayIconRow>> rows,
+        Func<IReadOnlyList<TrayEntry>>? drawn = null)
     {
         var window = new SettingsWindow(new UmbraSettings(), _ => { }, () => { })
         {
@@ -360,7 +676,7 @@ public class TrayChoiceTests : IDisposable
             ShowActivated = false,
             ShowInTaskbar = false,
         };
-        window.AttachTrayChoice(choice, rows);
+        window.AttachTrayChoice(choice, rows, drawn);
         window.Show();
         return window;
     }

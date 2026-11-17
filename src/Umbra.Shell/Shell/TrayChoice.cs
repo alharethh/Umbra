@@ -3,6 +3,9 @@ using Umbra.Shell.Diagnostics;
 
 namespace Umbra.Shell.Shell;
 
+/// <summary>An icon as the bar draws it: its identifier, and how to recognise it in the list.</summary>
+internal readonly record struct TrayEntry(string Identifier, Func<string, bool> Matches);
+
 /// <summary>
 /// Which notification icons the user has taken out of the overflow and put on the bar, in the
 /// order they sit there, and whether every icon is shown on the bar regardless.
@@ -26,6 +29,13 @@ namespace Umbra.Shell.Shell;
 /// <para>
 /// The four system indicators are not in this list. They are always on the bar
 /// (<see cref="ShellHost.SystemIndicators"/>) and <see cref="PinnedFor"/> puts them first.
+/// </para>
+/// <para>
+/// <b>One entry per line, always.</b> A title can have several lines (SimplySign's is
+/// "SimplySign Desktop" and then "Status: not connected"), and so can the identifier built from
+/// it. Written as it is, the second line came back as an entry of its own, listed in Settings as
+/// an icon called "Status: not connected". Line breaks are written as <c>%0A</c> and <c>%0D</c>,
+/// and <c>%</c> itself as <c>%25</c>; see <see cref="Escape"/>.
 /// </para>
 /// </remarks>
 internal sealed class TrayChoice
@@ -53,9 +63,15 @@ internal sealed class TrayChoice
     public IReadOnlyList<string> OnBar => _onBar;
 
     /// <summary>
-    /// Every icon on the bar and none behind the chevron. The chosen list is kept as it is, so
-    /// turning this off puts back exactly what the user had chosen.
+    /// Every icon on the bar and none behind the chevron, including icons that arrive later.
     /// </summary>
+    /// <remarks>
+    /// It is never simply switched off, because the list under it is invisible while it is on and
+    /// drags along the bar add to that list. Switched off alone, it left on the bar whatever icons
+    /// had been touched, under a menu item that said "Put icons back in the menu" (the owner's
+    /// report, 15 Nov). It ends one of two ways: <see cref="PutAllBack"/>, which empties the bar, or
+    /// <see cref="PutBehindChevron"/>, which keeps everything but one icon on it.
+    /// </remarks>
     public bool ShowAll { get; private set; }
 
     /// <summary>Whether the icon is one the user put on the bar.</summary>
@@ -80,6 +96,72 @@ internal sealed class TrayChoice
     /// <returns>True when the list changed.</returns>
     public bool Place(string identifier, Func<string, bool> matches, int index)
     {
+        if (!Move(identifier, matches, ref index)) return false;
+
+        Commit($"tray on bar: placed {Escape(identifier)} at {index}");
+        return true;
+    }
+
+    /// <summary>
+    /// A drop on the bar in front of <paramref name="before"/> (null: the end of the row).
+    /// </summary>
+    /// <param name="drawn">The bar's row as drawn, in order.</param>
+    /// <remarks>
+    /// With "show all" on, the row is the chosen icons and then the rest in arrival order, and only
+    /// the chosen ones have a place in the list. A drop among the rest would land wherever the list
+    /// happened to put it (dropped at the end, an icon stayed put), so the row as drawn is written
+    /// into the list first and the drop then moves within that.
+    /// </remarks>
+    /// <returns>True when the list changed.</returns>
+    public bool PlaceOnBar(string identifier, Func<string, bool> matches, Func<string, bool>? before, IEnumerable<TrayEntry> drawn)
+    {
+        bool adopted = ShowAll && AdoptDrawn(drawn);
+        int index = IndexBefore(before);
+        bool moved = Move(identifier, matches, ref index);
+        if (!adopted && !moved) return false;
+
+        Commit($"tray on bar: placed {Escape(identifier)} at {index}");
+        return true;
+    }
+
+    /// <summary>
+    /// A drop on the chevron or into its menu: the icon goes behind the chevron.
+    /// </summary>
+    /// <param name="drawn">The bar's row as drawn, in order.</param>
+    /// <remarks>
+    /// With "show all" on, a drop here used to be refused without a word: the switch overrides the
+    /// list, so there was no way to say "all but this one". Now the drop ends "show all" and turns
+    /// what was on the bar into the list, less this icon, so nothing else moves. Turning "show all"
+    /// on again shows every icon as before.
+    /// </remarks>
+    /// <returns>True when the list changed.</returns>
+    public bool PutBehindChevron(Func<string, bool> matches, IEnumerable<TrayEntry> drawn)
+    {
+        if (!ShowAll) return Remove(matches);
+
+        AdoptDrawn(drawn);
+        _onBar.RemoveAll(entry => matches(entry));
+        ShowAll = false;
+        Commit("tray on bar: an icon dropped in the menu ended show all; the rest stay on the bar");
+        return true;
+    }
+
+    /// <summary>Adds every drawn icon not yet in the list to its end, in drawn order.</summary>
+    private bool AdoptDrawn(IEnumerable<TrayEntry> drawn)
+    {
+        bool changed = false;
+        foreach (TrayEntry entry in drawn)
+        {
+            if (IndexOf(entry.Matches) >= 0) continue;
+            _onBar.Add(entry.Identifier);
+            changed = true;
+        }
+        return changed;
+    }
+
+    /// <summary><see cref="Place"/> without saving. <paramref name="index"/> comes back as inserted.</summary>
+    private bool Move(string identifier, Func<string, bool> matches, ref int index)
+    {
         int old = IndexOf(matches);
         index = Math.Clamp(index, 0, _onBar.Count);
 
@@ -93,7 +175,6 @@ internal sealed class TrayChoice
         }
 
         _onBar.Insert(index, identifier);
-        Commit($"tray on bar: placed {identifier} at {index}");
         return true;
     }
 
@@ -117,12 +198,30 @@ internal sealed class TrayChoice
     public bool RemoveEntry(string identifier) =>
         Remove(entry => string.Equals(entry, identifier, StringComparison.OrdinalIgnoreCase));
 
-    public void SetShowAll(bool showAll)
+    /// <summary>"Show all icons on the bar".</summary>
+    /// <returns>True when it was not on already.</returns>
+    public bool ShowAllOnBar()
     {
-        if (ShowAll == showAll) return;
+        if (ShowAll) return false;
 
-        ShowAll = showAll;
-        Commit($"tray on bar: show all = {showAll}");
+        ShowAll = true;
+        Commit("tray on bar: show all = True");
+        return true;
+    }
+
+    /// <summary>
+    /// "Put icons back in the menu": every icon goes behind the chevron, including chosen icons
+    /// whose application is not running, which would otherwise come back to the bar when it starts.
+    /// </summary>
+    /// <returns>True when anything changed.</returns>
+    public bool PutAllBack()
+    {
+        if (!ShowAll && _onBar.Count == 0) return false;
+
+        ShowAll = false;
+        _onBar.Clear();
+        Commit("tray on bar: every icon put back in the menu");
+        return true;
     }
 
     /// <summary>
@@ -169,19 +268,87 @@ internal sealed class TrayChoice
             return;
         }
 
+        List<string> entries = [];
+        bool lastWasEntry = false;
+
         foreach (string raw in lines)
         {
             string line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith('#')) continue;
+            if (line.Length == 0 || line.StartsWith('#'))
+            {
+                lastWasEntry = false;
+                continue;
+            }
 
             if (TryReadShowAll(line, out bool showAll))
             {
                 ShowAll = showAll;
+                lastWasEntry = false;
                 continue;
             }
 
-            if (!_onBar.Contains(line, StringComparer.OrdinalIgnoreCase)) _onBar.Add(line);
+            string entry = Unescape(line);
+
+            // A file written before entries were escaped holds a multi-line title over several
+            // lines. A line that cannot be an identifier on its own is the rest of the one above,
+            // when the one above has a title to continue: a GUID entry has none.
+            if (lastWasEntry && HasTitle(entries[^1]) && !CouldBeIdentifier(entry))
+            {
+                entries[^1] += "\n" + entry;
+                BringUpLog.Write("tray on bar: joined a title's second line back onto its entry");
+                continue;
+            }
+
+            entries.Add(entry);
+            lastWasEntry = true;
         }
+
+        // After joining, so that two copies of a multi-line entry are recognised as copies.
+        foreach (string entry in entries)
+            if (!_onBar.Contains(entry, StringComparer.OrdinalIgnoreCase)) _onBar.Add(entry);
+    }
+
+    /// <summary>
+    /// Whether a line could be an identifier by itself: a GUID, or <c>path:uid:title</c>, which has
+    /// a run of digits between two colons. A title's second line ("Status: not connected", "Not
+    /// signed in") is neither.
+    /// </summary>
+    internal static bool CouldBeIdentifier(string line) => Guid.TryParse(line, out _) || HasTitle(line);
+
+    /// <summary>Whether an entry is <c>path:uid:title</c>, the only kind that carries a title.</summary>
+    private static bool HasTitle(string entry) => System.Text.RegularExpressions.Regex.IsMatch(entry, @":\d+:");
+
+    /// <summary>An entry as one line: <c>%</c>, CR and LF written as <c>%25</c>, <c>%0D</c>, <c>%0A</c>.</summary>
+    internal static string Escape(string entry) =>
+        entry.Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A");
+
+    /// <summary>
+    /// <see cref="Escape"/> undone, in one pass, so <c>%250A</c> reads as the text <c>%0A</c>.
+    /// Any other <c>%</c> is left as it is, which is what a file written before escaping holds.
+    /// </summary>
+    internal static string Unescape(string line)
+    {
+        if (!line.Contains('%')) return line;
+
+        var text = new System.Text.StringBuilder(line.Length);
+        for (int i = 0; i < line.Length; i++)
+        {
+            if (line[i] == '%' && i + 2 < line.Length)
+            {
+                string code = line.Substring(i + 1, 2);
+                string? decoded = code switch { "25" => "%", "0D" => "\r", "0A" => "\n", _ => null };
+                if (decoded is not null)
+                {
+                    text.Append(decoded);
+                    i += 2;
+                    continue;
+                }
+            }
+
+            text.Append(line[i]);
+        }
+
+        return text.ToString();
     }
 
     /// <summary>
@@ -206,7 +373,7 @@ internal sealed class TrayChoice
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             File.WriteAllLines(
                 _path,
-                [$"{ShowAllKey} = {ShowAll.ToString().ToLowerInvariant()}", .. _onBar],
+                [$"{ShowAllKey} = {ShowAll.ToString().ToLowerInvariant()}", .. _onBar.Select(Escape)],
                 TextEncoding.Utf8);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
