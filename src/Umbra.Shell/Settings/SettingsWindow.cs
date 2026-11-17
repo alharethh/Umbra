@@ -112,6 +112,8 @@ internal partial class SettingsWindow : Window
         // half-typed "#53E" is not an error to report, it is someone still typing.
         AppHoverHex.TextChanged += (_, _) => Commit();
         foreach (TextBox box in ThemeHexBoxes) box.TextChanged += (_, _) => Commit();
+
+        WirePickers();
     }
 
     /// <summary>The row's two hover treatments and the chip's colour.</summary>
@@ -284,7 +286,7 @@ internal partial class SettingsWindow : Window
         ThemeCustomNote.Visibility = matching is null ? Visibility.Visible : Visibility.Hidden;
     }
 
-    private static void Swatch(TextBox box, Border swatch)
+    private static void Swatch(TextBox box, Control swatch)
     {
         if (ColourFrom(box.Text) is { } colour)
             swatch.Background = new System.Windows.Media.SolidColorBrush(colour);
