@@ -121,6 +121,7 @@ internal partial class BarWindow : AppBarWindow
     {
         Metrics = metrics;
         _host = host;
+        _fullScreen = host.ShellManager.FullScreenHelper;
         Windows = host.ShellManager.Tasks.GroupedWindows;
 
         _tasks = new TaskbarModel(Windows, Pins);
@@ -2057,23 +2058,82 @@ internal partial class BarWindow : AppBarWindow
     /// <summary>Whether a mouse button was already down on the previous surfacing tick.</summary>
     private bool _surfacingPressWasDown;
 
+    /// <summary>ManagedShell's fullscreen tracker, which the base class listens to.</summary>
+    private readonly FullScreenHelper _fullScreen;
+
+    /// <summary>Whether the bar is staying down for a fullscreen app's own window. See <see cref="SameAppHold"/>.</summary>
+    private readonly SameAppHold _sameApp = new();
+
     /// <summary>
     /// Records the fullscreen application, and gives way to it unless the bar is up over it.
     /// </summary>
     protected override void OnFullScreenEnter(FullScreenApp app)
     {
         _concededTo = app;
+        _sameApp.Reset();
         if (_surfacing.Raised) return;
 
         base.OnFullScreenEnter(app);
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Comes up, unless the window in front is the fullscreen application's own (VLC's controls).
+    /// </summary>
     protected override void OnFullScreenLeave()
+    {
+        if (_concededTo is not null && !_surfacing.Raised && _sameApp.OnLeave(SameAppFactsNow(_concededTo)))
+        {
+            BringUpLog.Write($"fullscreen '{_concededTo.title}': its own window is in front, staying down");
+            return;
+        }
+
+        Rise();
+    }
+
+    /// <summary>The fullscreen application has really gone: come up and forget it.</summary>
+    private void Rise()
     {
         _concededTo = null;
         _surfacing.Reset();
+        _sameApp.Reset();
         base.OnFullScreenLeave();
+    }
+
+    /// <summary>What <see cref="SameAppHold"/> needs to know about <paramref name="app"/>, now.</summary>
+    private SameAppFacts SameAppFactsNow(FullScreenApp app)
+    {
+        TrayNative.GetWindowThreadProcessId(app.hWnd, out uint conceded);
+        TrayNative.GetWindowThreadProcessId(GetForegroundWindow(), out uint foreground);
+
+        // Only asked when the processes match, since it is a reflection call.
+        bool still = conceded != 0 && conceded == foreground && FullScreenRecheck.StillFullScreen(_fullScreen, app);
+        return new SameAppFacts(conceded, foreground, still);
+    }
+
+    /// <summary>
+    /// Looks again at a bar held down by <see cref="SameAppHold"/>: ManagedShell may list the app
+    /// again, or the app may have left the front or fullscreen.
+    /// </summary>
+    private void RecheckSameAppHold()
+    {
+        if (!_sameApp.Holding || _concededTo is null) return;
+
+        FullScreenApp? listed = _fullScreen.FullScreenApps.FirstOrDefault(a =>
+            a.screen.IsVirtualScreen || a.screen.DeviceName == Screen.DeviceName);
+
+        switch (_sameApp.Tick(listed is not null, SameAppFactsNow(_concededTo)))
+        {
+            case SameAppChange.Rejoin:
+                // The base class saw this arrive and stayed silent, because the bar was not
+                // topmost: it only gives way from topmost. The bar is already down.
+                _concededTo = listed;
+                break;
+
+            case SameAppChange.Rise:
+                BringUpLog.Write($"fullscreen '{_concededTo.title}' is no longer in front: coming up");
+                Rise();
+                break;
+        }
     }
 
     /// <summary>
@@ -2104,10 +2164,15 @@ internal partial class BarWindow : AppBarWindow
     {
         if (_concededTo is null) return;
 
+        // Start in front is not the app leaving: the surfacing rule below owns that case.
+        if (!_startMenu.IsOpen) RecheckSameAppHold();
+        if (_concededTo is null) return;
+
         switch (_surfacing.Tick(_startMenu.IsOpen, PressedOffTheBar()))
         {
             case SurfacingChange.Raise:
                 BringUpLog.Write($"start opened over fullscreen '{_concededTo.title}': raising the bar");
+                _sameApp.Reset();
                 base.OnFullScreenLeave();
                 break;
 

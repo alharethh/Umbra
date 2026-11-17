@@ -37,6 +37,58 @@ internal static class FullScreenRecheck
         types: Type.EmptyTypes,
         modifiers: null);
 
+    /// <summary>ManagedShell's private per-window test, or null if this version has none.</summary>
+    internal static MethodInfo? WindowMethod { get; } = typeof(FullScreenHelper).GetMethod(
+        "getFullScreenApp",
+        BindingFlags.Instance | BindingFlags.NonPublic,
+        binder: null,
+        types: [typeof(IntPtr), typeof(bool)],
+        modifiers: null);
+
+    /// <summary>Whether this ManagedShell has already said it cannot be asked about one window.</summary>
+    private static bool _windowMethodMissingLogged;
+
+    /// <summary>
+    /// Whether ManagedShell's own test still calls <paramref name="app"/>'s window fullscreen, on
+    /// the same screen. See <see cref="SameAppHold"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// False whenever it cannot be asked, which leaves the bar coming up as it did before the
+    /// question existed.
+    /// </para>
+    /// <para>
+    /// <b>Always the strict form</b> (<c>fromTasksService: false</c>), whatever the app was listed
+    /// with. For a window Windows itself reported fullscreen, ManagedShell skips the test that the
+    /// window covers the screen, so a VLC that had gone back to a window still answered "fullscreen"
+    /// and held the bar down until it closed. Measured live, 2026-11-17. The strict form needs the
+    /// window to cover its screen exactly, which is what holding the bar down is for.
+    /// </para>
+    /// </remarks>
+    public static bool StillFullScreen(FullScreenHelper helper, FullScreenApp app)
+    {
+        if (WindowMethod is null)
+        {
+            if (!_windowMethodMissingLogged)
+            {
+                _windowMethodMissingLogged = true;
+                BringUpLog.Write("fullscreen: FullScreenHelper.getFullScreenApp not found in this ManagedShell");
+            }
+
+            return false;
+        }
+
+        try
+        {
+            return WindowMethod.Invoke(helper, [app.hWnd, false]) is FullScreenApp now
+                && now.screen.DeviceName == app.screen.DeviceName;
+        }
+        catch (TargetInvocationException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Runs ManagedShell's check against the current foreground window.</summary>
     /// <remarks>On the UI thread: it changes the collection the bars listen to.</remarks>
     public static void Run(FullScreenHelper helper)
